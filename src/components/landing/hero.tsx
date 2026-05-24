@@ -1,4 +1,4 @@
-import { heroMetrics, platformHighlights } from "@/data/landing";
+import Image from "next/image";
 
 export function Hero() {
   return (
@@ -9,14 +9,13 @@ export function Hero() {
             Operaciones químicas, por fin en un solo sistema
           </p>
 
-          <h1 className="max-w-5xl text-5xl font-semibold leading-[0.95] tracking-normal text-[#12110f] sm:text-7xl lg:text-8xl">
-            Menos papel. Más control. Más tranquilidad.
+          <h1 className="max-w-5xl text-4xl font-semibold leading-[0.95] tracking-normal text-[#12110f] sm:text-6xl lg:text-7xl">
+            Lleva tu operación sanitaria al siguiente nivel.
           </h1>
 
           <p className="mt-8 max-w-2xl text-lg leading-8 text-[#5e5a51] sm:text-xl">
-            Quimly centraliza inventario, lotes, compras, producción, calidad,
-            documentación y reportes para empresas químicas que necesitan operar
-            con control, velocidad y trazabilidad.
+            Digitaliza procesos, mejora el cumplimiento INVIMA y optimiza tu
+            operación con QUIMLY.
           </p>
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
@@ -37,41 +36,15 @@ export function Hero() {
 
         <div className="flex items-center lg:justify-end">
           <div className="w-full max-w-[560px]">
-            <div className="rounded-lg border border-[#12110f]/10 bg-[#12110f] p-3 shadow-2xl shadow-[#12110f]/20">
-              <div className="rounded-md bg-[#efeadf] p-4">
-                <div className="flex items-center justify-between border-b border-[#12110f]/10 pb-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8a6f3d]">
-                      Command center
-                    </p>
-                    <p className="mt-1 text-2xl font-semibold text-[#12110f]">Lote QL-2048</p>
-                  </div>
-                  <span className="rounded-md bg-[#c9e265] px-3 py-2 text-xs font-bold text-[#12110f]">
-                    Liberado
-                  </span>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {platformHighlights.map((item) => (
-                    <article key={item.title} className="rounded-md border border-[#12110f]/10 bg-white/65 p-4">
-                      <div className="mb-5 h-2 rounded-full bg-[#12110f]/10">
-                        <div className="h-2 w-2/3 rounded-full bg-[#d8764a]" />
-                      </div>
-                      <h2 className="text-base font-semibold text-[#12110f]">{item.title}</h2>
-                      <p className="mt-2 text-sm leading-6 text-[#5e5a51]">{item.description}</p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 grid grid-cols-3 border-y border-[#12110f]/10 py-5">
-              {heroMetrics.map((metric) => (
-                <div key={metric.label} className="px-3 first:pl-0 last:pr-0">
-                  <p className="text-3xl font-semibold text-[#12110f]">{metric.value}</p>
-                  <p className="mt-1 text-sm leading-5 text-[#5e5a51]">{metric.label}</p>
-                </div>
-              ))}
+            <div className="overflow-hidden rounded-[2rem] border border-[#12110f]/10 shadow-2xl shadow-[#12110f]/15">
+              <Image
+                src="/images/celular.png"
+                alt="Vista de Quimly en un celular"
+                width={1277}
+                height={1232}
+                className="h-auto w-full object-cover"
+                priority
+              />
             </div>
           </div>
         </div>

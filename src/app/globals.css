@@ -21,8 +21,3 @@ body {
 html {
   scroll-behavior: smooth;
 }
-
-::selection {
-  background: #c9e265;
-  color: #12110f;
-}
