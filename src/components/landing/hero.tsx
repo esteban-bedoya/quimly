@@ -9,10 +9,8 @@ export function Hero() {
             Operaciones químicas, por fin en un solo sistema
           </p>
 
-          <h1 className="max-w-5xl text-[4rem] font-semibold leading-[0.88] tracking-normal text-[#12110f] sm:text-[6rem] lg:text-[7.8rem]">
-            The Future
-            <span className="block pl-[0.18em]">of Chemical</span>
-            <span className="block">Management</span>
+          <h1 className="max-w-5xl text-5xl font-semibold leading-[0.95] tracking-normal text-[#12110f] sm:text-7xl lg:text-8xl">
+            Menos papel. Más control. Más tranquilidad.
           </h1>
 
           <p className="mt-8 max-w-2xl text-lg leading-8 text-[#5e5a51] sm:text-xl">
@@ -26,7 +24,7 @@ export function Hero() {
               href="#demo"
               className="rounded-md bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition hover:bg-[#2b2924]"
             >
-              Probar la plataforma
+              Iniciar sesión
             </a>
             <a
               href="#platform"
