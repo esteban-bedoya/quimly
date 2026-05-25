@@ -25,7 +25,7 @@ export function DemoForm() {
     <section id="demo" className="bg-[#12110f] px-5 py-24 text-white sm:px-8 lg:px-10 lg:py-32">
       <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
         <div>
-          <p className="w-fit rounded-md border border-white/10 bg-[#1d1b18] px-3 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white">
+          <p className="section-kicker rounded-full">
             CONSTRUIDO PARA CRECER
           </p>
           <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">

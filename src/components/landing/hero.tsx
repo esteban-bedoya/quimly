@@ -2,10 +2,10 @@ import Image from "next/image";
 
 export function Hero() {
   return (
-    <section className="relative isolate overflow-hidden bg-[#f4efe7]">
-      <div className="mx-auto grid min-h-[calc(100vh-64px)] w-full max-w-7xl gap-12 px-5 pb-16 pt-10 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-10 lg:py-16">
+    <section id="hero" className="relative isolate overflow-hidden bg-[#f4efe7]">
+      <div className="mx-auto grid min-h-[calc(100vh-64px)] w-full max-w-7xl gap-10 px-5 pb-10 pt-6 sm:px-8 sm:pb-12 sm:pt-8 lg:grid-cols-[1fr_1fr] lg:px-10 lg:py-10">
         <div className="flex flex-col justify-center">
-          <p className="mb-8 w-fit rounded-md border border-[#12110f]/12 px-3 py-2 text-sm font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
+          <p className="mb-8 w-fit rounded-full border border-[#12110f]/12 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
             TECNOLOGÍA SANITARIA PARA RESTAURANTES.
           </p>
 
@@ -14,35 +14,34 @@ export function Hero() {
           </h1>
 
           <p className="mt-8 max-w-2xl text-lg leading-8 text-[#5e5a51] sm:text-xl">
-            Digitaliza procesos, mejora el cumplimiento INVIMA y optimiza tu
-            operación con QUIMLY, todo en un solo lugar.
+            Registra procesos sanitarios en segundos y mantén tu operación siempre trazable.
           </p>
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <a
               href="#demo"
-              className="rounded-md bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#2b2924]"
+              className="min-w-[190px] rounded-full bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18]"
             >
               Hablar con asesor
             </a>
             <a
               href="#platform"
-              className="rounded-md border border-[#12110f]/25 bg-[#f4efe7] px-6 py-4 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/40 hover:bg-[#fbf8f2]"
+              className="min-w-[190px] rounded-full border border-[#12110f]/18 bg-[#e8e2d8] px-6 py-4 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#d6d2cc]"
             >
               Ver productos
             </a>
           </div>
         </div>
 
-        <div className="flex items-center lg:justify-end">
-          <div className="w-full max-w-[630px] lg:max-w-[660px]">
-            <div className="overflow-hidden rounded-[2rem] border border-[#12110f]/10 shadow-[16px_22px_42px_rgba(18,17,15,0.24)]">
+        <div className="flex items-center justify-center lg:justify-end">
+          <div className="w-full max-w-[680px] sm:max-w-[760px] lg:max-w-[860px]">
+            <div>
               <Image
-                src="/images/celular.png"
+                src="/images/celular3.PNG"
                 alt="Vista de Quimly en un celular"
                 width={1277}
                 height={1232}
-                className="h-auto w-full object-cover"
+                className="h-auto w-full"
                 priority
               />
             </div>

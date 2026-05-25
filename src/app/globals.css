@@ -3,6 +3,8 @@
 :root {
   --background: #f4efe7;
   --foreground: #12110f;
+  --brand-mid: #48c7d2;
+  --section-chip-bg: #1d1b18;
 }
 
 @theme inline {
@@ -20,4 +22,12 @@ body {
 
 html {
   scroll-behavior: smooth;
+}
+
+@utility section-kicker {
+  @apply w-fit rounded-full border px-3.5 py-2 text-[0.8rem] font-extrabold uppercase;
+  background-color: var(--section-chip-bg);
+  border-color: rgb(255 255 255 / 0.1);
+  color: var(--brand-mid);
+  letter-spacing: 0.16em;
 }

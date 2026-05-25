@@ -6,7 +6,7 @@ export function Outcomes() {
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
           <div>
-            <p className="w-fit rounded-md border border-[#12110f]/12 px-3 py-2 text-sm font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
+            <p className="w-fit rounded-full border border-[#12110f]/12 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
               RESULTADOS
             </p>
             <h2 className="mt-5 max-w-4xl text-4xl font-semibold leading-tight text-[#12110f] sm:text-5xl lg:text-6xl">
