@@ -24,26 +24,26 @@ export const revenueCards = [
   {
     title: "Amonio Cuaternario 5G",
     description: "Desinfectante residual para pisos, paredes y áreas generales. No es corrosivo.",
-    image: "/images/productos/amonio.png",
+    image: "/images/productos/amonio.svg",
   },
   {
     title: "Desinfectante Orgánico (Alimentos)",
     description: "Lavado para frutas y verduras. Sin enjuague, no altera el sabor y alarga la frescura.",
-    image: "/images/productos/desinfectante_organico.png",
+    image: "/images/productos/amonio.svg",
   },
   {
     title: "Desengrasante Alcalino",
     description: "Remoción de grasa pesada en zonas calientes (campanas, estufas, freidoras).",
-    image: "/images/productos/desengrasante.png",
+    image: "/images/productos/amonio.svg",
   },
   {
     title: "Detergente Liquido Neutro Concentrado",
     description: "Lavado rápido de vajilla y ollas. Grado industrial sin aromas que contaminen la comida.",
-    image: "/images/productos/detergente.png",
+    image: "/images/productos/amonio.svg",
   },
   {
     title: "Jabón Antibacterial de Manos (Sin Aroma)",
     description: "Higiene obligatoria para el personal. Sin fragancias para evitar la transferencia química a los platos.",
-    image: "/images/productos/jabon_manos.png",
+    image: "/images/productos/amonio.svg",
   },
 ];

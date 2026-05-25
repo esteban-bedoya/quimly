@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { navItems } from "@/data/landing";
 
@@ -36,7 +37,7 @@ export function Header() {
       }`}
     >
       <nav className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between rounded-full border border-white/10 bg-[#12110f] px-5 shadow-[0_10px_30px_rgba(18,17,15,0.18)] transition duration-300 hover:scale-[1.02] sm:px-8 lg:px-10">
-        <a href="/" className="flex items-center transition duration-300 hover:scale-[1.08]">
+        <Link href="/" className="flex items-center transition duration-300 hover:scale-[1.08]">
           <Image
             src="/logos/quimly_logoo.png"
             alt="Quimly"
@@ -45,7 +46,7 @@ export function Header() {
             priority
             className="h-10 w-auto"
           />
-        </a>
+        </Link>
 
         <div className="hidden items-center gap-10 text-[1.05rem] font-medium text-white md:flex">
           {navItems.map((item) => (

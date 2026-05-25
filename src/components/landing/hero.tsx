@@ -20,8 +20,16 @@ export function Hero() {
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <a
               href="#demo"
-              className="min-w-[190px] rounded-full bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18]"
+              className="inline-flex min-w-[190px] items-center justify-center gap-2 rounded-full bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18]"
             >
+              <Image
+                src="/logos/whatsapp.svg"
+                alt=""
+                aria-hidden="true"
+                width={18}
+                height={18}
+                className="h-[1.125rem] w-[1.125rem] shrink-0"
+              />
               Asesoría
             </a>
             <a

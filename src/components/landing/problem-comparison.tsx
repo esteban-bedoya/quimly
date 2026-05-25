@@ -18,7 +18,7 @@ export function ProblemComparison() {
           </p>
         </div>
 
-        <div className="mt-14 grid gap-5 lg:grid-cols-2">
+        <div className="mt-14 grid gap-4 lg:mx-auto lg:max-w-6xl lg:grid-cols-2">
           <ComparisonList title="Antes" items={legacyProblems} muted />
           <ComparisonList title="Con Quimly" items={quimlyAdvantages} />
         </div>
@@ -36,16 +36,20 @@ function ComparisonList({
   items: string[];
   muted?: boolean;
 }) {
+  const marker = muted ? "×" : "✓";
+  const markerColor = muted ? "text-[#d86c61]" : "text-[#48c7d2]";
+
   return (
-    <article className={`rounded-lg border p-6 sm:p-8 ${muted ? "border-white/10 bg-white/[0.03]" : "border-[#48c7d2]/30 bg-[#48c7d2]/10"}`}>
+    <article className={`rounded-[2rem] border p-5 sm:p-6 ${muted ? "border-white/10 bg-white/[0.03]" : "border-[#48c7d2]/30 bg-[#48c7d2]/10"}`}>
       <h3 className="text-2xl font-semibold">{title}</h3>
       <ul className="mt-7 space-y-4">
-        {items.map((item, index) => (
+        {items.map((item) => (
           <li key={item} className="flex gap-3 text-base leading-7 text-white/72">
             <span
-              className="mt-0.5 min-w-5 shrink-0 text-sm font-bold leading-7 text-[#48c7d2]"
+              aria-hidden="true"
+              className={`mt-0.5 min-w-5 shrink-0 text-lg font-semibold leading-7 ${markerColor}`}
             >
-              {index + 1}.
+              {marker}
             </span>
             {item}
           </li>
