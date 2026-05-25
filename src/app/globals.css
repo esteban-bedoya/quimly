@@ -27,7 +27,7 @@ html {
 @utility section-kicker {
   @apply w-fit rounded-full border px-3.5 py-2 text-[0.8rem] font-extrabold uppercase;
   background-color: var(--section-chip-bg);
-  border-color: rgb(255 255 255 / 0.1);
+  border-color: rgb(255 255 255 / 0.18);
   color: var(--brand-mid);
   letter-spacing: 0.16em;
 }

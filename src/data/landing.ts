@@ -5,34 +5,45 @@ export const navItems = [
 ];
 
 export const legacyProblems = [
-  "Inventarios desconectados entre bodega, compras y producción.",
-  "Procesos críticos sostenidos en hojas de cálculo difíciles de auditar.",
-  "Documentos de calidad separados del historial real de cada lote.",
-  "Reportes tardíos que obligan a decidir con información incompleta.",
+  "Procesos manuales y desorganizados.",
+  "Registros en papel difíciles de controlar.",
+  "Preocupación constante por auditorías y cumplimiento.",
+  "Supervisión constante y operativa pesada.",
+  "Dificultades para mantener consistencia en los procesos.",
 ];
 
 export const quimlyAdvantages = [
-  "Plataforma diseñada para operaciones químicas y equipos regulados.",
-  "Flujos simples para recepción, producción, control de calidad y despacho.",
-  "Datos centralizados para inventario, costos, certificados y cumplimiento.",
-  "Base lista para crecer con automatización, analítica e integración con Supabase.",
+  "Operación digital y centralizada.",
+  "Trazabilidad inmediata desde cualquier lugar.",
+  "Evidencia organizada en segundos.",
+  "Procesos simples y estandarizados.",
+  "Técnicas y rutinas más fáciles de ejecutar.",
 ];
 
 export const revenueCards = [
   {
-    title: "Reduce quiebres de stock",
-    description: "Alertas y visibilidad de disponibilidad antes de que la producción se detenga.",
+    title: "Amonio Cuaternario 5G",
+    description: "Desinfectante residual para pisos, paredes y áreas generales. No es corrosivo.",
+    image: "/images/productos/amonio.png",
   },
   {
-    title: "Acelera liberaciones",
-    description: "Calidad trabaja sobre registros claros, estados trazables y evidencia ordenada.",
+    title: "Desinfectante Orgánico (Alimentos)",
+    description: "Lavado para frutas y verduras. Sin enjuague, no altera el sabor y alarga la frescura.",
+    image: "/images/productos/desinfectante_organico.png",
   },
   {
-    title: "Mejora márgenes",
-    description: "Costos de materiales, mermas y consumos más fáciles de medir por lote o línea.",
+    title: "Desengrasante Alcalino",
+    description: "Remoción de grasa pesada en zonas calientes (campanas, estufas, freidoras).",
+    image: "/images/productos/desengrasante.png",
   },
   {
-    title: "Simplifica auditorías",
-    description: "Documentación, aprobaciones y cambios reunidos en el historial operativo.",
+    title: "Detergente Liquido Neutro Concentrado",
+    description: "Lavado rápido de vajilla y ollas. Grado industrial sin aromas que contaminen la comida.",
+    image: "/images/productos/detergente.png",
+  },
+  {
+    title: "Jabón Antibacterial de Manos (Sin Aroma)",
+    description: "Higiene obligatoria para el personal. Sin fragancias para evitar la transferencia química a los platos.",
+    image: "/images/productos/jabon_manos.png",
   },
 ];

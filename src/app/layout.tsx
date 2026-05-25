@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "QUIMLY",
+  title: "Quimly",
   description: "Plataforma moderna para operaciones quimicas.",
 };
 
