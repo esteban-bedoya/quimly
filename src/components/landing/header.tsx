@@ -19,7 +19,11 @@ export function Header() {
 
         <div className="hidden items-center gap-8 text-sm font-medium text-white md:flex">
           {navItems.map((item) => (
-            <a key={item.href} className="transition hover:text-white/75" href={item.href}>
+            <a
+              key={item.href}
+              className="text-[#f4efe7] transition duration-300 hover:scale-[1.08] hover:text-white"
+              href={item.href}
+            >
               {item.label}
             </a>
           ))}
@@ -27,9 +31,9 @@ export function Header() {
 
         <a
           href="#demo"
-          className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+          className="rounded-md bg-[#f4efe7] px-4 py-2 text-sm font-semibold text-black transition duration-300 hover:scale-[1.08] hover:bg-[#fbf8f2]"
         >
-          Hablar con un asesor
+          Iniciar sesión
         </a>
       </nav>
     </header>

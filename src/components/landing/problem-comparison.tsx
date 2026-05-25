@@ -6,8 +6,8 @@ export function ProblemComparison() {
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#c9e265]">
-              Operar con claridad
+            <p className="w-fit rounded-md border border-white/10 bg-[#1d1b18] px-3 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white">
+              OPERAR CON CLARIDAD
             </p>
             <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
               Las herramientas viejas frenan a los equipos modernos.
