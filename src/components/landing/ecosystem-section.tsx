@@ -1,9 +1,9 @@
 import { legacyProblems, quimlyAdvantages } from "@/data/landing";
 
-export function ProblemComparison() {
+export function EcosystemSection() {
   return (
-    <section id="operations" className="bg-[#12110f] px-5 py-24 text-white sm:px-8 lg:px-10 lg:py-32">
-      <div className="mx-auto max-w-7xl">
+    <section id="ecosistema" className="relative isolate overflow-hidden bg-[#12110f] px-5 py-24 text-white sm:px-8 lg:px-10 lg:py-32">
+      <div className="relative mx-auto max-w-7xl">
         <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
           <div>
             <p className="section-kicker rounded-full">

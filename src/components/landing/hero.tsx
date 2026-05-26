@@ -3,6 +3,14 @@ import Image from "next/image";
 export function Hero() {
   return (
     <section id="hero" className="relative isolate overflow-hidden bg-[#f4efe7]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(18,17,15,0.34)_0%,rgba(18,17,15,0.18)_42%,rgba(244,239,231,0)_100%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,rgba(244,239,231,0)_0%,rgba(18,17,15,0.18)_72%,rgba(18,17,15,0.34)_100%)]"
+      />
       <div className="mx-auto grid min-h-[calc(100vh-64px)] w-full max-w-7xl gap-10 px-5 pb-10 pt-6 sm:px-8 sm:pb-12 sm:pt-8 lg:grid-cols-[1fr_1fr] lg:px-10 lg:py-10">
         <div className="flex flex-col justify-center">
           <p className="mb-8 w-fit rounded-full border border-[#12110f]/22 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
@@ -19,7 +27,7 @@ export function Hero() {
 
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <a
-              href="#demo"
+              href="#certificados"
               className="inline-flex min-w-[190px] items-center justify-center gap-2 rounded-full bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18]"
             >
               <Image
@@ -33,10 +41,10 @@ export function Hero() {
               Asesoría
             </a>
             <a
-              href="#platform"
+              href="#certificados"
               className="min-w-[190px] rounded-full border border-[#12110f]/18 bg-[#e8e2d8] px-6 py-4 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#d6d2cc]"
             >
-              Ver productos
+              Certificados
             </a>
           </div>
         </div>

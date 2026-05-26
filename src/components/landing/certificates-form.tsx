@@ -94,12 +94,12 @@ function CustomSelect({ label, name, options, placeholder }: CustomSelectProps) 
   );
 }
 
-type CertificateDownloadFormProps = {
+type CertificatesFormProps = {
   products: string[];
   certificateOptions: string[];
 };
 
-export function CertificateDownloadForm({ products, certificateOptions }: CertificateDownloadFormProps) {
+export function CertificatesForm({ products, certificateOptions }: CertificatesFormProps) {
   return (
     <form className="mx-auto w-full max-w-[34rem] rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-7">
       <div className="grid gap-4">

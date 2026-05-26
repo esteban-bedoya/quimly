@@ -20,7 +20,7 @@ function getLoopDistance(index: number, selectedIndex: number, total: number) {
   return rawDistance > 0 ? rawDistance - total : rawDistance + total;
 }
 
-export function Outcomes() {
+export function ProductsSection() {
   const cardCount = revenueCards.length;
   const hasMultipleCards = cardCount > 1;
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -93,10 +93,18 @@ export function Outcomes() {
 
   return (
     <section
-      id="outcomes"
-      className="overflow-hidden bg-[radial-gradient(circle_at_top,#fbf8f2_0%,#f6f0e7_55%,#efe6da_100%)] px-5 py-24 sm:px-8 lg:px-10 lg:py-32"
+      id="productos"
+      className="relative isolate overflow-hidden bg-[radial-gradient(circle_at_top,#fbf8f2_0%,#f6f0e7_55%,#efe6da_100%)] px-5 py-24 sm:px-8 lg:px-10 lg:py-32"
     >
-      <div className="mx-auto max-w-7xl">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(18,17,15,0.34)_0%,rgba(18,17,15,0.18)_42%,rgba(244,239,231,0)_100%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,rgba(244,239,231,0)_0%,rgba(18,17,15,0.18)_72%,rgba(18,17,15,0.34)_100%)]"
+      />
+      <div className="relative mx-auto max-w-7xl">
         <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
           <div>
             <p className="w-fit rounded-full border border-[#12110f]/22 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">

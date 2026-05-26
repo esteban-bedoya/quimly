@@ -1,19 +1,21 @@
-import { DemoForm } from "@/components/landing/demo-form";
+import { CertificatesSection } from "@/components/landing/certificates-section";
+import { EcosystemSection } from "@/components/landing/ecosystem-section";
+import { FloatingAdvisoryButton } from "@/components/landing/floating-advisory-button";
 import { Footer } from "@/components/landing/footer";
 import { Header } from "@/components/landing/header";
 import { Hero } from "@/components/landing/hero";
-import { Outcomes } from "@/components/landing/outcomes";
-import { ProblemComparison } from "@/components/landing/problem-comparison";
+import { ProductsSection } from "@/components/landing/products-section";
 
 export default function Home() {
   return (
     <>
       <Header />
+      <FloatingAdvisoryButton />
       <main>
         <Hero />
-        <ProblemComparison />
-        <Outcomes />
-        <DemoForm />
+        <EcosystemSection />
+        <ProductsSection />
+        <CertificatesSection />
       </main>
       <Footer />
     </>

@@ -1,7 +1,7 @@
 export const navItems = [
-  { label: "Plataforma", href: "#platform" },
-  { label: "Operaciones", href: "#operations" },
-  { label: "Resultados", href: "#outcomes" },
+  { label: "Ecosistema", href: "#ecosistema" },
+  { label: "Productos", href: "#productos" },
+  { label: "Certificados", href: "#certificados" },
 ];
 
 export const legacyProblems = [
