@@ -53,18 +53,22 @@ function CustomSelect({ label, name, options, placeholder }: CustomSelectProps) 
           type="button"
           aria-expanded={isOpen}
           onClick={() => setIsOpen((current) => !current)}
-          className={`flex w-full items-center justify-between rounded-full border border-transparent bg-[#F6F4EF] px-5 py-3 text-left text-base text-[#3d392f] outline-none transition ${
-            isOpen ? "bg-[#f1ede6]" : "hover:bg-[#f0ece4]"
+          className={`flex min-h-12 w-full items-center justify-between rounded-full border px-4 py-3 text-left text-sm outline-none transition sm:px-5 sm:text-base ${
+            selectedValue
+              ? "border-[#d7d7d7] bg-[#e7e7e7] text-[#2f2f2f]"
+              : "border-transparent bg-white text-[#3d392f]"
+          } ${
+            isOpen ? "bg-[#dedede]" : "hover:bg-[#ededed]"
           }`}
         >
-          <span className={selectedValue ? "text-[#3d392f]" : "text-[#8d877b]"}>{selectedValue || placeholder}</span>
+          <span className={selectedValue ? "text-[#2f2f2f]" : "text-[#8d877b]"}>{selectedValue || placeholder}</span>
           <span className="ml-4 shrink-0 text-[#5e5a51]">
             <Chevron open={isOpen} />
           </span>
         </button>
 
         {isOpen ? (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 overflow-hidden rounded-[1.5rem] border border-transparent bg-[#F6F4EF] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.18)]">
+          <div className="absolute left-0 right-0 top-[calc(100%+0.6rem)] z-20 overflow-hidden rounded-[1.5rem] border border-transparent bg-white p-2 shadow-[0_20px_50px_rgba(0,0,0,0.18)]">
             <ul className="grid gap-1">
               {options.map((option) => {
                 const isSelected = option === selectedValue;
@@ -78,7 +82,7 @@ function CustomSelect({ label, name, options, placeholder }: CustomSelectProps) 
                         setIsOpen(false);
                       }}
                       className={`w-full rounded-[1rem] px-4 py-3 text-left text-sm transition ${
-                        isSelected ? "bg-[#e9e4dc] text-[#12110f]" : "text-[#3d392f] hover:bg-[#ece7df]"
+                        isSelected ? "bg-[#e7e7e7] text-[#12110f]" : "text-[#3d392f] hover:bg-[#e9e9e9]"
                       }`}
                     >
                       {option}
@@ -101,7 +105,7 @@ type CertificatesFormProps = {
 
 export function CertificatesForm({ products, certificateOptions }: CertificatesFormProps) {
   return (
-    <form className="mx-auto w-full max-w-[34rem] rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-7">
+    <form className="mx-auto w-full max-w-[34rem] rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6 lg:p-7">
       <div className="grid gap-4">
         <CustomSelect
           label="Producto:"
@@ -121,7 +125,7 @@ export function CertificatesForm({ products, certificateOptions }: CertificatesF
       <div className="mt-5 flex justify-center">
         <button
           type="button"
-          className="inline-flex min-w-[190px] items-center justify-center rounded-full border border-[#12110f]/18 bg-[#e8e2d8] px-6 py-4 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#d6d2cc]"
+          className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-[#12110f]/18 bg-white px-6 py-3.5 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#ededed] sm:min-w-[190px] sm:w-auto sm:py-4"
         >
           Generar PDF
         </button>

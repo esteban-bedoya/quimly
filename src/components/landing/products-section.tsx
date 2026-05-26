@@ -52,10 +52,8 @@ export function ProductsSection() {
       return;
     }
 
-    const currentIndex = emblaApi.selectedScrollSnap();
-
-    if (currentIndex >= cardCount - 1) {
-      emblaApi.scrollTo(0, true);
+    if (!emblaApi.canScrollNext()) {
+      emblaApi.scrollTo(0);
       return;
     }
 
@@ -94,40 +92,29 @@ export function ProductsSection() {
   return (
     <section
       id="productos"
-      className="relative isolate overflow-hidden bg-[radial-gradient(circle_at_top,#fbf8f2_0%,#f6f0e7_55%,#efe6da_100%)] px-5 py-24 sm:px-8 lg:px-10 lg:py-32"
+      className="relative isolate overflow-hidden bg-white px-5 py-20 sm:px-8 sm:py-24 lg:px-10 lg:py-28"
     >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(18,17,15,0.34)_0%,rgba(18,17,15,0.18)_42%,rgba(244,239,231,0)_100%)]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,rgba(244,239,231,0)_0%,rgba(18,17,15,0.18)_72%,rgba(18,17,15,0.34)_100%)]"
-      />
       <div className="relative mx-auto max-w-7xl">
-        <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
+        <div className="grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-end lg:gap-10">
           <div>
-            <p className="w-fit rounded-full border border-[#12110f]/22 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
+            <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
               PRODUCTOS
             </p>
-            <h2 className="mt-5 max-w-4xl text-4xl font-semibold leading-tight text-[#12110f] sm:text-5xl lg:text-6xl">
+            <h2 className="mt-4 max-w-4xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-5xl">
               Abastécete con Quimly
+              <br /> 
+              y digitaliza
               <br />
-              y digitaliza tu operación
-              <br />
-              sanitaria.
-              <br />
-              Sin costo adicional.
+              <span className="font-normal tracking-[-0.015em]">sin cobro adicional.</span>
+
             </h2>
           </div>
-          <p className="max-w-xl text-lg leading-8 text-[#5e5a51]">
-            Productos de grado industrial diseñados bajo estandares sanitarios INVIMA.
-            <br />
-            Incluyen: Fichas Técnicas Actualizadas y Hojas de Seguridad (FDS) según GHS.
+          <p className="max-w-xl text-base leading-7 text-black sm:text-lg sm:leading-8">
+            Incluye fichas técnicas actualizadas y hojas de seguridad según GHS.
           </p>
         </div>
 
-        <div className="mt-16 overflow-visible">
+        <div className="mt-10 overflow-visible sm:mt-12 lg:mt-14">
           <div className="-mx-5 sm:-mx-8 lg:-mx-10">
             <div
               className="overflow-visible px-5 sm:px-8 lg:px-10"
@@ -135,7 +122,7 @@ export function ProductsSection() {
               onMouseEnter={() => setIsAutoplayPaused(true)}
               onMouseLeave={() => setIsAutoplayPaused(false)}
             >
-              <div className="flex touch-pan-y items-stretch py-8">
+              <div className="flex touch-pan-y items-stretch py-6 sm:py-8">
                 {revenueCards.map((card, index) => {
                   const distance = getLoopDistance(index, selectedIndex, cardCount);
                   const isActive = distance === 0;
@@ -152,39 +139,38 @@ export function ProductsSection() {
                         y: isActive ? -12 : isAdjacent ? 10 : 20,
                       }}
                       transition={{ duration: 0.85, ease: EASING }}
-                      className="min-w-0 flex-[0_0_80%] pl-2 pr-2 sm:flex-[0_0_58%] sm:pl-3 sm:pr-3 lg:flex-[0_0_40%] xl:flex-[0_0_35%]"
+                      className="min-w-0 flex-[0_0_88%] pl-2 pr-2 sm:flex-[0_0_64%] sm:pl-3 sm:pr-3 lg:flex-[0_0_40%] xl:flex-[0_0_35%]"
                     >
                       <button
                         type="button"
                         onClick={() => emblaApi?.scrollTo(index)}
-                        className={`relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[2rem] border px-5 py-6 text-left backdrop-blur-xl transition duration-500 md:px-6 ${
+                        className={`relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[2rem] border px-4 py-5 text-left backdrop-blur-xl transition duration-500 sm:px-5 sm:py-6 md:px-6 ${
                           isActive
                             ? "border-white/80 bg-white/74 shadow-[0_28px_70px_rgba(18,17,15,0.14)]"
                             : "border-white/55 bg-white/48 shadow-[0_18px_45px_rgba(18,17,15,0.08)]"
                         }`}
                       >
-                        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(224,221,214,0.58)_0%,rgba(239,235,228,0.26)_34%,rgba(255,255,255,0.18)_58%,rgba(255,255,255,0.28)_100%)]" />
                         <motion.div
                           animate={{
                             scale: isActive ? 1.06 : 1,
                             y: isActive ? -4 : 0,
                           }}
                           transition={{ duration: 0.8, ease: EASING }}
-                          className="relative flex min-h-[252px] items-center justify-center"
+                          className="relative flex min-h-[220px] items-center justify-center sm:min-h-[252px]"
                         >
                           <Image
                             src={card.image}
                             alt={card.title}
                             width={340}
                             height={340}
-                            className="h-auto max-h-[244px] w-auto object-contain drop-shadow-[0_20px_26px_rgba(18,17,15,0.14)]"
+                            className="h-auto max-h-[210px] w-auto object-contain drop-shadow-[0_20px_26px_rgba(18,17,15,0.14)] sm:max-h-[244px]"
                           />
                         </motion.div>
 
-                        <div className="relative mt-3">
+                        <div className="relative mt-2 sm:mt-3">
                           <p className="text-[0.72rem] font-bold uppercase tracking-[0.24em] text-[#2f98a2]">Grado industrial</p>
-                          <h3 className="mt-3 text-2xl font-semibold leading-tight text-[#12110f]">{card.title}</h3>
-                          <p className="mt-4 max-w-[32ch] text-sm leading-6 text-[#575248]">{card.description}</p>
+                          <h3 className="mt-3 text-xl font-semibold leading-tight text-[#12110f] sm:text-2xl">{card.title}</h3>
+                          <p className="mt-3 max-w-[32ch] text-sm leading-6 text-black">{card.description}</p>
                         </div>
                       </button>
                     </motion.article>
@@ -193,7 +179,7 @@ export function ProductsSection() {
               </div>
             </div>
 
-            <div className="mt-8 flex justify-center gap-2">
+            <div className="mt-6 flex justify-center gap-2 sm:mt-8">
               {revenueCards.map((card, index) => {
                 const isActive = index === selectedIndex;
 

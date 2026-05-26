@@ -2,33 +2,25 @@ import Image from "next/image";
 
 export function Hero() {
   return (
-    <section id="hero" className="relative isolate overflow-hidden bg-[#f4efe7]">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(18,17,15,0.34)_0%,rgba(18,17,15,0.18)_42%,rgba(244,239,231,0)_100%)]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,rgba(244,239,231,0)_0%,rgba(18,17,15,0.18)_72%,rgba(18,17,15,0.34)_100%)]"
-      />
-      <div className="mx-auto grid min-h-[calc(100vh-64px)] w-full max-w-7xl gap-10 px-5 pb-10 pt-6 sm:px-8 sm:pb-12 sm:pt-8 lg:grid-cols-[1fr_1fr] lg:px-10 lg:py-10">
+    <section id="hero" className="relative isolate overflow-hidden bg-white">
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-10 px-5 pb-14 pt-44 sm:gap-12 sm:px-8 sm:pb-16 sm:pt-32 lg:grid-cols-[1fr_1fr] lg:items-center lg:gap-14 lg:px-10 lg:pb-20 lg:pt-28">
         <div className="flex flex-col justify-center">
-          <p className="mb-8 w-fit rounded-full border border-[#12110f]/22 px-3.5 py-2 text-[0.8rem] font-extrabold uppercase tracking-[0.16em] text-[#12110f]">
+          <p className="mb-6 w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:mb-8 sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
             TECNOLOGÍA SANITARIA PARA <span className="font-black">RESTAURANTES.</span>
           </p>
 
-          <h1 className="max-w-5xl text-4xl font-semibold leading-[0.95] tracking-normal text-[#12110f] sm:text-6xl lg:text-7xl">
+          <h1 className="max-w-4xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] text-black sm:text-4xl lg:text-5xl">
             Lleva tu operación sanitaria al siguiente nivel.
           </h1>
 
-          <p className="mt-8 max-w-2xl text-lg leading-8 text-[#5e5a51] sm:text-xl">
+          <p className="mt-6 max-w-xl text-base leading-7 text-black sm:mt-7 sm:text-lg sm:leading-8 lg:text-[1.2rem]">
             Digitaliza procesos, mejora el cumplimiento INVIMA y optimiza tu operación con Quimly.
           </p>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-10 sm:flex sm:flex-row">
             <a
               href="#certificados"
-              className="inline-flex min-w-[190px] items-center justify-center gap-2 rounded-full bg-[#12110f] px-6 py-4 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18]"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#12110f] px-4 py-3.5 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18] sm:min-w-[190px] sm:w-auto sm:px-6 sm:py-4"
             >
               <Image
                 src="/logos/whatsapp.svg"
@@ -42,7 +34,7 @@ export function Hero() {
             </a>
             <a
               href="#certificados"
-              className="min-w-[190px] rounded-full border border-[#12110f]/18 bg-[#e8e2d8] px-6 py-4 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#d6d2cc]"
+              className="min-h-12 w-full rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-3.5 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] sm:min-w-[190px] sm:w-auto sm:px-6 sm:py-4"
             >
               Certificados
             </a>
@@ -50,10 +42,10 @@ export function Hero() {
         </div>
 
         <div className="flex items-center justify-center lg:justify-end">
-          <div className="w-full max-w-[680px] sm:max-w-[760px] lg:max-w-[860px]">
+          <div className="w-full max-w-[420px] sm:max-w-[560px] lg:max-w-[760px]">
             <div>
               <Image
-                src="/images/celular3.PNG"
+                src="/images/celular5.PNG"
                 alt="Vista de Quimly en un celular"
                 width={1277}
                 height={1232}
