@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { QUIMLY_WHATSAPP_URL } from "@/lib/whatsapp";
 
 export function Hero() {
   return (
@@ -19,7 +20,9 @@ export function Hero() {
 
           <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-10 sm:flex sm:flex-row">
             <a
-              href="#certificados"
+              href={QUIMLY_WHATSAPP_URL}
+              target="_blank"
+              rel="noreferrer"
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#12110f] px-4 py-3.5 text-center text-sm font-semibold text-white transition duration-300 hover:scale-[1.08] hover:bg-[#1d1b18] sm:min-w-[190px] sm:w-auto sm:px-6 sm:py-4"
             >
               <Image

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { QUIMLY_WHATSAPP_URL } from "@/lib/whatsapp";
 
 const FLOATING_GAP = 24;
 const DRAG_THRESHOLD = 8;
@@ -158,7 +159,9 @@ export function FloatingAdvisoryButton() {
   return (
     <a
       ref={buttonRef}
-      href="#certificados"
+      href={QUIMLY_WHATSAPP_URL}
+      target="_blank"
+      rel="noreferrer"
       draggable={false}
       onClick={(event) => {
         if (dragStateRef.current.hasMoved) {

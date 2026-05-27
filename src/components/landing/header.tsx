@@ -102,12 +102,12 @@ export function Header() {
           </div>
 
           <div className="flex items-center gap-2 md:hidden">
-            <a
-              href="#certificados"
+            <Link
+              href="/login"
               className="rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
             >
               Iniciar sesión
-            </a>
+            </Link>
             <button
               type="button"
               aria-expanded={isMobileMenuOpen}
@@ -123,12 +123,12 @@ export function Header() {
             </button>
           </div>
 
-          <a
-            href="#certificados"
+          <Link
+            href="/login"
             className="hidden rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] md:inline-flex md:px-4 md:text-sm"
           >
             Iniciar sesión
-          </a>
+          </Link>
         </div>
 
         {isMobileMenuOpen ? (
