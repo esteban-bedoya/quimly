@@ -68,7 +68,8 @@ export default async function LoginPage() {
               </div>
 
               <p className="mt-4 text-xs leading-6 text-[#6a665f]">
-                Si aún no tienes acceso, Quimly debe crear tu usuario, perfil y membresía correspondiente.
+                Si aún no tienes acceso, Quimly debe crear tu usuario, perfil y asignarte una empresa si eres
+                `company_admin`.
               </p>
             </div>
           </section>

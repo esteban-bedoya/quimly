@@ -6,10 +6,17 @@ import { useFormStatus } from "react-dom";
 import {
   createCompany,
   createCompanyAdmin,
+  createCompanyBranch,
   createSuperAdmin,
+  setMainCompanyBranch,
+  updateCompany,
+  updateCompanyBranch,
+  toggleCompanyStatus,
+  toggleCompanyBranchStatus,
+  toggleUserStatus,
   type AdminActionState,
 } from "@/app/dashboard/actions";
-import type { CompanySummary } from "@/types/auth";
+import type { CompanyBranchSummary, CompanySummary, AppRole } from "@/types/auth";
 
 function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
@@ -77,7 +84,9 @@ export function CreateCompanyForm() {
   return (
     <form action={formAction} className="space-y-4">
       <Field id="name" label="Nombre de la empresa" placeholder="Restaurante Central SAS" />
-      <Field id="slug" label="Slug" placeholder="restaurante-central" />
+      <p className="text-xs leading-6 text-[#6a665f]">
+        La URL interna se genera automáticamente a partir del nombre de la empresa.
+      </p>
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear empresa" pendingLabel="Creando empresa..." />
     </form>
@@ -142,5 +151,239 @@ export function CreateCompanyAdminForm({ companies }: { companies: CompanySummar
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear company admin" pendingLabel="Creando company admin..." />
     </form>
+  );
+}
+
+export function CreateCompanyBranchForm({ companies }: { companies: CompanySummary[] }) {
+  const [state, formAction] = useActionState(createCompanyBranch, undefined);
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <div className="space-y-2">
+        <label htmlFor="companyId" className="block text-sm font-medium text-[#12110f]">
+          Empresa
+        </label>
+        <select
+          id="companyId"
+          name="companyId"
+          required
+          defaultValue=""
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+        >
+          <option value="" disabled>
+            Selecciona una empresa
+          </option>
+          {companies.map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <Field id="name" label="Nombre de la sede" placeholder="Sede Norte" />
+      <p className="text-xs leading-6 text-[#6a665f]">
+        El identificador interno de la sede se genera automáticamente a partir del nombre.
+      </p>
+
+      <ActionFeedback state={state} />
+      <SubmitButton idleLabel="Crear sede" pendingLabel="Creando sede..." />
+    </form>
+  );
+}
+
+export function CompanyStatusToggle({
+  companyId,
+  isActive,
+}: {
+  companyId: string;
+  isActive: boolean;
+}) {
+  const label = isActive ? "Desactivar" : "Activar";
+
+  return (
+    <form action={toggleCompanyStatus}>
+      <input type="hidden" name="companyId" value={companyId} />
+      <input type="hidden" name="nextIsActive" value={String(!isActive)} />
+      <button
+        type="submit"
+        className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+          isActive
+            ? "bg-[#f7ded7] text-[#8a2d1f] hover:bg-[#f2d0c7]"
+            : "bg-[#e8f5f5] text-[#1e6c72] hover:bg-[#d8efef]"
+        }`}
+      >
+        {label}
+      </button>
+    </form>
+  );
+}
+
+export function EditCompanyForm({ company }: { company: CompanySummary }) {
+  const [state, formAction] = useActionState(updateCompany, undefined);
+
+  return (
+    <form action={formAction} className="space-y-3">
+      <input type="hidden" name="companyId" value={company.id} />
+      <input type="hidden" name="currentSlug" value={company.slug} />
+      <div className="space-y-2">
+        <label htmlFor={`company-name-${company.id}`} className="block text-sm font-medium text-[#12110f]">
+          Editar nombre
+        </label>
+        <input
+          id={`company-name-${company.id}`}
+          name="name"
+          type="text"
+          defaultValue={company.name}
+          required
+          className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+        />
+      </div>
+      <ActionFeedback state={state} />
+      <button
+        type="submit"
+        className="inline-flex rounded-full border border-[#12110f]/14 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#12110f] transition hover:bg-[#f3eee6]"
+      >
+        Guardar nombre
+      </button>
+    </form>
+  );
+}
+
+export function UserStatusToggle({
+  userId,
+  isActive,
+}: {
+  userId: string;
+  isActive: boolean;
+}) {
+  const label = isActive ? "Desactivar" : "Activar";
+
+  return (
+    <form action={toggleUserStatus}>
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="nextIsActive" value={String(!isActive)} />
+      <button
+        type="submit"
+        className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+          isActive
+            ? "bg-[#f7ded7] text-[#8a2d1f] hover:bg-[#f2d0c7]"
+            : "bg-[#e8f5f5] text-[#1e6c72] hover:bg-[#d8efef]"
+        }`}
+      >
+        {label}
+      </button>
+    </form>
+  );
+}
+
+export function CompanyBranchStatusToggle({
+  branchId,
+  companySlug,
+  isActive,
+  disabled,
+}: {
+  branchId: string;
+  companySlug?: string;
+  isActive: boolean;
+  disabled?: boolean;
+}) {
+  const label = isActive ? "Desactivar" : "Activar";
+
+  return (
+    <form action={toggleCompanyBranchStatus}>
+      <input type="hidden" name="branchId" value={branchId} />
+      <input type="hidden" name="companySlug" value={companySlug ?? ""} />
+      <input type="hidden" name="nextIsActive" value={String(!isActive)} />
+      <button
+        type="submit"
+        disabled={disabled}
+        className={`inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+          isActive
+            ? "bg-[#f7ded7] text-[#8a2d1f] hover:bg-[#f2d0c7]"
+            : "bg-[#e8f5f5] text-[#1e6c72] hover:bg-[#d8efef]"
+        } disabled:cursor-not-allowed disabled:opacity-50`}
+      >
+        {label}
+      </button>
+    </form>
+  );
+}
+
+export function EditCompanyBranchForm({
+  branch,
+  companySlug,
+}: {
+  branch: CompanyBranchSummary;
+  companySlug?: string;
+}) {
+  const [state, formAction] = useActionState(updateCompanyBranch, undefined);
+
+  return (
+    <form action={formAction} className="space-y-3">
+      <input type="hidden" name="branchId" value={branch.id} />
+      <input type="hidden" name="companySlug" value={companySlug ?? ""} />
+      <div className="space-y-2">
+        <label htmlFor={`branch-name-${branch.id}`} className="block text-sm font-medium text-[#12110f]">
+          Editar nombre
+        </label>
+        <input
+          id={`branch-name-${branch.id}`}
+          name="name"
+          type="text"
+          defaultValue={branch.name}
+          required
+          className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+        />
+      </div>
+      <ActionFeedback state={state} />
+      <button
+        type="submit"
+        className="inline-flex rounded-full border border-[#12110f]/14 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#12110f] transition hover:bg-[#f3eee6]"
+      >
+        Guardar nombre
+      </button>
+    </form>
+  );
+}
+
+export function SetMainBranchButton({
+  branchId,
+  companySlug,
+}: {
+  branchId: string;
+  companySlug?: string;
+}) {
+  return (
+    <form action={setMainCompanyBranch}>
+      <input type="hidden" name="branchId" value={branchId} />
+      <input type="hidden" name="companySlug" value={companySlug ?? ""} />
+      <button
+        type="submit"
+        className="inline-flex rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-[#1d1b18]"
+      >
+        Marcar principal
+      </button>
+    </form>
+  );
+}
+
+export function CompanyBranchStatusBadge({ branch }: { branch: CompanyBranchSummary }) {
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
+        branch.isActive ? "bg-[#e8f5f5] text-[#1e6c72]" : "bg-[#f7ded7] text-[#8a2d1f]"
+      }`}
+    >
+      {branch.isActive ? "Activa" : "Inactiva"}
+    </span>
+  );
+}
+
+export function RoleBadge({ role }: { role: AppRole }) {
+  return (
+    <span className="rounded-full bg-[#e8f5f5] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#1e6c72]">
+      {role === "super_admin" ? "Super admin" : role === "company_admin" ? "Company admin" : "Owner"}
+    </span>
   );
 }

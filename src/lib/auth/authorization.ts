@@ -25,27 +25,18 @@ export async function requireRole(allowedRoles: AppRole[]): Promise<Authenticate
 }
 
 export async function getAccessibleCompanies(context?: AuthenticatedUserContext): Promise<CompanySummary[]> {
-  const authenticatedContext = context ?? (await requireAuthenticatedUser());
+  await (context ?? requireAuthenticatedUser());
   const supabase = await getSupabaseRlsClient();
 
   if (!supabase) {
     return [];
   }
 
-  const query = supabase.from("companies").select("id, name, slug, is_active").eq("is_active", true);
-  const isCompanyAdmin = authenticatedContext.profile.globalRole === "company_admin";
-
-  const scopedQuery =
-    isCompanyAdmin && authenticatedContext.memberships.length
-      ? query.in(
-          "id",
-          authenticatedContext.memberships
-            .map((membership) => membership.company?.id)
-            .filter((companyId): companyId is string => Boolean(companyId)),
-        )
-      : query;
-
-  const { data, error } = await scopedQuery.order("name", { ascending: true });
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id, name, slug, is_active, company_admin_user_id")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
 
   if (error) {
     throw new Error(error.message);
@@ -57,6 +48,7 @@ export async function getAccessibleCompanies(context?: AuthenticatedUserContext)
       name: company.name,
       slug: company.slug,
       isActive: company.is_active,
+      companyAdminUserId: company.company_admin_user_id,
     })) ?? []
   );
 }
@@ -71,7 +63,7 @@ export async function requireCompanyAccess(companySlug: string) {
 
   const { data: company, error } = await supabase
     .from("companies")
-    .select("id, name, slug, is_active")
+    .select("id, name, slug, is_active, company_admin_user_id")
     .eq("slug", companySlug)
     .eq("is_active", true)
     .maybeSingle();
@@ -91,6 +83,7 @@ export async function requireCompanyAccess(companySlug: string) {
       name: company.name,
       slug: company.slug,
       isActive: company.is_active,
+      companyAdminUserId: company.company_admin_user_id,
     } satisfies CompanySummary,
   };
 }

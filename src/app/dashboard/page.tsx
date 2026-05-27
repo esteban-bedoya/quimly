@@ -1,10 +1,23 @@
 import Link from "next/link";
 
-import { CreateCompanyAdminForm, CreateCompanyForm, CreateSuperAdminForm } from "@/components/dashboard/admin-forms";
+import {
+  CompanyStatusToggle,
+  CompanyBranchStatusBadge,
+  CompanyBranchStatusToggle,
+  CreateCompanyAdminForm,
+  CreateCompanyBranchForm,
+  CreateCompanyForm,
+  CreateSuperAdminForm,
+  EditCompanyBranchForm,
+  EditCompanyForm,
+  RoleBadge,
+  SetMainBranchButton,
+  UserStatusToggle,
+} from "@/components/dashboard/admin-forms";
 import { logout } from "@/app/login/actions";
 import { getAccessibleCompanies, requireAuthenticatedUser } from "@/lib/auth/authorization";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { CompanySummary, UserProfile } from "@/types/auth";
+import type { CompanyBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
 const roleLabels = {
   owner: "Owner",
@@ -20,25 +33,61 @@ const roleDescriptions = {
 
 export const dynamic = "force-dynamic";
 
-type ManagedUserSummary = Pick<UserProfile, "userId" | "email" | "fullName" | "globalRole" | "isActive">;
+type ManagedUserSummary = Pick<UserProfile, "userId" | "email" | "fullName" | "globalRole" | "isActive"> & {
+  defaultCompanyName: string | null;
+};
 
-async function getOwnerManagementData() {
+type ManagedBranchSummary = CompanyBranchSummary & {
+  companyName: string;
+  companySlug: string;
+};
+
+type ManagedUserRow = {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  global_role: UserProfile["globalRole"];
+  is_active: boolean;
+  default_company: { name: string } | { name: string }[] | null;
+};
+
+type ManagedBranchRow = {
+  id: string;
+  company_id: string;
+  name: string;
+  slug: string;
+  is_main: boolean;
+  is_active: boolean;
+  company: { name: string; slug: string } | { name: string; slug: string }[] | null;
+};
+
+async function getManagementData(role: UserProfile["globalRole"]) {
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
     return {
       companies: [] as CompanySummary[],
+      companyBranches: [] as ManagedBranchSummary[],
       managedUsers: [] as ManagedUserSummary[],
     };
   }
 
-  const [{ data: companies }, { data: managedUsers }] = await Promise.all([
-    supabase.from("companies").select("id, name, slug, is_active").order("created_at", { ascending: false }),
+  const [{ data: companies }, { data: companyBranches }, { data: managedUsers }] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id, name, slug, is_active, company_admin_user_id")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("branches")
+      .select("id, company_id, name, slug, is_main, is_active, company:companies!inner(name, slug)")
+      .order("created_at", { ascending: false })
+      .returns<ManagedBranchRow[]>(),
     supabase
       .from("user_profiles")
-      .select("user_id, email, full_name, global_role, is_active")
-      .in("global_role", ["super_admin", "company_admin"])
-      .order("created_at", { ascending: false }),
+      .select("user_id, email, full_name, global_role, is_active, default_company:companies(name)")
+      .in("global_role", role === "owner" ? ["super_admin", "company_admin"] : ["company_admin"])
+      .order("created_at", { ascending: false })
+      .returns<ManagedUserRow[]>(),
   ]);
 
   return {
@@ -48,7 +97,29 @@ async function getOwnerManagementData() {
         name: company.name,
         slug: company.slug,
         isActive: company.is_active,
+        companyAdminUserId: company.company_admin_user_id,
       })) ?? [],
+    companyBranches:
+      companyBranches?.flatMap((branch) => {
+        const company = Array.isArray(branch.company) ? branch.company[0] ?? null : branch.company;
+
+        if (!company) {
+          return [];
+        }
+
+        return [
+          {
+            id: branch.id,
+            companyId: branch.company_id,
+            name: branch.name,
+            slug: branch.slug,
+            isMain: branch.is_main,
+            isActive: branch.is_active,
+            companyName: company.name,
+            companySlug: company.slug,
+          } satisfies ManagedBranchSummary,
+        ];
+      }) ?? [],
     managedUsers:
       managedUsers?.map((user) => ({
         userId: user.user_id,
@@ -56,14 +127,22 @@ async function getOwnerManagementData() {
         fullName: user.full_name,
         globalRole: user.global_role,
         isActive: user.is_active,
+        defaultCompanyName: Array.isArray(user.default_company)
+          ? user.default_company[0]?.name ?? null
+          : user.default_company?.name ?? null,
       })) ?? [],
   };
 }
 
 export default async function DashboardPage() {
-  const { profile, memberships } = await requireAuthenticatedUser();
-  const accessibleCompanies = await getAccessibleCompanies({ profile, memberships });
-  const ownerManagementData = profile.globalRole === "owner" ? await getOwnerManagementData() : null;
+  const { profile } = await requireAuthenticatedUser();
+  const accessibleCompanies = await getAccessibleCompanies({ profile });
+  const managementData =
+    profile.globalRole === "owner" || profile.globalRole === "super_admin"
+      ? await getManagementData(profile.globalRole)
+      : null;
+  const companiesAvailableForAdminAssignment =
+    managementData?.companies.filter((company) => !company.companyAdminUserId) ?? [];
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f4efe7_0%,#ebe4d7_100%)] px-5 py-6 sm:px-8 lg:px-10">
@@ -106,7 +185,7 @@ export default async function DashboardPage() {
               </p>
             </article>
             <article className="rounded-[1.5rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Empresas vinculadas</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Empresas accesibles</p>
               <p className="mt-3 text-xl font-semibold text-[#12110f]">{accessibleCompanies.length}</p>
             </article>
           </div>
@@ -135,9 +214,6 @@ export default async function DashboardPage() {
                         <p className="text-lg font-semibold text-[#12110f]">
                           {company.name}
                         </p>
-                        <p className="text-sm text-[#5d574f]">
-                          {`Slug: ${company.slug}`}
-                        </p>
                       </div>
                       <Link
                         href={`/dashboard/companies/${company.slug}`}
@@ -150,7 +226,7 @@ export default async function DashboardPage() {
                 ))
               ) : (
                 <div className="rounded-[1.5rem] border border-dashed border-[#12110f]/16 bg-[#fcfbf8] p-5 text-sm leading-7 text-[#5d574f]">
-                  Este usuario todavía no tiene empresas asignadas. Si es `owner` o `super_admin` con acceso total,
+                  Este usuario todavía no tiene empresas accesibles. Si es `owner` o `super_admin` con acceso total,
                   podrá seguir operando cuando se conecten las vistas internas.
                 </div>
               )}
@@ -166,6 +242,7 @@ export default async function DashboardPage() {
                 <>
                   <li>Puede administrar cualquier usuario, empresa y configuración crítica.</li>
                   <li>Puede crear y desactivar `super_admin` y `company_admin`.</li>
+                  <li>Puede habilitar y deshabilitar sedes en cualquier empresa.</li>
                   <li>Puede acceder o impersonar cualquier empresa de la plataforma.</li>
                 </>
               ) : null}
@@ -173,6 +250,7 @@ export default async function DashboardPage() {
               {profile.globalRole === "super_admin" ? (
                 <>
                   <li>Puede crear empresas y administrar usuarios `company_admin`.</li>
+                  <li>Puede crear y desactivar sedes para empresas operativas.</li>
                   <li>Puede dar soporte a empresas asignadas o a todas si su perfil lo permite.</li>
                   <li>No puede modificar `owner` ni parámetros críticos de seguridad global.</li>
                 </>
@@ -181,6 +259,7 @@ export default async function DashboardPage() {
               {profile.globalRole === "company_admin" ? (
                 <>
                   <li>Puede operar únicamente dentro de sus empresas asignadas.</li>
+                  <li>Solo visualiza sedes activas habilitadas por Quimly.</li>
                   <li>Puede gestionar información operativa y configuración básica de su negocio.</li>
                   <li>No tiene acceso al panel interno de Quimly ni a roles globales.</li>
                 </>
@@ -189,22 +268,25 @@ export default async function DashboardPage() {
           </article>
         </section>
 
-        {profile.globalRole === "owner" ? (
+        {profile.globalRole === "owner" || profile.globalRole === "super_admin" ? (
           <section className="overflow-hidden rounded-[2rem] border border-[#12110f]/10 bg-white shadow-[0_20px_60px_rgba(18,17,15,0.08)]">
             <div className="border-b border-[#12110f]/8 bg-[radial-gradient(circle_at_top_left,#86dce0_0%,#f4efe7_44%,#ffffff_100%)] px-6 py-8 sm:px-8">
               <p className="w-fit rounded-full bg-[#12110f] px-3 py-1.5 text-[0.72rem] font-bold uppercase tracking-[0.22em] text-[#7ad9dd]">
                 Panel interno
               </p>
               <h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-[-0.04em] text-[#12110f]">
-                Alta de estructura base para Quimly desde una sola vista.
+                {profile.globalRole === "owner"
+                  ? "Alta de estructura base para Quimly desde una sola vista."
+                  : "Operación diaria de clientes y estructura comercial desde una sola vista."}
               </h2>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-[#565149] sm:text-base">
-                Este módulo está diseñado para que el owner configure operación interna y clientes con la misma
-                sensación visual de la landing: bloques claros, contraste fuerte y acciones muy directas.
+                {profile.globalRole === "owner"
+                  ? "Este módulo está diseñado para que el owner configure operación interna y clientes con la misma sensación visual de la landing: bloques claros, contraste fuerte y acciones muy directas."
+                  : "Este módulo permite al super_admin crear empresas, dar alta a clientes y activar o desactivar accesos operativos sin tocar configuraciones críticas."}
               </p>
             </div>
 
-            <div className="grid gap-6 p-6 sm:p-8 xl:grid-cols-3">
+            <div className={`grid gap-6 p-6 sm:p-8 ${profile.globalRole === "owner" ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
               <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Empresas</p>
                 <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Crear empresa</h3>
@@ -216,16 +298,18 @@ export default async function DashboardPage() {
                 </div>
               </article>
 
-              <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Interno Quimly</p>
-                <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Crear super admin</h3>
-                <p className="mt-3 text-sm leading-7 text-[#5b564f]">
-                  Crea usuarios internos para soporte, operación y gestión transversal de clientes.
-                </p>
-                <div className="mt-6">
-                  <CreateSuperAdminForm />
-                </div>
-              </article>
+              {profile.globalRole === "owner" ? (
+                <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Interno Quimly</p>
+                  <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Crear super admin</h3>
+                  <p className="mt-3 text-sm leading-7 text-[#5b564f]">
+                    Crea usuarios internos para soporte, operación y gestión transversal de clientes.
+                  </p>
+                  <div className="mt-6">
+                    <CreateSuperAdminForm />
+                  </div>
+                </article>
+              ) : null}
 
               <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Cliente</p>
@@ -234,7 +318,18 @@ export default async function DashboardPage() {
                   Crea el acceso operativo del cliente y asígnalo a su empresa principal.
                 </p>
                 <div className="mt-6">
-                  <CreateCompanyAdminForm companies={ownerManagementData?.companies ?? []} />
+                  <CreateCompanyAdminForm companies={companiesAvailableForAdminAssignment} />
+                </div>
+              </article>
+
+              <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Sedes</p>
+                <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Crear sede</h3>
+                <p className="mt-3 text-sm leading-7 text-[#5b564f]">
+                  Registra nuevas unidades operativas dentro de una empresa ya creada.
+                </p>
+                <div className="mt-6">
+                  <CreateCompanyBranchForm companies={managementData?.companies ?? []} />
                 </div>
               </article>
             </div>
@@ -245,8 +340,8 @@ export default async function DashboardPage() {
                 <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Empresas registradas</h3>
 
                 <div className="mt-6 space-y-3">
-                  {(ownerManagementData?.companies ?? []).length ? (
-                    ownerManagementData?.companies.map((company) => (
+                  {(managementData?.companies ?? []).length ? (
+                    managementData?.companies.map((company) => (
                       <div
                         key={company.id}
                         className="rounded-[1.25rem] border border-white/10 bg-white/6 px-4 py-3"
@@ -254,11 +349,22 @@ export default async function DashboardPage() {
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <p className="font-semibold text-white">{company.name}</p>
-                            <p className="text-sm text-white/65">{company.slug}</p>
                           </div>
                           <span className="rounded-full bg-[#7ad9dd]/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#7ad9dd]">
                             {company.isActive ? "Activa" : "Inactiva"}
                           </span>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <Link
+                            href={`/dashboard/companies/${company.slug}`}
+                            className="text-sm font-semibold text-[#7ad9dd] transition hover:text-white"
+                          >
+                            Abrir empresa
+                          </Link>
+                          <CompanyStatusToggle companyId={company.id} isActive={company.isActive} />
+                        </div>
+                        <div className="mt-4 rounded-[1rem] bg-white/8 p-3">
+                          <EditCompanyForm company={company} />
                         </div>
                       </div>
                     ))
@@ -271,14 +377,60 @@ export default async function DashboardPage() {
               </article>
 
               <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-6">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Sedes creadas</p>
+                <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Cobertura operativa</h3>
+
+                <div className="mt-6 space-y-3">
+                  {(managementData?.companyBranches ?? []).length ? (
+                    managementData?.companyBranches.map((branch) => (
+                      <div
+                        key={branch.id}
+                        className="rounded-[1.25rem] border border-[#12110f]/10 bg-white px-4 py-3"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="font-semibold text-[#12110f]">{branch.name}</p>
+                            <p className="text-sm text-[#5d574f]">{branch.companyName}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {branch.isMain ? (
+                              <span className="rounded-full bg-[#12110f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white">
+                                Principal
+                              </span>
+                            ) : (
+                              <SetMainBranchButton branchId={branch.id} companySlug={branch.companySlug} />
+                            )}
+                            <CompanyBranchStatusBadge branch={branch} />
+                            <CompanyBranchStatusToggle
+                              branchId={branch.id}
+                              companySlug={branch.companySlug}
+                              isActive={branch.isActive}
+                              disabled={branch.isMain}
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-4 rounded-[1rem] border border-[#12110f]/8 bg-[#fcfbf8] p-3">
+                          <EditCompanyBranchForm branch={branch} companySlug={branch.companySlug} />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[1.25rem] border border-dashed border-[#12110f]/16 px-4 py-5 text-sm leading-7 text-[#5d574f]">
+                      Todavía no hay sedes registradas para las empresas de la plataforma.
+                    </div>
+                  )}
+                </div>
+              </article>
+
+              <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-6">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Usuarios creados</p>
                 <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">
                   Operación interna y clientes
                 </h3>
 
                 <div className="mt-6 space-y-3">
-                  {(ownerManagementData?.managedUsers ?? []).length ? (
-                    ownerManagementData?.managedUsers.map((user) => (
+                  {(managementData?.managedUsers ?? []).length ? (
+                    managementData?.managedUsers.map((user) => (
                       <div
                         key={user.userId}
                         className="rounded-[1.25rem] border border-[#12110f]/10 bg-white px-4 py-3"
@@ -287,21 +439,25 @@ export default async function DashboardPage() {
                           <div>
                             <p className="font-semibold text-[#12110f]">{user.fullName || user.email}</p>
                             <p className="text-sm text-[#5d574f]">{user.email}</p>
+                            {user.defaultCompanyName ? (
+                              <p className="text-xs uppercase tracking-[0.14em] text-[#7d766d]">
+                                Empresa base: {user.defaultCompanyName}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-[#e8f5f5] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#1e6c72]">
-                              {user.globalRole === "super_admin" ? "Super admin" : "Company admin"}
-                            </span>
+                            <RoleBadge role={user.globalRole} />
                             <span className="rounded-full bg-[#f2ebe0] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b655d]">
                               {user.isActive ? "Activo" : "Inactivo"}
                             </span>
+                            <UserStatusToggle userId={user.userId} isActive={user.isActive} />
                           </div>
                         </div>
                       </div>
                     ))
                   ) : (
                     <div className="rounded-[1.25rem] border border-dashed border-[#12110f]/16 px-4 py-5 text-sm leading-7 text-[#5d574f]">
-                      Todavía no hay `super_admin` ni `company_admin` creados desde este panel.
+                      Todavía no hay usuarios operativos creados desde este panel.
                     </div>
                   )}
                 </div>

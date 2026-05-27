@@ -4,12 +4,7 @@ import { redirect } from "next/navigation";
 
 import { readSessionTokens } from "@/lib/auth/session";
 import { getSupabaseAuthClient } from "@/lib/supabase/auth";
-import type {
-  AuthenticatedUserContext,
-  CompanySummary,
-  UserCompanyMembership,
-  UserProfile,
-} from "@/types/auth";
+import type { AuthenticatedUserContext, UserProfile } from "@/types/auth";
 
 type ProfileRow = {
   user_id: string;
@@ -20,20 +15,6 @@ type ProfileRow = {
   can_access_all_companies: boolean;
   default_company_id: string | null;
 };
-
-type MembershipRow = {
-  id: string;
-  is_active: boolean;
-  company: CompanySummary | CompanySummary[] | null;
-};
-
-function normalizeCompany(company: MembershipRow["company"]): CompanySummary | null {
-  if (!company) {
-    return null;
-  }
-
-  return Array.isArray(company) ? company[0] ?? null : company;
-}
 
 export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserContext | null> => {
   const session = await readSessionTokens();
@@ -67,17 +48,6 @@ export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserCo
     return null;
   }
 
-  const { data: membershipRows, error: membershipsError } = await supabase
-    .from("company_memberships")
-    .select("id, is_active, company:companies(id, name, slug, is_active)")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
-    .returns<MembershipRow[]>();
-
-  if (membershipsError) {
-    throw new Error(membershipsError.message);
-  }
-
   return {
     profile: {
       userId: profileRow.user_id,
@@ -88,11 +58,6 @@ export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserCo
       canAccessAllCompanies: profileRow.can_access_all_companies,
       defaultCompanyId: profileRow.default_company_id,
     },
-    memberships: (membershipRows ?? []).map<UserCompanyMembership>((membership) => ({
-      id: membership.id,
-      isActive: membership.is_active,
-      company: normalizeCompany(membership.company),
-    })),
   };
 });
 

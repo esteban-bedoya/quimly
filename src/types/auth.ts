@@ -15,15 +15,18 @@ export type CompanySummary = {
   name: string;
   slug: string;
   isActive: boolean;
+  companyAdminUserId: string | null;
 };
 
-export type UserCompanyMembership = {
+export type CompanyBranchSummary = {
   id: string;
+  companyId: string;
+  name: string;
+  slug: string;
+  isMain: boolean;
   isActive: boolean;
-  company: CompanySummary | null;
 };
 
 export type AuthenticatedUserContext = {
   profile: UserProfile;
-  memberships: UserCompanyMembership[];
 };
