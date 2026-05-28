@@ -27,6 +27,53 @@ export type CompanyBranchSummary = {
   isActive: boolean;
 };
 
+export type AccessibleBranchSummary = CompanyBranchSummary & {
+  companyName: string;
+  companySlug: string;
+};
+
+export type BranchDocumentSectionKey =
+  | "manuals_protocols"
+  | "plant_certifications"
+  | "traceability_supplies"
+  | "staff_records";
+
+export type BranchDocumentSummary = {
+  id: string;
+  branchId: string;
+  sectionKey: BranchDocumentSectionKey;
+  title: string;
+  description: string | null;
+  fileUrl: string | null;
+  expiresAt: string | null;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type OperationalFormType =
+  | "thermal_control"
+  | "area_sanitation"
+  | "supply_reception"
+  | "water_quality";
+
+export type BranchFormQrSummary = {
+  id: string;
+  branchId: string;
+  companyId: string;
+  formType: OperationalFormType;
+  token: string;
+  isActive: boolean;
+  regeneratedAt: string | null;
+};
+
+export type BranchCatalogItemSummary = {
+  id: string;
+  branchId: string;
+  companyId: string;
+  name: string;
+  isActive: boolean;
+};
+
 export type AuthenticatedUserContext = {
   profile: UserProfile;
 };

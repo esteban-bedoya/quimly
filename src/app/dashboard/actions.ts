@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
+import { isOperationalFormType } from "@/lib/operational-forms";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
 
@@ -25,6 +27,89 @@ function readBoolean(formData: FormData, key: string) {
   return formData.get(key) === "on";
 }
 
+function readNumber(formData: FormData, key: string) {
+  const value = readString(formData, key);
+  if (!value) {
+    return null;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+function readFile(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return value instanceof File && value.size > 0 ? value : null;
+}
+
+function getStorageBucketName() {
+  return "branch-documents";
+}
+
+function getFilePathFromUrl(fileUrl: string) {
+  const marker = "/object/public/";
+  const markerIndex = fileUrl.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return fileUrl.slice(markerIndex + marker.length).split("?")[0] ?? null;
+}
+
+async function uploadBranchDocumentFile({
+  branchId,
+  file,
+}: {
+  branchId: string;
+  file: File;
+}) {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
+  const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const fileName = `${safeBranchId}/${crypto.randomUUID()}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(getStorageBucketName())
+    .upload(fileName, Buffer.from(await file.arrayBuffer()), {
+      contentType: file.type || "application/pdf",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { data } = supabase.storage.from(getStorageBucketName()).getPublicUrl(fileName);
+  return {
+    fileUrl: data.publicUrl,
+    filePath: fileName,
+  };
+}
+
+async function deleteBranchDocumentFile(fileUrl: string | null) {
+  if (!fileUrl) {
+    return;
+  }
+
+  const filePath = getFilePathFromUrl(fileUrl);
+  if (!filePath) {
+    return;
+  }
+
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return;
+  }
+
+  await supabase.storage.from(getStorageBucketName()).remove([filePath]);
+}
+
 function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   if (error.code === "23505") {
     if (error.message.includes("companies_slug")) {
@@ -37,6 +122,47 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   }
 
   return error.message || fallback;
+}
+
+type BranchRouteTarget = {
+  companySlug: string;
+  branchSlug: string;
+};
+
+async function resolveBranchRouteTarget(branchId: string) {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { data, error } = await supabase
+    .from("branches")
+    .select("slug, company:companies!inner(slug)")
+    .eq("id", branchId)
+    .maybeSingle<{
+      slug: string;
+      company: { slug: string } | { slug: string }[] | null;
+    }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const company = Array.isArray(data.company) ? data.company[0] ?? null : data.company;
+
+  if (!company) {
+    return null;
+  }
+
+  return {
+    companySlug: company.slug,
+    branchSlug: data.slug,
+  } satisfies BranchRouteTarget;
 }
 
 async function requireOwnerAccess() {
@@ -118,20 +244,392 @@ export async function createCompanyBranch(
     return { error: companyError?.message ?? "No fue posible encontrar la empresa seleccionada." };
   }
 
-  const { error } = await supabase.from("branches").insert({
-    company_id: companyId,
-    name,
-    created_by: context.profile.userId,
-    is_main: false,
-  });
+  const { data: createdBranch, error } = await supabase
+    .from("branches")
+    .insert({
+      company_id: companyId,
+      name,
+      created_by: context.profile.userId,
+      is_main: false,
+    })
+    .select("slug")
+    .single<{ slug: string }>();
 
   if (error) {
     return { error: formatDatabaseError(error, "No fue posible crear la sede.") };
   }
 
   revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/sedes/${company.slug}/${createdBranch.slug}`);
   revalidatePath(`/dashboard/companies/${company.slug}`);
   return { success: `Sede "${name}" creada correctamente.` };
+}
+
+export async function createBranchDocument(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const sectionKey = readString(formData, "sectionKey");
+  const title = readString(formData, "title");
+  const description = readString(formData, "description") || null;
+  const fileUrl = readString(formData, "fileUrl") || null;
+  const pdfFile = readFile(formData, "pdfFile");
+  const expiresAt = readString(formData, "expiresAt") || null;
+  const sortOrder = readNumber(formData, "sortOrder") ?? 0;
+  const isActive = readBoolean(formData, "isActive");
+
+  if (!branchId || !companySlug || !branchSlug || !sectionKey || !title) {
+    return { error: "Debes completar la sección, el título y la sede correctamente." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  let resolvedFileUrl = fileUrl;
+
+  if (pdfFile) {
+    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+    resolvedFileUrl = uploadedFile.fileUrl;
+  }
+
+  const { error } = await supabase.from("branch_documents").insert({
+    branch_id: branchId,
+    section_key: sectionKey,
+    title,
+    description,
+    file_url: resolvedFileUrl,
+    expires_at: expiresAt || null,
+    sort_order: sortOrder,
+    is_active: isActive,
+  });
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible crear el documento.") };
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  return { success: `Documento "${title}" creado correctamente.` };
+}
+
+export async function updateBranchDocument(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const documentId = readString(formData, "documentId");
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const sectionKey = readString(formData, "sectionKey");
+  const title = readString(formData, "title");
+  const description = readString(formData, "description") || null;
+  const fileUrl = readString(formData, "fileUrl") || null;
+  const pdfFile = readFile(formData, "pdfFile");
+  const expiresAt = readString(formData, "expiresAt") || null;
+  const sortOrder = readNumber(formData, "sortOrder") ?? 0;
+  const isActive = readBoolean(formData, "isActive");
+
+  if (!documentId || !branchId || !companySlug || !branchSlug || !sectionKey || !title) {
+    return { error: "Debes completar los datos del documento correctamente." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const { data: currentDocument, error: currentDocumentError } = await supabase
+    .from("branch_documents")
+    .select("file_url")
+    .eq("id", documentId)
+    .eq("branch_id", branchId)
+    .maybeSingle<{ file_url: string | null }>();
+
+  if (currentDocumentError || !currentDocument) {
+    return { error: currentDocumentError?.message ?? "No fue posible encontrar el documento actual." };
+  }
+
+  let resolvedFileUrl = fileUrl;
+
+  if (pdfFile) {
+    await deleteBranchDocumentFile(currentDocument.file_url);
+    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+    resolvedFileUrl = uploadedFile.fileUrl;
+  }
+
+  const { error } = await supabase
+    .from("branch_documents")
+    .update({
+      section_key: sectionKey,
+      title,
+      description,
+      file_url: resolvedFileUrl,
+      expires_at: expiresAt || null,
+      sort_order: sortOrder,
+      is_active: isActive,
+    })
+    .eq("id", documentId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible actualizar el documento.") };
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  return { success: `Documento "${title}" actualizado correctamente.` };
+}
+
+export async function deleteBranchDocument(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const documentId = readString(formData, "documentId");
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+
+  if (!documentId || !branchId || !companySlug || !branchSlug) {
+    return { error: "Debes indicar el documento y la sede correctamente." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const { data: currentDocument, error: currentDocumentError } = await supabase
+    .from("branch_documents")
+    .select("file_url")
+    .eq("id", documentId)
+    .eq("branch_id", branchId)
+    .maybeSingle<{ file_url: string | null }>();
+
+  if (currentDocumentError || !currentDocument) {
+    return { error: currentDocumentError?.message ?? "No fue posible encontrar el documento." };
+  }
+
+  const { error } = await supabase.from("branch_documents").delete().eq("id", documentId).eq("branch_id", branchId);
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible eliminar el documento.") };
+  }
+
+  await deleteBranchDocumentFile(currentDocument.file_url);
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  return { success: "Documento eliminado correctamente." };
+}
+
+export async function createBranchDocumentAction(formData: FormData) {
+  await createBranchDocument(undefined, formData);
+}
+
+export async function updateBranchDocumentAction(formData: FormData) {
+  await updateBranchDocument(undefined, formData);
+}
+
+export async function deleteBranchDocumentAction(formData: FormData) {
+  await deleteBranchDocument(undefined, formData);
+}
+
+export async function regenerateBranchQrAction(formData: FormData) {
+  const qrId = readString(formData, "qrId");
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+
+  if (!qrId || !branchId || !companySlug || !branchSlug) {
+    return;
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    throw new Error("La sede seleccionada no coincide con la ruta actual.");
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { error } = await supabase
+    .from("branch_form_qr_codes")
+    .update({
+      token: crypto.randomUUID(),
+      regenerated_at: new Date().toISOString(),
+      is_active: true,
+    })
+    .eq("id", qrId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible regenerar el QR."));
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+}
+
+async function createBranchCatalogItem({
+  formData,
+  tableName,
+}: {
+  formData: FormData;
+  tableName: "branch_refrigeration_equipment" | "branch_sanitation_areas";
+}) {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const name = readString(formData, "name");
+
+  if (!branchId || !companySlug || !branchSlug || !name) {
+    return;
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    throw new Error("La sede seleccionada no coincide con la ruta actual.");
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { error } = await supabase.from(tableName).insert({
+    branch_id: branchId,
+    company_id: branch.companyId,
+    name,
+    is_active: true,
+  });
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible crear el catalogo de la sede."));
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+}
+
+async function toggleBranchCatalogItem({
+  formData,
+  tableName,
+}: {
+  formData: FormData;
+  tableName: "branch_refrigeration_equipment" | "branch_sanitation_areas";
+}) {
+  const itemId = readString(formData, "itemId");
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const nextIsActive = readBoolean(formData, "nextIsActive");
+
+  if (!itemId || !branchId || !companySlug || !branchSlug) {
+    return;
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    throw new Error("La sede seleccionada no coincide con la ruta actual.");
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { error } = await supabase
+    .from(tableName)
+    .update({ is_active: nextIsActive })
+    .eq("id", itemId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible actualizar el catalogo de la sede."));
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+}
+
+export async function createBranchRefrigerationEquipmentAction(formData: FormData) {
+  await createBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+}
+
+export async function toggleBranchRefrigerationEquipmentAction(formData: FormData) {
+  await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+}
+
+export async function createBranchSanitationAreaAction(formData: FormData) {
+  await createBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+}
+
+export async function toggleBranchSanitationAreaAction(formData: FormData) {
+  await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+}
+
+export async function ensureBranchQrCodeAction(formData: FormData) {
+  const branchId = readString(formData, "branchId");
+  const companyId = readString(formData, "companyId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const formType = readString(formData, "formType");
+
+  if (!branchId || !companyId || !companySlug || !branchSlug || !isOperationalFormType(formType)) {
+    return;
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId || branch.companyId !== companyId) {
+    throw new Error("La sede seleccionada no coincide con la ruta actual.");
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { error } = await supabase.from("branch_form_qr_codes").insert({
+    branch_id: branchId,
+    company_id: companyId,
+    form_type: formType,
+  });
+
+  if (error && error.code !== "23505") {
+    throw new Error(formatDatabaseError(error, "No fue posible crear el QR de la sede."));
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
 }
 
 async function createUserRecord({
@@ -365,10 +863,16 @@ export async function updateCompanyBranch(
     return { error: formatDatabaseError(error, "No fue posible actualizar la sede.") };
   }
 
+  const branchRouteTarget = await resolveBranchRouteTarget(branchId);
+
   revalidatePath("/dashboard");
 
   if (companySlug) {
     revalidatePath(`/dashboard/companies/${companySlug}`);
+  }
+
+  if (branchRouteTarget) {
+    revalidatePath(`/dashboard/sedes/${branchRouteTarget.companySlug}/${branchRouteTarget.branchSlug}`);
   }
 
   return { success: `Sede "${name}" actualizada correctamente.` };
@@ -478,10 +982,16 @@ export async function toggleCompanyBranchStatus(formData: FormData): Promise<voi
     throw new Error(error.message);
   }
 
+  const branchRouteTarget = await resolveBranchRouteTarget(branchId);
+
   revalidatePath("/dashboard");
 
   if (companySlug) {
     revalidatePath(`/dashboard/companies/${companySlug}`);
+  }
+
+  if (branchRouteTarget) {
+    revalidatePath(`/dashboard/sedes/${branchRouteTarget.companySlug}/${branchRouteTarget.branchSlug}`);
   }
 }
 
@@ -508,9 +1018,15 @@ export async function setMainCompanyBranch(formData: FormData): Promise<void> {
     throw new Error(formatDatabaseError(error, "No fue posible actualizar la sede principal."));
   }
 
+  const branchRouteTarget = await resolveBranchRouteTarget(branchId);
+
   revalidatePath("/dashboard");
 
   if (companySlug) {
     revalidatePath(`/dashboard/companies/${companySlug}`);
+  }
+
+  if (branchRouteTarget) {
+    revalidatePath(`/dashboard/sedes/${branchRouteTarget.companySlug}/${branchRouteTarget.branchSlug}`);
   }
 }

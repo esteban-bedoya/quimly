@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CompanyAdminDashboard } from "@/components/dashboard/company-admin-dashboard";
 import {
   CompanyStatusToggle,
   CompanyBranchStatusBadge,
@@ -15,7 +16,11 @@ import {
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
 import { logout } from "@/app/login/actions";
-import { getAccessibleCompanies, requireAuthenticatedUser } from "@/lib/auth/authorization";
+import {
+  getAccessibleBranches,
+  getAccessibleCompanies,
+  requireAuthenticatedUser,
+} from "@/lib/auth/authorization";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { CompanyBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
@@ -136,11 +141,14 @@ async function getManagementData(role: UserProfile["globalRole"]) {
 
 export default async function DashboardPage() {
   const { profile } = await requireAuthenticatedUser();
+
+  if (profile.globalRole === "company_admin") {
+    const accessibleBranches = await getAccessibleBranches({ profile });
+    return <CompanyAdminDashboard profile={profile} branches={accessibleBranches} />;
+  }
+
   const accessibleCompanies = await getAccessibleCompanies({ profile });
-  const managementData =
-    profile.globalRole === "owner" || profile.globalRole === "super_admin"
-      ? await getManagementData(profile.globalRole)
-      : null;
+  const managementData = await getManagementData(profile.globalRole);
   const companiesAvailableForAdminAssignment =
     managementData?.companies.filter((company) => !company.companyAdminUserId) ?? [];
 
@@ -256,14 +264,6 @@ export default async function DashboardPage() {
                 </>
               ) : null}
 
-              {profile.globalRole === "company_admin" ? (
-                <>
-                  <li>Puede operar únicamente dentro de sus empresas asignadas.</li>
-                  <li>Solo visualiza sedes activas habilitadas por Quimly.</li>
-                  <li>Puede gestionar información operativa y configuración básica de su negocio.</li>
-                  <li>No tiene acceso al panel interno de Quimly ni a roles globales.</li>
-                </>
-              ) : null}
             </ul>
           </article>
         </section>

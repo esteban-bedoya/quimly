@@ -54,6 +54,191 @@ create table if not exists public.branches (
   constraint branches_slug_format check (slug = lower(slug))
 );
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'branch_dashboard_module_kind'
+  ) then
+    create type public.branch_dashboard_module_kind as enum ('operational', 'compliance');
+  end if;
+end $$;
+
+create table if not exists public.branch_dashboard_items (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  module_kind public.branch_dashboard_module_kind not null,
+  slug text not null,
+  title text not null,
+  subtitle text not null,
+  requires_expiration boolean not null default false,
+  is_active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (branch_id, module_kind, slug)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'branch_document_section_key'
+  ) then
+    create type public.branch_document_section_key as enum (
+      'manuals_protocols',
+      'plant_certifications',
+      'traceability_supplies',
+      'staff_records'
+    );
+  end if;
+end $$;
+
+create table if not exists public.branch_documents (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  section_key public.branch_document_section_key not null,
+  title text not null,
+  description text,
+  file_url text,
+  expires_at date,
+  is_active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (branch_id, section_key, title)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'operational_form_type'
+  ) then
+    create type public.operational_form_type as enum (
+      'thermal_control',
+      'area_sanitation',
+      'supply_reception',
+      'water_quality'
+    );
+  end if;
+end $$;
+
+create table if not exists public.branch_form_qr_codes (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  form_type public.operational_form_type not null,
+  token text not null unique default gen_random_uuid()::text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  regenerated_at timestamptz,
+  unique (branch_id, form_type),
+  constraint branch_form_qr_codes_token_length check (char_length(token) >= 32)
+);
+
+create table if not exists public.branch_refrigeration_equipment (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (branch_id, name)
+);
+
+create table if not exists public.branch_sanitation_areas (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (branch_id, name)
+);
+
+create table if not exists public.thermal_control_records (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete restrict,
+  company_id uuid not null references public.companies (id) on delete restrict,
+  tipo_formulario public.operational_form_type not null default 'thermal_control',
+  fecha_hora_servidor timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  token_qr_utilizado text not null,
+  qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
+  equipment_id uuid references public.branch_refrigeration_equipment (id) on delete set null,
+  equipment_name text not null,
+  operator_name text not null,
+  temperature_c numeric(5,2) not null,
+  constraint thermal_control_records_tipo_check check (tipo_formulario = 'thermal_control')
+);
+
+create table if not exists public.area_sanitation_records (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete restrict,
+  company_id uuid not null references public.companies (id) on delete restrict,
+  tipo_formulario public.operational_form_type not null default 'area_sanitation',
+  fecha_hora_servidor timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  token_qr_utilizado text not null,
+  qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
+  area_id uuid references public.branch_sanitation_areas (id) on delete set null,
+  area_name text not null,
+  operator_name text not null,
+  is_compliant boolean not null,
+  constraint area_sanitation_records_tipo_check check (tipo_formulario = 'area_sanitation')
+);
+
+create table if not exists public.supply_reception_records (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete restrict,
+  company_id uuid not null references public.companies (id) on delete restrict,
+  tipo_formulario public.operational_form_type not null default 'supply_reception',
+  fecha_hora_servidor timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  token_qr_utilizado text not null,
+  qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
+  operator_name text not null,
+  product_name text not null,
+  provider_name text not null,
+  expiration_date date not null,
+  constraint supply_reception_records_tipo_check check (tipo_formulario = 'supply_reception')
+);
+
+create table if not exists public.water_quality_records (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete restrict,
+  company_id uuid not null references public.companies (id) on delete restrict,
+  tipo_formulario public.operational_form_type not null default 'water_quality',
+  fecha_hora_servidor timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  token_qr_utilizado text not null,
+  qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
+  operator_name text not null,
+  chlorine_ppm numeric(4,2) not null,
+  constraint water_quality_records_tipo_check check (tipo_formulario = 'water_quality'),
+  constraint water_quality_records_chlorine_range check (chlorine_ppm between 0.3 and 2.0)
+);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+select
+  'branch-documents',
+  'branch-documents',
+  true,
+  20971520,
+  array['application/pdf']
+where not exists (
+  select 1
+  from storage.buckets
+  where id = 'branch-documents'
+);
+
 create table if not exists public.demo_requests (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -99,6 +284,39 @@ begin
 end;
 $$;
 
+create or replace function public.set_company_id_from_branch()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  resolved_company_id uuid;
+begin
+  if tg_table_name in (
+    'branch_form_qr_codes',
+    'branch_refrigeration_equipment',
+    'branch_sanitation_areas'
+  ) then
+    select b.company_id
+    into resolved_company_id
+    from public.branches b
+    where b.id = new.branch_id;
+  else
+    select b.company_id
+    into resolved_company_id
+    from public.branches b
+    where b.id = new.sede_id;
+  end if;
+
+  if resolved_company_id is null then
+    raise exception 'La sede indicada no existe.';
+  end if;
+
+  new.company_id = resolved_company_id;
+  return new;
+end;
+$$;
+
 drop trigger if exists set_companies_updated_at on public.companies;
 create trigger set_companies_updated_at
 before update on public.companies
@@ -128,6 +346,205 @@ create trigger set_branches_slug
 before insert or update of name on public.branches
 for each row
 execute function public.set_slug_from_name();
+
+drop trigger if exists set_branch_dashboard_items_updated_at on public.branch_dashboard_items;
+create trigger set_branch_dashboard_items_updated_at
+before update on public.branch_dashboard_items
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_documents_updated_at on public.branch_documents;
+create trigger set_branch_documents_updated_at
+before update on public.branch_documents
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_form_qr_codes_company_id on public.branch_form_qr_codes;
+create trigger set_branch_form_qr_codes_company_id
+before insert or update of branch_id, company_id on public.branch_form_qr_codes
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_form_qr_codes_updated_at on public.branch_form_qr_codes;
+create trigger set_branch_form_qr_codes_updated_at
+before update on public.branch_form_qr_codes
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_refrigeration_equipment_company_id on public.branch_refrigeration_equipment;
+create trigger set_branch_refrigeration_equipment_company_id
+before insert or update of branch_id, company_id on public.branch_refrigeration_equipment
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_refrigeration_equipment_updated_at on public.branch_refrigeration_equipment;
+create trigger set_branch_refrigeration_equipment_updated_at
+before update on public.branch_refrigeration_equipment
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_sanitation_areas_company_id on public.branch_sanitation_areas;
+create trigger set_branch_sanitation_areas_company_id
+before insert or update of branch_id, company_id on public.branch_sanitation_areas
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_sanitation_areas_updated_at on public.branch_sanitation_areas;
+create trigger set_branch_sanitation_areas_updated_at
+before update on public.branch_sanitation_areas
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_thermal_control_records_company_id on public.thermal_control_records;
+create trigger set_thermal_control_records_company_id
+before insert or update of sede_id, company_id on public.thermal_control_records
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_area_sanitation_records_company_id on public.area_sanitation_records;
+create trigger set_area_sanitation_records_company_id
+before insert or update of sede_id, company_id on public.area_sanitation_records
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_supply_reception_records_company_id on public.supply_reception_records;
+create trigger set_supply_reception_records_company_id
+before insert or update of sede_id, company_id on public.supply_reception_records
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_water_quality_records_company_id on public.water_quality_records;
+create trigger set_water_quality_records_company_id
+before insert or update of sede_id, company_id on public.water_quality_records
+for each row
+execute function public.set_company_id_from_branch();
+
+create or replace function public.seed_default_branch_dashboard_items()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  insert into public.branch_dashboard_items (
+    branch_id,
+    module_kind,
+    slug,
+    title,
+    subtitle,
+    requires_expiration,
+    is_active,
+    sort_order
+  )
+  values
+    (new.id, 'operational', 'saneamiento-de-areas', 'Saneamiento de Áreas', 'Checklist de Limpieza', false, true, 10),
+    (new.id, 'operational', 'control-termico', 'Control Térmico', 'Control de Frío', false, true, 20),
+    (new.id, 'operational', 'recepcion-de-insumos', 'Recepción de Insumos', 'Entrada de Mercancía', false, true, 30),
+    (new.id, 'operational', 'calidad-del-agua', 'Calidad del Agua', 'Prueba de Cloro', false, true, 40),
+    (new.id, 'compliance', 'manuales-y-protocolos', 'Manuales y Protocolos', 'Saneamiento + Químicos', false, true, 10),
+    (new.id, 'compliance', 'certificaciones-de-planta', 'Certificaciones de Planta', 'Fumigación y Tanques', true, true, 20),
+    (new.id, 'compliance', 'trazabilidad-de-insumos', 'Trazabilidad de Insumos', 'Fichas técnicas + hojas de seguridad', false, true, 30),
+    (new.id, 'compliance', 'fichas-del-personal', 'Fichas del Personal', 'Curso de manipulación + exámenes médicos', true, true, 40)
+  on conflict (branch_id, module_kind, slug) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists seed_default_branch_dashboard_items on public.branches;
+create trigger seed_default_branch_dashboard_items
+after insert on public.branches
+for each row
+execute function public.seed_default_branch_dashboard_items();
+
+create or replace function public.seed_default_branch_form_qr_codes()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  insert into public.branch_form_qr_codes (
+    branch_id,
+    company_id,
+    form_type
+  )
+  values
+    (new.id, new.company_id, 'thermal_control'),
+    (new.id, new.company_id, 'area_sanitation'),
+    (new.id, new.company_id, 'supply_reception'),
+    (new.id, new.company_id, 'water_quality')
+  on conflict (branch_id, form_type) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists seed_default_branch_form_qr_codes on public.branches;
+create trigger seed_default_branch_form_qr_codes
+after insert on public.branches
+for each row
+execute function public.seed_default_branch_form_qr_codes();
+
+insert into public.branch_dashboard_items (
+  branch_id,
+  module_kind,
+  slug,
+  title,
+  subtitle,
+  requires_expiration,
+  is_active,
+  sort_order
+)
+select
+  b.id,
+  items.module_kind,
+  items.slug,
+  items.title,
+  items.subtitle,
+  items.requires_expiration,
+  items.is_active,
+  items.sort_order
+from public.branches b
+cross join (
+  values
+    ('operational'::public.branch_dashboard_module_kind, 'saneamiento-de-areas', 'Saneamiento de Áreas', 'Checklist de Limpieza', false, true, 10),
+    ('operational'::public.branch_dashboard_module_kind, 'control-termico', 'Control Térmico', 'Control de Frío', false, true, 20),
+    ('operational'::public.branch_dashboard_module_kind, 'recepcion-de-insumos', 'Recepción de Insumos', 'Entrada de Mercancía', false, true, 30),
+    ('operational'::public.branch_dashboard_module_kind, 'calidad-del-agua', 'Calidad del Agua', 'Prueba de Cloro', false, true, 40),
+    ('compliance'::public.branch_dashboard_module_kind, 'manuales-y-protocolos', 'Manuales y Protocolos', 'Saneamiento + Químicos', false, true, 10),
+    ('compliance'::public.branch_dashboard_module_kind, 'certificaciones-de-planta', 'Certificaciones de Planta', 'Fumigación y Tanques', true, true, 20),
+    ('compliance'::public.branch_dashboard_module_kind, 'trazabilidad-de-insumos', 'Trazabilidad de Insumos', 'Fichas técnicas + hojas de seguridad', false, true, 30),
+    ('compliance'::public.branch_dashboard_module_kind, 'fichas-del-personal', 'Fichas del Personal', 'Curso de manipulación + exámenes médicos', true, true, 40)
+) as items(module_kind, slug, title, subtitle, requires_expiration, is_active, sort_order)
+on conflict (branch_id, module_kind, slug) do nothing;
+
+insert into public.branch_form_qr_codes (
+  branch_id,
+  company_id,
+  form_type
+)
+select
+  b.id,
+  b.company_id,
+  forms.form_type
+from public.branches b
+cross join (
+  values
+    ('thermal_control'::public.operational_form_type),
+    ('area_sanitation'::public.operational_form_type),
+    ('supply_reception'::public.operational_form_type),
+    ('water_quality'::public.operational_form_type)
+) as forms(form_type)
+on conflict (branch_id, form_type) do nothing;
+
+create or replace function public.can_manage_branch_documents(target_branch_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.can_access_branch(target_branch_id)
+$$;
 
 create or replace function public.current_profile_role()
 returns public.app_role
@@ -371,6 +788,15 @@ $$;
 alter table public.companies enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.branches enable row level security;
+alter table public.branch_dashboard_items enable row level security;
+alter table public.branch_documents enable row level security;
+alter table public.branch_form_qr_codes enable row level security;
+alter table public.branch_refrigeration_equipment enable row level security;
+alter table public.branch_sanitation_areas enable row level security;
+alter table public.thermal_control_records enable row level security;
+alter table public.area_sanitation_records enable row level security;
+alter table public.supply_reception_records enable row level security;
+alter table public.water_quality_records enable row level security;
 alter table public.demo_requests enable row level security;
 
 drop policy if exists "companies_select_policy" on public.companies;
@@ -490,6 +916,161 @@ with check (
   )
   and public.can_access_company(company_id)
 );
+
+drop policy if exists "branch_dashboard_items_select_policy" on public.branch_dashboard_items;
+create policy "branch_dashboard_items_select_policy"
+on public.branch_dashboard_items
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_dashboard_items_insert_policy" on public.branch_dashboard_items;
+create policy "branch_dashboard_items_insert_policy"
+on public.branch_dashboard_items
+for insert
+with check (
+  (
+    public.is_owner()
+    or public.is_super_admin()
+  )
+  and public.can_access_branch(branch_id)
+);
+
+drop policy if exists "branch_dashboard_items_update_policy" on public.branch_dashboard_items;
+create policy "branch_dashboard_items_update_policy"
+on public.branch_dashboard_items
+for update
+using (
+  (
+    public.is_owner()
+    or public.is_super_admin()
+  )
+  and public.can_access_branch(branch_id)
+)
+with check (
+  (
+    public.is_owner()
+    or public.is_super_admin()
+  )
+  and public.can_access_branch(branch_id)
+);
+
+drop policy if exists "branch_dashboard_items_delete_policy" on public.branch_dashboard_items;
+create policy "branch_dashboard_items_delete_policy"
+on public.branch_dashboard_items
+for delete
+using (
+  (
+    public.is_owner()
+    or public.is_super_admin()
+  )
+  and public.can_access_branch(branch_id)
+);
+
+drop policy if exists "branch_documents_select_policy" on public.branch_documents;
+create policy "branch_documents_select_policy"
+on public.branch_documents
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_documents_insert_policy" on public.branch_documents;
+create policy "branch_documents_insert_policy"
+on public.branch_documents
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_documents_update_policy" on public.branch_documents;
+create policy "branch_documents_update_policy"
+on public.branch_documents
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_documents_delete_policy" on public.branch_documents;
+create policy "branch_documents_delete_policy"
+on public.branch_documents
+for delete
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_form_qr_codes_select_policy" on public.branch_form_qr_codes;
+create policy "branch_form_qr_codes_select_policy"
+on public.branch_form_qr_codes
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_form_qr_codes_insert_policy" on public.branch_form_qr_codes;
+create policy "branch_form_qr_codes_insert_policy"
+on public.branch_form_qr_codes
+for insert
+with check (public.can_access_company(company_id));
+
+drop policy if exists "branch_form_qr_codes_update_policy" on public.branch_form_qr_codes;
+create policy "branch_form_qr_codes_update_policy"
+on public.branch_form_qr_codes
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_refrigeration_equipment_select_policy" on public.branch_refrigeration_equipment;
+create policy "branch_refrigeration_equipment_select_policy"
+on public.branch_refrigeration_equipment
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_refrigeration_equipment_insert_policy" on public.branch_refrigeration_equipment;
+create policy "branch_refrigeration_equipment_insert_policy"
+on public.branch_refrigeration_equipment
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_refrigeration_equipment_update_policy" on public.branch_refrigeration_equipment;
+create policy "branch_refrigeration_equipment_update_policy"
+on public.branch_refrigeration_equipment
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitation_areas_select_policy" on public.branch_sanitation_areas;
+create policy "branch_sanitation_areas_select_policy"
+on public.branch_sanitation_areas
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitation_areas_insert_policy" on public.branch_sanitation_areas;
+create policy "branch_sanitation_areas_insert_policy"
+on public.branch_sanitation_areas
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitation_areas_update_policy" on public.branch_sanitation_areas;
+create policy "branch_sanitation_areas_update_policy"
+on public.branch_sanitation_areas
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "thermal_control_records_select_policy" on public.thermal_control_records;
+create policy "thermal_control_records_select_policy"
+on public.thermal_control_records
+for select
+using (public.can_access_branch(sede_id));
+
+drop policy if exists "area_sanitation_records_select_policy" on public.area_sanitation_records;
+create policy "area_sanitation_records_select_policy"
+on public.area_sanitation_records
+for select
+using (public.can_access_branch(sede_id));
+
+drop policy if exists "supply_reception_records_select_policy" on public.supply_reception_records;
+create policy "supply_reception_records_select_policy"
+on public.supply_reception_records
+for select
+using (public.can_access_branch(sede_id));
+
+drop policy if exists "water_quality_records_select_policy" on public.water_quality_records;
+create policy "water_quality_records_select_policy"
+on public.water_quality_records
+for select
+using (public.can_access_branch(sede_id));
 
 drop policy if exists "demo_requests_select_policy" on public.demo_requests;
 create policy "demo_requests_select_policy"
