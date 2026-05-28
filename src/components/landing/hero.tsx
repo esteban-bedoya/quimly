@@ -48,7 +48,7 @@ export function Hero() {
           <div className="w-full max-w-[420px] sm:max-w-[560px] lg:max-w-[760px]">
             <div>
               <Image
-                src="/images/celular5.PNG"
+                src="/images/celular5.png"
                 alt="Vista de Quimly en un celular"
                 width={1277}
                 height={1232}
