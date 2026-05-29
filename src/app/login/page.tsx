@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
@@ -19,8 +20,15 @@ export default async function LoginPage() {
         <div className="grid w-full overflow-hidden rounded-[2rem] border border-white/60 bg-white/70 shadow-[0_24px_80px_rgba(18,17,15,0.12)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
           <section className="flex flex-col justify-between bg-[#12110f] px-6 py-8 text-white sm:px-8 sm:py-10">
             <div className="space-y-6">
-              <Link href="/" className="inline-flex text-sm font-semibold tracking-[0.2em] text-[#7ad9dd] uppercase">
-                Quimly
+              <Link href="/" className="inline-flex w-fit items-center transition duration-300 hover:scale-[1.04]">
+                <Image
+                  src="/logos/quimly_logoo.png"
+                  alt="Quimly"
+                  width={162}
+                  height={40}
+                  priority
+                  className="h-9 w-auto sm:h-10"
+                />
               </Link>
               <div className="space-y-4">
                 <p className="w-fit rounded-full border border-white/12 px-3 py-1.5 text-[0.72rem] font-bold uppercase tracking-[0.24em] text-[#7ad9dd]">

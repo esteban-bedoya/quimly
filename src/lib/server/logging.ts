@@ -9,6 +9,27 @@ function normalizeError(error: unknown) {
     };
   }
 
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+
+    return {
+      message:
+        typeof record.message === "string"
+          ? record.message
+          : (() => {
+              try {
+                return JSON.stringify(error);
+              } catch {
+                return String(error);
+              }
+            })(),
+      code: typeof record.code === "string" ? record.code : undefined,
+      details: typeof record.details === "string" ? record.details : undefined,
+      hint: typeof record.hint === "string" ? record.hint : undefined,
+      name: typeof record.name === "string" ? record.name : undefined,
+    };
+  }
+
   return {
     message: String(error),
   };

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState } from "react";
 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
@@ -39,7 +40,14 @@ export function OperationalPublicForm({
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-md flex-col justify-center">
         <section className="overflow-hidden rounded-[2rem] border border-[#cfe0dc] bg-white shadow-[0_24px_80px_rgba(17,24,22,0.12)]">
           <div className="bg-[radial-gradient(circle_at_top_left,#d6fff4_0%,#f5fffb_42%,#ffffff_100%)] px-5 py-6">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-[#147060]">Quimly publico</p>
+            <Image
+              src="/logos/quimly_logoo.png"
+              alt="Quimly"
+              width={146}
+              height={48}
+              priority
+              className="h-10 w-auto"
+            />
             <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]">{label.title}</h1>
             <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p>
             <div className="mt-4 rounded-2xl border border-[#cfe0dc] bg-white/80 px-4 py-3">
