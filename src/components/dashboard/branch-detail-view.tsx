@@ -1,6 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   createBranchRefrigerationEquipmentAction,
@@ -12,7 +14,7 @@ import {
   updateBranchDocumentAction,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
-import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
+import { operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
 import type {
   BranchCatalogItemSummary,
   BranchDocumentSectionKey,
@@ -52,6 +54,8 @@ type BranchSectionMeta = {
   hint: string;
 };
 
+type BranchSectionKey = "home" | "operational" | "compliance";
+
 const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
   manuals_protocols: {
     title: "Manuales y Protocolos",
@@ -74,6 +78,11 @@ const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
     hint: "Registros con semaforo de vencimiento.",
   },
 };
+
+const productCardSurface =
+  "border border-white/80 bg-white/74 shadow-[0_28px_70px_rgba(18,17,15,0.14)] backdrop-blur-xl";
+const productCardSurfaceSoft =
+  "border border-white/55 bg-white/48 shadow-[0_18px_45px_rgba(18,17,15,0.08)] backdrop-blur-xl";
 
 function formatDate(dateValue: string | null) {
   if (!dateValue) {
@@ -131,45 +140,109 @@ function BranchLayout({
 }: {
   company: CompanySummary;
   branch: BranchDetailViewProps["branch"];
-  currentSection: "home" | "operational" | "compliance";
+  currentSection: BranchSectionKey;
   children: ReactNode;
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const basePath = `/dashboard/sedes/${company.slug}/${branch.slug}`;
   const navigation = [
-    { key: "home", href: basePath, label: "Resumen" },
-    { key: "operational", href: `${basePath}/operacion`, label: "Control operativo" },
-    { key: "compliance", href: `${basePath}/cumplimiento`, label: "Cumplimiento normativo" },
+    { key: "home", href: basePath, label: "Panel" },
+    { key: "operational", href: `${basePath}/operacion`, label: "Operaciones" },
+    { key: "compliance", href: `${basePath}/cumplimiento`, label: "Normativa" },
   ] as const;
 
+  useEffect(() => {
+    const closeMenu = () => setIsMenuOpen(false);
+
+    window.addEventListener("scroll", closeMenu, { passive: true });
+    window.addEventListener("resize", closeMenu);
+
+    return () => {
+      window.removeEventListener("scroll", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, []);
+
+  const activeIndex = navigation.findIndex((item) => item.key === currentSection);
+
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#f8fafb_45%,#edf4f2_100%)] px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <section className="overflow-hidden rounded-[2rem] border border-[#d8e5e6] bg-white shadow-[0_20px_60px_rgba(18,17,15,0.06)]">
-          <div className="border-b border-[#d8e5e6] bg-[radial-gradient(circle_at_top_left,#ffffff_0%,#f7fcfb_48%,#edf7f5_100%)] px-5 py-6 sm:px-8 sm:py-8">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[#12110f] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[#8fe3d5]">
-                    Sede
-                  </span>
-                  {branch.isMain ? (
-                    <span className="rounded-full border border-[#bde5e7] bg-[#effbfb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#1c6a71]">
-                      Principal
-                    </span>
-                  ) : null}
-                  <span className="rounded-full border border-[#d8e5e6] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#66727a]">
-                    {branch.isActive ? "Activa" : "Inactiva"}
-                  </span>
-                </div>
+        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
+          <div className="absolute right-5 top-5 sm:right-8 sm:top-6">
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={isMenuOpen}
+                aria-label="Abrir menú"
+                onClick={() => setIsMenuOpen((currentValue) => !currentValue)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 text-white transition duration-300 hover:scale-[1.04] hover:bg-[#48c7d2]/16"
+              >
+                <span className="flex flex-col gap-1">
+                  <span
+                    className={`block h-0.5 w-4 rounded-full bg-current transition ${
+                      isMenuOpen ? "translate-y-1.5 rotate-45" : ""
+                    }`}
+                  />
+                  <span
+                    className={`block h-0.5 w-4 rounded-full bg-current transition ${
+                      isMenuOpen ? "opacity-0" : ""
+                    }`}
+                  />
+                  <span
+                    className={`block h-0.5 w-4 rounded-full bg-current transition ${
+                      isMenuOpen ? "-translate-y-1.5 -rotate-45" : ""
+                    }`}
+                  />
+                </span>
+              </button>
 
-                <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-[#2a7f86]">{company.name}</p>
-                  <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[#12110f] sm:text-5xl">
-                    {branch.name}
-                  </h1>
+              {isMenuOpen ? (
+                <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 flex min-w-[220px] flex-col gap-2 rounded-[1.5rem] border border-[#48c7d2]/30 bg-[#12110f] p-3 shadow-[0_18px_45px_rgba(18,17,15,0.24)]">
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16"
+                  >
+                    Cambiar de sede
+                  </Link>
+                  <form action={logout} className="flex">
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16"
+                    >
+                      Cerrar sesion
+                    </button>
+                  </form>
                 </div>
+              ) : null}
+            </div>
+          </div>
 
-                <nav className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-4 lg:items-start">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm uppercase tracking-[0.24em] text-[#8fe3d5]">{branch.name}</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-[#e5ecec] sm:text-4xl">
+                  {company.name}
+                </h1>
+              </div>
+
+              <p className="max-w-2xl text-sm leading-7 text-white/72 sm:text-base">
+                Elige el frente que deseas gestionar
+              </p>
+
+              <nav className="origin-left pr-14 max-[420px]:scale-[0.94] sm:pr-16 sm:scale-100">
+                <div className="relative grid min-h-12 grid-cols-3 rounded-[1.45rem] border border-white/10 bg-[rgba(68,66,62,0.72)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-1 left-1 top-1 rounded-[1.05rem] bg-[#f1f1f1] shadow-[0_10px_24px_rgba(18,17,15,0.22)] transition-transform duration-300 ease-out"
+                    style={{
+                      width: "calc((100% - 0.5rem) / 3)",
+                      transform: `translateX(calc(${activeIndex} * 100% + ${activeIndex} * 0.25rem))`,
+                    }}
+                  />
+
                   {navigation.map((item) => {
                     const isActive = item.key === currentSection;
 
@@ -177,40 +250,21 @@ function BranchLayout({
                       <Link
                         key={item.key}
                         href={item.href}
-                        className={`inline-flex min-h-10 items-center justify-center rounded-full px-4 text-sm font-semibold transition ${
-                          isActive
-                            ? "bg-[#12110f] text-white"
-                            : "border border-[#d8e5e6] bg-white text-[#12110f] hover:bg-[#f7fbfb]"
+                        className={`relative z-10 inline-flex min-h-10 min-w-0 items-center justify-center rounded-[1rem] px-3 text-center text-sm transition duration-300 sm:px-4 ${
+                          isActive ? "font-semibold text-[#12110f]" : "font-medium text-white/68 hover:text-white"
                         }`}
                       >
-                        {item.label}
+                        <span className="truncate">{item.label}</span>
                       </Link>
                     );
                   })}
-                </nav>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <Link
-                  href="/dashboard"
-                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#d8e5e6] bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f8fbfb]"
-                >
-                  Volver al dashboard
-                </Link>
-                <form action={logout} className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
-                  >
-                    Cerrar sesion
-                  </button>
-                </form>
-              </div>
+                </div>
+              </nav>
             </div>
           </div>
-
-          <div className="p-5 sm:p-8">{children}</div>
         </section>
+
+        <div className="mx-auto w-full max-w-[74rem]">{children}</div>
       </div>
     </main>
   );
@@ -227,9 +281,7 @@ function SummaryStat({
 }) {
   return (
     <div
-      className={`rounded-[1.4rem] border px-4 py-4 ${
-        tone === "accent" ? "border-[#c7ece4] bg-[#f1fbf8]" : "border-[#d8e5e6] bg-white"
-      }`}
+      className={`rounded-[1.4rem] px-4 py-4 ${tone === "accent" ? productCardSurface : productCardSurfaceSoft}`}
     >
       <p className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-[#6d7a7f]">{label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">{value}</p>
@@ -252,15 +304,11 @@ function LandingModuleCard({
 }) {
   return (
     <article
-      className={`rounded-[1.8rem] border p-5 shadow-[0_16px_44px_rgba(18,17,15,0.05)] ${
-        accent === "operational"
-          ? "border-[#d7ebe7] bg-[linear-gradient(180deg,#ffffff_0%,#f4fbf8_100%)]"
-          : "border-[#d8e5e6] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfb_100%)]"
-      }`}
+      className={`rounded-[1.8rem] p-5 ${accent === "operational" ? productCardSurface : productCardSurfaceSoft}`}
     >
       <div className="flex h-full flex-col gap-5">
         <div className="space-y-3">
-          <span className="inline-flex rounded-full border border-[#c9e8e5] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">
+          <span className="inline-flex rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">
             {accent === "operational" ? "Macro modulo" : "Repositorio"}
           </span>
           <div>
@@ -296,7 +344,7 @@ function CompactModuleList({
   items: BranchModuleItem[];
 }) {
   return (
-    <section className="rounded-[1.7rem] border border-[#d8e5e6] bg-[#fbfdfd] p-5">
+    <section className={`rounded-[1.7rem] p-5 ${productCardSurface}`}>
       <div className="space-y-2">
         <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#12110f]">{title}</h2>
         <p className="text-sm leading-6 text-[#5e6770]">{subtitle}</p>
@@ -304,14 +352,14 @@ function CompactModuleList({
 
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         {items.map((item) => (
-          <div key={item.title} className="rounded-[1.2rem] border border-[#d8e5e6] bg-white px-4 py-4">
+          <div key={item.title} className={`rounded-[1.2rem] px-4 py-4 ${productCardSurfaceSoft}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-base font-semibold tracking-[-0.02em] text-[#12110f]">{item.title}</p>
                 <p className="mt-1 text-sm leading-6 text-[#5e6770]">{item.detail}</p>
               </div>
               {item.badge ? (
-                <span className="rounded-full border border-[#bde5e7] bg-[#effbfb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#1c6a71]">
+                <span className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#1c6a71]">
                   {item.badge}
                 </span>
               ) : null}
@@ -323,62 +371,32 @@ function CompactModuleList({
   );
 }
 
-function OperationalQrBlock({
-  qrCode,
-  formType,
-}: {
-  qrCode: BranchFormQrSummary | undefined;
-  formType: OperationalFormType;
-}) {
-  const label = operationalFormLabels[formType];
-
+function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | undefined }) {
   if (!qrCode) {
     return (
-      <div className="rounded-[1.25rem] border border-dashed border-[#d8e5e6] bg-[#fbfdfe] px-4 py-5 text-sm leading-6 text-[#5e6770]">
-        El QR permanente de este formulario se crea automaticamente. Recarga la sede en unos segundos si acaba de ser
-        creada.
+      <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
+        El QR administrativo de este modulo estara disponible en unos segundos si la sede acaba de ser creada.
       </div>
     );
   }
 
-  const publicPath = createPublicFormPath(qrCode.token);
   const qrImagePath = `/api/qr/${encodeURIComponent(qrCode.token)}`;
 
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-      <Image
-        src={qrImagePath}
-        alt={`QR publico para ${label.title}`}
-        width={144}
-        height={144}
-        unoptimized
-        className="h-28 w-28 rounded-2xl border border-[#d8e5e6] bg-white p-2"
-      />
-      <div className="min-w-0 flex-1 space-y-3">
-        <div className="rounded-2xl border border-[#d8e5e6] bg-[#fbfdfe] px-3 py-3">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">URL publica</p>
-          <a
-            href={publicPath}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 block truncate text-sm font-semibold text-[#12110f] underline decoration-[#2a7f86]/25 underline-offset-4"
-          >
-            {publicPath}
-          </a>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={qrImagePath}
-            download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
-            className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#12110f] px-4 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
-          >
-            Descargar QR
-          </a>
-        </div>
-
-        <p className="text-xs leading-5 text-[#7a838a]">Token permanente: {qrCode.token}.</p>
-      </div>
+    <div className="grid min-h-9 grid-cols-2 rounded-full border border-[#12110f]/12 bg-[#fbfbfb] p-1">
+      <a
+        href={qrImagePath}
+        download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
+        className="inline-flex min-h-7 w-full items-center justify-center rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:bg-[#f1f1f1] sm:text-xs"
+      >
+        Descargar QR
+      </a>
+      <button
+        type="button"
+        className="min-h-7 w-full rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:bg-[#f1f1f1] sm:text-xs"
+      >
+        Agregar registro
+      </button>
     </div>
   );
 }
@@ -392,6 +410,8 @@ function InlineCatalogManager({
   items,
   createAction,
   toggleAction,
+  summarySingular,
+  summaryPlural,
 }: {
   title: string;
   hint: string;
@@ -401,66 +421,82 @@ function InlineCatalogManager({
   items: BranchCatalogItemSummary[];
   createAction: (formData: FormData) => void | Promise<void>;
   toggleAction: (formData: FormData) => void | Promise<void>;
+  summarySingular: string;
+  summaryPlural: string;
 }) {
+  const configuredSummary = `${items.length} ${items.length === 1 ? summarySingular : summaryPlural}`;
+
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">{title}</p>
-        <p className="mt-1 text-sm leading-6 text-[#5e6770]">{hint}</p>
-      </div>
+    <details className="group rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 backdrop-blur-xl">
+      <summary className="cursor-pointer list-none">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1">
+          <span className="text-sm font-semibold text-[#12110f]">Configurar opciones del formulario</span>
+          <span className="row-span-2 inline-flex h-6 w-6 items-center justify-center self-center">
+            <span className="block h-3 w-3 bg-[#12110f]/70 [clip-path:polygon(50%_0,100%_100%,0_100%)] transition-transform duration-200 group-open:rotate-180" />
+          </span>
+          <p className="text-xs leading-5 text-[#5e6770]">{configuredSummary}</p>
+        </div>
+      </summary>
 
-      <div className="grid gap-2">
-        {items.length ? (
-          items.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col gap-3 rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p className="font-semibold text-[#12110f]">{item.name}</p>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
-                  {item.isActive ? "Activo" : "Inactivo"}
-                </p>
+      <div className="mt-4 space-y-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">{title}</p>
+          <p className="mt-1 text-xs leading-5 text-[#5e6770]">{hint}</p>
+        </div>
+
+        <div className="grid gap-2">
+          {items.length ? (
+            items.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white/60 px-4 py-3 shadow-[0_18px_45px_rgba(18,17,15,0.08)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-semibold text-[#12110f]">{item.name}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
+                    {item.isActive ? "Activo" : "Inactivo"}
+                  </p>
+                </div>
+                <form action={toggleAction}>
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <input type="hidden" name="branchId" value={branchId} />
+                  <input type="hidden" name="companySlug" value={companySlug} />
+                  <input type="hidden" name="branchSlug" value={branchSlug} />
+                  {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
+                  <button
+                    type="submit"
+                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/80 bg-white/80 px-4 text-sm font-semibold text-[#12110f] transition hover:bg-white"
+                  >
+                    {item.isActive ? "Desactivar" : "Activar"}
+                  </button>
+                </form>
               </div>
-              <form action={toggleAction}>
-                <input type="hidden" name="itemId" value={item.id} />
-                <input type="hidden" name="branchId" value={branchId} />
-                <input type="hidden" name="companySlug" value={companySlug} />
-                <input type="hidden" name="branchSlug" value={branchSlug} />
-                {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
-                <button
-                  type="submit"
-                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#d8e5e6] bg-[#fbfdfe] px-4 text-sm font-semibold text-[#12110f] transition hover:bg-white"
-                >
-                  {item.isActive ? "Desactivar" : "Activar"}
-                </button>
-              </form>
-            </div>
-          ))
-        ) : (
-          <p className="rounded-2xl border border-dashed border-[#d8e5e6] bg-white px-4 py-4 text-sm leading-6 text-[#5e6770]">
-            Todavia no hay elementos registrados.
-          </p>
-        )}
-      </div>
+            ))
+          ) : (
+            <p className="rounded-2xl border border-dashed border-white/70 bg-white/55 px-4 py-4 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
+              Todavia no hay elementos registrados.
+            </p>
+          )}
+        </div>
 
-      <form action={createAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <input type="hidden" name="branchId" value={branchId} />
-        <input type="hidden" name="companySlug" value={companySlug} />
-        <input type="hidden" name="branchSlug" value={branchSlug} />
-        <input
-          name="name"
-          placeholder="Agregar opcion"
-          className="min-h-11 rounded-2xl border border-[#d8e5e6] bg-white px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
-        />
-        <button
-          type="submit"
-          className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
-        >
-          Agregar
-        </button>
-      </form>
-    </div>
+        <form action={createAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <input type="hidden" name="branchId" value={branchId} />
+          <input type="hidden" name="companySlug" value={companySlug} />
+          <input type="hidden" name="branchSlug" value={branchSlug} />
+          <input
+            name="name"
+            placeholder="Agregar opcion"
+            className="min-h-11 rounded-2xl border border-white/80 bg-white/80 px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+          />
+          <button
+            type="submit"
+            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
+          >
+            Agregar
+          </button>
+        </form>
+      </div>
+    </details>
   );
 }
 
@@ -474,30 +510,42 @@ function OperationalFlowCard({
   configuration?: ReactNode;
 }) {
   const label = operationalFormLabels[formType];
+  const qrImagePath = qrCode ? `/api/qr/${encodeURIComponent(qrCode.token)}` : null;
 
   return (
-    <article className="rounded-[1.7rem] border border-[#d8e5e6] bg-white p-5 shadow-[0_12px_34px_rgba(18,17,15,0.05)]">
+    <article className={`rounded-[1.7rem] p-5 ${productCardSurface}`}>
       <div className="space-y-5">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.shortTitle}</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h2>
-          <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
+        <div className="grid grid-cols-[1fr_auto] items-start gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
+            <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
+            <div className="mt-4 max-w-md">
+              <OperationalActionsBlock qrCode={qrCode} />
+            </div>
+          </div>
+
+          {qrImagePath ? (
+            <Image
+              src={qrImagePath}
+              alt={`QR administrativo para ${label.title}`}
+              width={144}
+              height={144}
+              unoptimized
+              className="h-24 w-24 p-1 sm:h-28 sm:w-28"
+            />
+          ) : null}
         </div>
 
-        <OperationalQrBlock qrCode={qrCode} formType={formType} />
+        <div className="border-t border-black/8" />
 
         {configuration ? (
-          <div className="border-t border-[#d8e5e6] pt-4">{configuration}</div>
+          configuration
         ) : (
-          <div className="border-t border-[#d8e5e6] pt-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
-              Configuracion
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-              Este flujo no requiere selectores adicionales antes de usar el formulario.
-            </p>
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 text-sm font-medium text-[#5e6770] backdrop-blur-xl">
+            Sin opciones configurables para el formulario
           </div>
         )}
+
       </div>
     </article>
   );
@@ -515,7 +563,7 @@ function BranchDocumentEditor({
   branchSlug: string;
 }) {
   return (
-    <details className="rounded-[1.2rem] border border-dashed border-[#d8e5e6] bg-[#fbfdfe] px-4 py-3">
+    <details className="rounded-[1.2rem] border border-dashed border-white/70 bg-white/55 px-4 py-3 backdrop-blur-xl">
       <summary className="cursor-pointer list-none text-sm font-semibold text-[#12110f]">Editar documento</summary>
 
       <form action={updateBranchDocumentAction} className="mt-4 grid gap-4">
@@ -530,7 +578,7 @@ function BranchDocumentEditor({
             <select
               name="sectionKey"
               defaultValue={document.sectionKey}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             >
               {Object.entries(sectionLabels).map(([key, label]) => (
                 <option key={key} value={key}>
@@ -545,7 +593,7 @@ function BranchDocumentEditor({
             <input
               name="title"
               defaultValue={document.title}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
         </div>
@@ -556,7 +604,7 @@ function BranchDocumentEditor({
             <input
               name="description"
               defaultValue={document.description ?? ""}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
@@ -566,7 +614,7 @@ function BranchDocumentEditor({
               name="fileUrl"
               defaultValue={document.fileUrl ?? ""}
               placeholder="https://..."
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
         </div>
@@ -578,7 +626,7 @@ function BranchDocumentEditor({
               name="expiresAt"
               type="date"
               defaultValue={document.expiresAt ?? ""}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
@@ -588,11 +636,11 @@ function BranchDocumentEditor({
               name="sortOrder"
               type="number"
               defaultValue={document.sortOrder}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#3f3831]">
+          <label className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#3f3831] backdrop-blur-xl">
             <input
               type="checkbox"
               name="isActive"
@@ -649,7 +697,7 @@ function CompactBranchDocumentRow({
   branchSlug: string;
 }) {
   return (
-    <div className="rounded-[1.25rem] border border-[#d8e5e6] bg-white px-4 py-4">
+    <div className={`rounded-[1.25rem] px-4 py-4 ${productCardSurfaceSoft}`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="text-base font-semibold tracking-[-0.02em] text-[#161412]">{document.title}</p>
@@ -663,7 +711,7 @@ function CompactBranchDocumentRow({
           <span
             className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] ${
               document.isActive
-                ? "border-[#d8e5e6] bg-white text-[#66727a]"
+                ? "border-white/80 bg-white/80 text-[#66727a]"
                 : "border-neutral-200 bg-neutral-50 text-neutral-500"
             }`}
           >
@@ -712,7 +760,7 @@ function CreateDocumentForm({
   sectionKey: BranchDocumentSectionKey;
 }) {
   return (
-    <details className="rounded-[1.25rem] border border-[#d8e5e6] bg-white px-4 py-4">
+    <details className={`rounded-[1.25rem] px-4 py-4 ${productCardSurfaceSoft}`}>
       <summary className="cursor-pointer list-none text-sm font-semibold text-[#12110f]">Agregar documento</summary>
 
       <form action={createBranchDocumentAction} className="mt-4 grid gap-4">
@@ -727,7 +775,7 @@ function CreateDocumentForm({
             <input
               name="title"
               placeholder="Nombre del PDF"
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
@@ -736,7 +784,7 @@ function CreateDocumentForm({
             <input
               name="description"
               placeholder="Resumen breve"
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
         </div>
@@ -747,7 +795,7 @@ function CreateDocumentForm({
             <input
               name="fileUrl"
               placeholder="https://..."
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
@@ -757,7 +805,7 @@ function CreateDocumentForm({
               name="sortOrder"
               type="number"
               defaultValue={0}
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
         </div>
@@ -768,11 +816,11 @@ function CreateDocumentForm({
             <input
               name="expiresAt"
               type="date"
-              className="min-h-11 w-full rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
             />
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-[#d8e5e6] bg-[#fbfdfe] px-4 py-3 text-sm text-[#3f3831]">
+          <label className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-[#3f3831] backdrop-blur-xl">
             <input type="checkbox" name="isActive" defaultChecked className="h-4 w-4 rounded border-[#c9c0b6]" />
             <span>Documento activo</span>
           </label>
@@ -820,13 +868,13 @@ function ComplianceSectionRepository({
   const activeDocuments = documents.filter((document) => document.isActive).length;
 
   return (
-    <details className="rounded-[1.7rem] border border-[#d8e5e6] bg-[#fbfdfd] p-5">
+    <details className={`rounded-[1.7rem] p-5 ${productCardSurface}`}>
       <summary className="flex cursor-pointer list-none flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h3>
             {requiresExpiration ? (
-              <span className="rounded-full border border-[#bde5e7] bg-[#effbfb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#1c6a71]">
+              <span className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#1c6a71]">
                 Vencimiento
               </span>
             ) : null}
@@ -853,7 +901,7 @@ function ComplianceSectionRepository({
             />
           ))
         ) : (
-          <div className="rounded-[1.25rem] border border-dashed border-[#d8e5e6] bg-white px-4 py-5 text-sm leading-7 text-[#5e6770]">
+          <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-7 text-[#5e6770] backdrop-blur-xl">
             Todavia no hay documentos cargados en esta seccion.
           </div>
         )}
@@ -919,10 +967,10 @@ export function BranchLandingView({
   return (
     <BranchLayout company={company} branch={branch} currentSection="home">
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-[1.8rem] border border-[#d8e5e6] bg-[#fbfdfd] p-5">
+        <section className={`rounded-[1.8rem] p-5 ${productCardSurface}`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Resumen de sede</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">
-            Elige el frente que quieres gestionar
+            Elige el frente que deseas gestionar
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5e6770]">
             Esta vista concentra solo el contexto esencial. La operacion diaria y el cumplimiento documental viven en
@@ -936,7 +984,7 @@ export function BranchLandingView({
           </div>
         </section>
 
-        <section className="rounded-[1.8rem] border border-[#d8e5e6] bg-white p-5">
+        <section className={`rounded-[1.8rem] p-5 ${productCardSurfaceSoft}`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Cobertura actual</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <SummaryStat label="Equipos" value={refrigerationEquipment.length} />
@@ -986,6 +1034,10 @@ export function BranchOperationalView({
 }: BranchDetailViewProps) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
+      <p className="mb-6 max-w-3xl text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
+        Selecciona un modulo para gestionar sus opciones y registrar nuevas actividades operativas.
+      </p>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {operationalFormTypes.map((formType) => {
           const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
@@ -1003,6 +1055,8 @@ export function BranchOperationalView({
                 items={refrigerationEquipment}
                 createAction={createBranchRefrigerationEquipmentAction}
                 toggleAction={toggleBranchRefrigerationEquipmentAction}
+                summarySingular="equipo activo"
+                summaryPlural="equipos activos"
               />
             );
           }
@@ -1018,6 +1072,8 @@ export function BranchOperationalView({
                 items={sanitationAreas}
                 createAction={createBranchSanitationAreaAction}
                 toggleAction={toggleBranchSanitationAreaAction}
+                summarySingular="area activa"
+                summaryPlural="areas activas"
               />
             );
           }
@@ -1059,7 +1115,7 @@ export function BranchComplianceView({
           items={moduleItems}
         />
 
-        <section className="rounded-[1.7rem] border border-[#d8e5e6] bg-white p-5">
+        <section className={`rounded-[1.7rem] p-5 ${productCardSurface}`}>
           <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr] lg:items-end">
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a7f86]">Repositorio PDF</p>
