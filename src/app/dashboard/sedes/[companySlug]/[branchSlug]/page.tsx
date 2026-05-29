@@ -1,6 +1,8 @@
 import { BranchDetailView } from "@/components/dashboard/branch-detail-view";
 import { requireBranchAccess } from "@/lib/auth/authorization";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { operationalFormTypes } from "@/lib/operational-forms";
+import { logServerError, logServerInfo } from "@/lib/server/logging";
+import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type {
   BranchCatalogItemSummary,
   BranchDocumentSummary,
@@ -54,6 +56,103 @@ type BranchCatalogRow = {
   is_active: boolean;
 };
 
+function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
+  return (
+    qrRows?.map((qrCode) => ({
+      id: qrCode.id,
+      branchId: qrCode.branch_id,
+      companyId: qrCode.company_id,
+      formType: qrCode.form_type,
+      token: qrCode.token,
+      isActive: qrCode.is_active,
+      regeneratedAt: qrCode.regenerated_at,
+    })) ?? []
+  );
+}
+
+async function ensureBranchQrCodes({
+  supabase,
+  branchId,
+  companyId,
+  companySlug,
+  branchSlug,
+  existingQrRows,
+}: {
+  supabase: Awaited<ReturnType<typeof getSupabaseRlsClient>>;
+  branchId: string;
+  companyId: string;
+  companySlug: string;
+  branchSlug: string;
+  existingQrRows: BranchFormQrRow[] | null | undefined;
+}) {
+  if (!supabase) {
+    return existingQrRows ?? [];
+  }
+
+  const existingFormTypes = new Set(existingQrRows?.map((qrCode) => qrCode.form_type) ?? []);
+  const missingFormTypes = operationalFormTypes.filter((formType) => !existingFormTypes.has(formType));
+
+  if (!missingFormTypes.length) {
+    return existingQrRows ?? [];
+  }
+
+  logServerInfo("branch.qr.ensure_missing.start", {
+    branchId,
+    companyId,
+    companySlug,
+    branchSlug,
+    missingFormTypes,
+  });
+
+  const { error: insertError } = await supabase.from("branch_form_qr_codes").upsert(
+    missingFormTypes.map((formType) => ({
+      branch_id: branchId,
+      company_id: companyId,
+      form_type: formType,
+      is_active: true,
+    })),
+    { onConflict: "branch_id,form_type", ignoreDuplicates: true },
+  );
+
+  if (insertError) {
+    logServerError("branch.qr.ensure_missing.insert_failed", insertError, {
+      branchId,
+      companyId,
+      companySlug,
+      branchSlug,
+      missingFormTypes,
+    });
+    return existingQrRows ?? [];
+  }
+
+  const { data: refreshedQrRows, error: refreshError } = await supabase
+    .from("branch_form_qr_codes")
+    .select("id, branch_id, company_id, form_type, token, is_active, regenerated_at")
+    .eq("branch_id", branchId)
+    .order("form_type", { ascending: true })
+    .returns<BranchFormQrRow[]>();
+
+  if (refreshError) {
+    logServerError("branch.qr.ensure_missing.refresh_failed", refreshError, {
+      branchId,
+      companyId,
+      companySlug,
+      branchSlug,
+    });
+    return existingQrRows ?? [];
+  }
+
+  logServerInfo("branch.qr.ensure_missing.done", {
+    branchId,
+    companyId,
+    companySlug,
+    branchSlug,
+    qrCount: refreshedQrRows?.length ?? 0,
+  });
+
+  return refreshedQrRows ?? [];
+}
+
 export default async function BranchDashboardPage({
   params,
 }: {
@@ -61,7 +160,7 @@ export default async function BranchDashboardPage({
 }) {
   const { companySlug, branchSlug } = await params;
   const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseRlsClient();
   let operationalItems: BranchModuleItem[] | undefined;
   let complianceItems: BranchModuleItem[] | undefined;
   let documents: BranchDocumentSummary[] = [];
@@ -70,12 +169,19 @@ export default async function BranchDashboardPage({
   let sanitationAreas: BranchCatalogItemSummary[] = [];
 
   if (supabase) {
+    logServerInfo("branch.view.load.start", {
+      branchId: branch.id,
+      companyId: company.id,
+      companySlug,
+      branchSlug,
+    });
+
     const [
-      { data: dashboardItems },
-      { data: branchDocuments },
-      { data: branchQrCodes },
-      { data: equipmentRows },
-      { data: sanitationAreaRows },
+      dashboardItemsResult,
+      branchDocumentsResult,
+      branchQrCodesResult,
+      equipmentRowsResult,
+      sanitationAreaRowsResult,
     ] = await Promise.all([
       supabase
         .from("branch_dashboard_items")
@@ -114,6 +220,40 @@ export default async function BranchDashboardPage({
         .returns<BranchCatalogRow[]>(),
     ]);
 
+    const queryResults = {
+      dashboardItems: dashboardItemsResult,
+      branchDocuments: branchDocumentsResult,
+      branchQrCodes: branchQrCodesResult,
+      equipmentRows: equipmentRowsResult,
+      sanitationAreaRows: sanitationAreaRowsResult,
+    };
+
+    for (const [queryName, result] of Object.entries(queryResults)) {
+      if (result.error) {
+        logServerError("branch.view.query_failed", result.error, {
+          queryName,
+          branchId: branch.id,
+          companyId: company.id,
+          companySlug,
+          branchSlug,
+        });
+      }
+    }
+
+    const branchQrCodes = await ensureBranchQrCodes({
+      supabase,
+      branchId: branch.id,
+      companyId: branch.companyId,
+      companySlug,
+      branchSlug,
+      existingQrRows: branchQrCodesResult.data,
+    });
+
+    const dashboardItems = dashboardItemsResult.data;
+    const branchDocuments = branchDocumentsResult.data;
+    const equipmentRows = equipmentRowsResult.data;
+    const sanitationAreaRows = sanitationAreaRowsResult.data;
+
     operationalItems =
       dashboardItems
         ?.filter((item) => item.module_kind === "operational")
@@ -145,16 +285,7 @@ export default async function BranchDashboardPage({
         sortOrder: document.sort_order,
       })) ?? [];
 
-    qrCodes =
-      branchQrCodes?.map((qrCode) => ({
-        id: qrCode.id,
-        branchId: qrCode.branch_id,
-        companyId: qrCode.company_id,
-        formType: qrCode.form_type,
-        token: qrCode.token,
-        isActive: qrCode.is_active,
-        regeneratedAt: qrCode.regenerated_at,
-      })) ?? [];
+    qrCodes = mapQrRows(branchQrCodes);
 
     refrigerationEquipment =
       equipmentRows?.map((item) => ({
@@ -173,6 +304,24 @@ export default async function BranchDashboardPage({
         name: item.name,
         isActive: item.is_active,
       })) ?? [];
+
+    logServerInfo("branch.view.load.done", {
+      branchId: branch.id,
+      companyId: company.id,
+      companySlug,
+      branchSlug,
+      qrCount: qrCodes.length,
+      documentCount: documents.length,
+      refrigerationEquipmentCount: refrigerationEquipment.length,
+      sanitationAreaCount: sanitationAreas.length,
+    });
+  } else {
+    logServerError("branch.view.rls_client_missing", new Error("Supabase RLS client is not configured."), {
+      branchId: branch.id,
+      companyId: company.id,
+      companySlug,
+      branchSlug,
+    });
   }
 
   return (
