@@ -160,12 +160,23 @@ function drawAlignment(modules: boolean[][], reserved: boolean[][], row: number,
 }
 
 function reserveFormatAreas(reserved: boolean[][]) {
-  for (let index = 0; index < 9; index += 1) {
-    reserved[8][index] = true;
-    reserved[index][8] = true;
-    reserved[QR_SIZE - 1 - index][8] = true;
-    reserved[8][QR_SIZE - 1 - index] = true;
+  for (let index = 0; index < 15; index += 1) {
+    if (index < 6) {
+      reserved[8][index] = true;
+    } else if (index < 8) {
+      reserved[8][index + 1] = true;
+    } else {
+      reserved[14 - index][8] = true;
+    }
+
+    if (index < 8) {
+      reserved[QR_SIZE - 1 - index][8] = true;
+    } else {
+      reserved[8][QR_SIZE - 15 + index] = true;
+    }
   }
+
+  reserved[QR_SIZE - 8][8] = true;
 }
 
 function drawFunctionPatterns(modules: boolean[][], reserved: boolean[][]) {
@@ -231,6 +242,10 @@ function placeData(modules: boolean[][], reserved: boolean[][], codewords: numbe
 
         if (reserved[row][targetColumn]) {
           continue;
+        }
+
+        if (bitIndex >= bits.length) {
+          return;
         }
 
         const rawBit = bits[bitIndex] === 1;
