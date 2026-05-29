@@ -2,7 +2,7 @@ const QR_VERSION = 5;
 const QR_SIZE = 17 + QR_VERSION * 4;
 const DATA_CODEWORDS = 108;
 const ECC_CODEWORDS = 26;
-const FORMAT_BITS_LOW_MASK_0 = "111011111000100";
+const FORMAT_BITS_LOW_MASK_0 = 0b111011111000100;
 
 function appendBits(target: number[], value: number, bitCount: number) {
   for (let index = bitCount - 1; index >= 0; index -= 1) {
@@ -184,49 +184,25 @@ function drawFunctionPatterns(modules: boolean[][], reserved: boolean[][]) {
 }
 
 function drawFormatBits(modules: boolean[][], reserved: boolean[][]) {
-  const bits = FORMAT_BITS_LOW_MASK_0.split("").map((bit) => bit === "1");
-  const firstCopy = [
-    [0, 8],
-    [1, 8],
-    [2, 8],
-    [3, 8],
-    [4, 8],
-    [5, 8],
-    [7, 8],
-    [8, 8],
-    [8, 7],
-    [8, 5],
-    [8, 4],
-    [8, 3],
-    [8, 2],
-    [8, 1],
-    [8, 0],
-  ];
+  for (let index = 0; index < 15; index += 1) {
+    const bit = ((FORMAT_BITS_LOW_MASK_0 >>> index) & 1) === 1;
 
-  const secondCopy = [
-    [8, QR_SIZE - 1],
-    [8, QR_SIZE - 2],
-    [8, QR_SIZE - 3],
-    [8, QR_SIZE - 4],
-    [8, QR_SIZE - 5],
-    [8, QR_SIZE - 6],
-    [8, QR_SIZE - 7],
-    [8, QR_SIZE - 8],
-    [QR_SIZE - 7, 8],
-    [QR_SIZE - 6, 8],
-    [QR_SIZE - 5, 8],
-    [QR_SIZE - 4, 8],
-    [QR_SIZE - 3, 8],
-    [QR_SIZE - 2, 8],
-    [QR_SIZE - 1, 8],
-  ];
+    if (index < 6) {
+      setModule(modules, reserved, 8, index, bit);
+    } else if (index < 8) {
+      setModule(modules, reserved, 8, index + 1, bit);
+    } else {
+      setModule(modules, reserved, 14 - index, 8, bit);
+    }
 
-  for (let index = 0; index < bits.length; index += 1) {
-    const [rowA, columnA] = firstCopy[index];
-    const [rowB, columnB] = secondCopy[index];
-    setModule(modules, reserved, rowA, columnA, bits[index]);
-    setModule(modules, reserved, rowB, columnB, bits[index]);
+    if (index < 8) {
+      setModule(modules, reserved, QR_SIZE - 1 - index, 8, bit);
+    } else {
+      setModule(modules, reserved, 8, QR_SIZE - 15 + index, bit);
+    }
   }
+
+  setModule(modules, reserved, QR_SIZE - 8, 8, true);
 }
 
 function shouldMask(row: number, column: number) {
@@ -299,7 +275,7 @@ export function createQrSvg(value: string) {
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" role="img" aria-label="QR ${escapeXml(value)}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" shape-rendering="crispEdges" role="img" aria-label="QR ${escapeXml(value)}">`,
     `<rect width="${viewBoxSize}" height="${viewBoxSize}" fill="#ffffff"/>`,
     `<path d="${paths.join("")}" fill="#12110f"/>`,
     `</svg>`,
