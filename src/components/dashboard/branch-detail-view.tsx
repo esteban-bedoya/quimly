@@ -147,8 +147,8 @@ function BranchLayout({
   const basePath = `/dashboard/sedes/${company.slug}/${branch.slug}`;
   const navigation = [
     { key: "home", href: basePath, label: "Panel" },
-    { key: "operational", href: `${basePath}/operacion`, label: "Operaciones" },
-    { key: "compliance", href: `${basePath}/cumplimiento`, label: "Normativa" },
+    { key: "operational", href: `${basePath}/operacion`, label: "Formularios" },
+    { key: "compliance", href: `${basePath}/cumplimiento`, label: "Documentos" },
   ] as const;
 
   useEffect(() => {
@@ -229,7 +229,7 @@ function BranchLayout({
               </div>
 
               <p className="max-w-2xl text-sm leading-7 text-white/72 sm:text-base">
-                Elige el frente que deseas gestionar
+                Elige la opción que deseas gestionar
               </p>
 
               <nav className="origin-left pr-14 max-[420px]:scale-[0.94] sm:pr-16 sm:scale-100">
@@ -1035,7 +1035,7 @@ export function BranchOperationalView({
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
       <p className="mb-6 max-w-3xl text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
-        Selecciona un modulo para gestionar sus opciones y registrar nuevas actividades operativas.
+        Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar su código QR.
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -1047,7 +1047,7 @@ export function BranchOperationalView({
           if (formType === "thermal_control") {
             configuration = (
               <InlineCatalogManager
-                title="Equipos de refrigeracion"
+                title="EQUIPOS DE REFRIGERACION Y CONGELACION"
                 hint="Opciones disponibles para el registro termico."
                 branchId={branch.id}
                 companySlug={company.slug}
@@ -1064,7 +1064,7 @@ export function BranchOperationalView({
           if (formType === "area_sanitation") {
             configuration = (
               <InlineCatalogManager
-                title="Areas o zonas"
+                title="AREAS, EQUIPOS Y UTENSILIOS"
                 hint="Opciones disponibles para el checklist de saneamiento."
                 branchId={branch.id}
                 companySlug={company.slug}

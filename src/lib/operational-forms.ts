@@ -16,24 +16,28 @@ export const operationalFormLabels: Record<
   }
 > = {
   thermal_control: {
-    title: "Control termico",
-    shortTitle: "Control termico",
-    description: "Registro rapido de temperatura para equipos de refrigeracion.",
+    title: "CONTROL DE TEMPERATURAS",
+    shortTitle: "CONTROL DE TEMPERATURAS",
+    description:
+      "Monitoreo diario obligatorio para garantizar la cadena de frio y asegurar la correcta conservacion de materias primas y alimentos.",
   },
   area_sanitation: {
-    title: "Saneamiento de areas",
-    shortTitle: "Saneamiento",
-    description: "Checklist de conformidad para limpieza de areas operativas.",
+    title: "LIMPIEZA Y DESINFECCION",
+    shortTitle: "LIMPIEZA Y DESINFECCION",
+    description:
+      "Verificacion diaria del cumplimiento de los protocolos higienicos y sanitarios en las zonas operativas de la sede.",
   },
   supply_reception: {
-    title: "Recepcion de insumos",
-    shortTitle: "Recepcion",
-    description: "Registro de producto, proveedor y vencimiento recibido.",
+    title: "RECEPCION DE MATERIAS PRIMAS",
+    shortTitle: "RECEPCION DE MATERIAS PRIMAS",
+    description:
+      "Inspeccion obligatoria de condiciones sanitarias, empaque, fechas de vencimiento y temperaturas de los productos al momento del ingreso.",
   },
   water_quality: {
-    title: "Calidad del agua",
-    shortTitle: "Agua",
-    description: "Medicion de cloro libre con rango valido entre 0.3 y 2.0 ppm.",
+    title: "CONTROL DE AGUA POTABLE",
+    shortTitle: "CONTROL DE AGUA POTABLE",
+    description:
+      "Registro obligatorio para la medicion diaria de cloro libre residual (rango normativo: 0.3 a 2.0 ppm) para garantizar el abastecimiento seguro.",
   },
 };
 
@@ -48,4 +52,3 @@ export function createPublicFormPath(token: string) {
 export function createPublicFormUrl(origin: string, token: string) {
   return new URL(createPublicFormPath(token), origin).toString();
 }
-

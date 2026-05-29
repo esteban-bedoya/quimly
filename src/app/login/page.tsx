@@ -38,8 +38,7 @@ export default async function LoginPage() {
                   Inicia sesión en la operación central de tu empresa.
                 </h1>
                 <p className="max-w-lg text-sm leading-7 text-white/74 sm:text-base">
-                  Quimly separa acceso por empresa, protege datos con RLS y habilita permisos distintos para owner,
-                  super_admin y company_admin.
+                  Quimly te ayuda con tu operación sanitaria.
                 </p>
               </div>
             </div>
@@ -66,8 +65,7 @@ export default async function LoginPage() {
                 <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#2a7f86]">Login</p>
                 <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Accede a tu panel</h2>
                 <p className="text-sm leading-7 text-[#4c4943]">
-                  Usa las credenciales creadas en Supabase Auth. Después del primer usuario, promuévelo a `owner`
-                  con la función `bootstrap_owner`.
+                  Usa tus credenciales para iniciar.
                 </p>
               </div>
 
@@ -76,8 +74,7 @@ export default async function LoginPage() {
               </div>
 
               <p className="mt-4 text-xs leading-6 text-[#6a665f]">
-                Si aún no tienes acceso, Quimly debe crear tu usuario, perfil y asignarte una empresa si eres
-                `company_admin`.
+                Si aún no tienes acceso, comunicate con Quimly para acceder a los servicios.
               </p>
             </div>
           </section>
