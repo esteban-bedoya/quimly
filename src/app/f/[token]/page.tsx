@@ -1,20 +1,18 @@
 import { notFound } from "next/navigation";
 
 import { OperationalPublicForm } from "@/components/public-forms/operational-public-form";
-import { isOperationalFormType, operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
+import { logServerError } from "@/lib/server/logging";
+import { getSupabasePublicClient } from "@/lib/supabase/public";
 
 export const dynamic = "force-dynamic";
 
-type QrPageRow = {
-  id: string;
-  branch_id: string;
-  company_id: string;
+type PublicOperationalFormPayload = {
   form_type: string;
-  token: string;
-  is_active: boolean;
-  branch: { name: string; is_active: boolean } | { name: string; is_active: boolean }[] | null;
-  company: { name: string; is_active: boolean } | { name: string; is_active: boolean }[] | null;
+  branch_name: string;
+  company_name: string;
+  equipment: CatalogRow[] | null;
+  sanitation_areas: CatalogRow[] | null;
 };
 
 type CatalogRow = {
@@ -22,17 +20,13 @@ type CatalogRow = {
   name: string;
 };
 
-function unwrapRelation<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabasePublicClient();
 
   if (!supabase) {
     return {
@@ -41,14 +35,21 @@ export async function generateMetadata({
     };
   }
 
-  const { data } = await supabase
-    .from("branch_form_qr_codes")
-    .select("form_type")
-    .eq("token", token)
-    .maybeSingle<{ form_type: OperationalFormType }>();
+  const { data, error } = await supabase.rpc("get_public_operational_form", {
+    p_token: token,
+  });
+
+  if (error) {
+    logServerError("public_form.metadata.load_failed", error, { tokenLength: token.length });
+  }
+
+  const payload = data as PublicOperationalFormPayload | null;
+  const formType = payload?.form_type;
 
   return {
-    title: data?.form_type ? `${operationalFormLabels[data.form_type].title} | Quimly` : "Formulario publico | Quimly",
+    title: formType && isOperationalFormType(formType)
+      ? `${operationalFormLabels[formType].title} | Quimly`
+      : "Formulario publico | Quimly",
     robots: { index: false, follow: false },
   };
 }
@@ -59,73 +60,38 @@ export default async function PublicOperationalFormPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabasePublicClient();
 
   if (!supabase) {
+    logServerError("public_form.page.public_client_missing", new Error("Supabase public client is not configured."), {
+      tokenLength: token.length,
+    });
     notFound();
   }
 
-  const { data, error } = await supabase
-    .from("branch_form_qr_codes")
-    .select("id, branch_id, company_id, form_type, token, is_active, branch:branches!inner(name, is_active), company:companies!inner(name, is_active)")
-    .eq("token", token)
-    .maybeSingle<QrPageRow>();
+  const { data, error } = await supabase.rpc("get_public_operational_form", {
+    p_token: token,
+  });
 
   if (error) {
+    logServerError("public_form.page.load_failed", error, { tokenLength: token.length });
     throw new Error(error.message);
   }
 
-  const branch = unwrapRelation(data?.branch ?? null);
-  const company = unwrapRelation(data?.company ?? null);
+  const payload = data as PublicOperationalFormPayload | null;
 
-  if (
-    !data ||
-    !data.is_active ||
-    !branch?.is_active ||
-    !company?.is_active ||
-    !isOperationalFormType(data.form_type)
-  ) {
+  if (!payload || !isOperationalFormType(payload.form_type)) {
     notFound();
-  }
-
-  const [equipmentResult, areasResult] = await Promise.all([
-    data.form_type === "thermal_control"
-      ? supabase
-          .from("branch_refrigeration_equipment")
-          .select("id, name")
-          .eq("branch_id", data.branch_id)
-          .eq("is_active", true)
-          .order("name", { ascending: true })
-          .returns<CatalogRow[]>()
-      : Promise.resolve({ data: [] as CatalogRow[], error: null }),
-    data.form_type === "area_sanitation"
-      ? supabase
-          .from("branch_sanitation_areas")
-          .select("id, name")
-          .eq("branch_id", data.branch_id)
-          .eq("is_active", true)
-          .order("name", { ascending: true })
-          .returns<CatalogRow[]>()
-      : Promise.resolve({ data: [] as CatalogRow[], error: null }),
-  ]);
-
-  if (equipmentResult.error) {
-    throw new Error(equipmentResult.error.message);
-  }
-
-  if (areasResult.error) {
-    throw new Error(areasResult.error.message);
   }
 
   return (
     <OperationalPublicForm
       token={token}
-      formType={data.form_type}
-      branchName={branch.name}
-      companyName={company.name}
-      equipment={equipmentResult.data ?? []}
-      sanitationAreas={areasResult.data ?? []}
+      formType={payload.form_type}
+      branchName={payload.branch_name}
+      companyName={payload.company_name}
+      equipment={payload.equipment ?? []}
+      sanitationAreas={payload.sanitation_areas ?? []}
     />
   );
 }
-

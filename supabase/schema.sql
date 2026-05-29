@@ -638,6 +638,274 @@ as $$
   )
 $$;
 
+create or replace function public.get_public_operational_form(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  form_payload jsonb;
+begin
+  if nullif(trim(p_token), '') is null then
+    return null;
+  end if;
+
+  select jsonb_build_object(
+    'form_type', qr.form_type,
+    'branch_name', b.name,
+    'company_name', c.name,
+    'equipment', coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', equipment.id,
+            'name', equipment.name
+          )
+          order by equipment.name
+        )
+        from public.branch_refrigeration_equipment equipment
+        where equipment.branch_id = qr.branch_id
+          and equipment.is_active = true
+      ),
+      '[]'::jsonb
+    ),
+    'sanitation_areas', coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', area.id,
+            'name', area.name
+          )
+          order by area.name
+        )
+        from public.branch_sanitation_areas area
+        where area.branch_id = qr.branch_id
+          and area.is_active = true
+      ),
+      '[]'::jsonb
+    )
+  )
+  into form_payload
+  from public.branch_form_qr_codes qr
+  join public.branches b on b.id = qr.branch_id
+  join public.companies c on c.id = qr.company_id
+  where qr.token = p_token
+    and qr.is_active = true
+    and b.is_active = true
+    and c.is_active = true
+  limit 1;
+
+  return form_payload;
+end;
+$$;
+
+create or replace function public.submit_public_operational_form(
+  p_token text,
+  p_operator_name text,
+  p_equipment_id uuid default null,
+  p_temperature_c numeric default null,
+  p_area_id uuid default null,
+  p_is_compliant boolean default null,
+  p_product_name text default null,
+  p_provider_name text default null,
+  p_expiration_date date default null,
+  p_chlorine_ppm numeric default null
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  qr_record record;
+  equipment_record record;
+  area_record record;
+begin
+  if nullif(trim(p_token), '') is null then
+    raise exception 'Este formulario no tiene un QR válido.';
+  end if;
+
+  if nullif(trim(p_operator_name), '') is null then
+    raise exception 'Ingresa el nombre del operador para guardar el registro.';
+  end if;
+
+  select
+    qr.id,
+    qr.branch_id,
+    qr.company_id,
+    qr.form_type,
+    qr.token
+  into qr_record
+  from public.branch_form_qr_codes qr
+  join public.branches b on b.id = qr.branch_id
+  join public.companies c on c.id = qr.company_id
+  where qr.token = p_token
+    and qr.is_active = true
+    and b.is_active = true
+    and c.is_active = true
+  limit 1;
+
+  if qr_record.id is null then
+    raise exception 'Este QR no está activo o ya fue regenerado. Solicita el QR vigente de la sede.';
+  end if;
+
+  if qr_record.form_type = 'thermal_control' then
+    if p_equipment_id is null or p_temperature_c is null then
+      raise exception 'Selecciona el equipo e ingresa una temperatura válida.';
+    end if;
+
+    select equipment.id, equipment.name
+    into equipment_record
+    from public.branch_refrigeration_equipment equipment
+    where equipment.id = p_equipment_id
+      and equipment.branch_id = qr_record.branch_id
+      and equipment.is_active = true
+    limit 1;
+
+    if equipment_record.id is null then
+      raise exception 'El equipo seleccionado no pertenece a esta sede o no está activo.';
+    end if;
+
+    insert into public.thermal_control_records (
+      sede_id,
+      company_id,
+      tipo_formulario,
+      token_qr_utilizado,
+      qr_code_id,
+      equipment_id,
+      equipment_name,
+      operator_name,
+      temperature_c
+    )
+    values (
+      qr_record.branch_id,
+      qr_record.company_id,
+      qr_record.form_type,
+      qr_record.token,
+      qr_record.id,
+      equipment_record.id,
+      equipment_record.name,
+      trim(p_operator_name),
+      p_temperature_c
+    );
+
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if qr_record.form_type = 'area_sanitation' then
+    if p_area_id is null or p_is_compliant is null then
+      raise exception 'Selecciona el área y el estado de conformidad.';
+    end if;
+
+    select area.id, area.name
+    into area_record
+    from public.branch_sanitation_areas area
+    where area.id = p_area_id
+      and area.branch_id = qr_record.branch_id
+      and area.is_active = true
+    limit 1;
+
+    if area_record.id is null then
+      raise exception 'El área seleccionada no pertenece a esta sede o no está activa.';
+    end if;
+
+    insert into public.area_sanitation_records (
+      sede_id,
+      company_id,
+      tipo_formulario,
+      token_qr_utilizado,
+      qr_code_id,
+      area_id,
+      area_name,
+      operator_name,
+      is_compliant
+    )
+    values (
+      qr_record.branch_id,
+      qr_record.company_id,
+      qr_record.form_type,
+      qr_record.token,
+      qr_record.id,
+      area_record.id,
+      area_record.name,
+      trim(p_operator_name),
+      p_is_compliant
+    );
+
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if qr_record.form_type = 'supply_reception' then
+    if nullif(trim(p_product_name), '') is null
+      or nullif(trim(p_provider_name), '') is null
+      or p_expiration_date is null then
+      raise exception 'Completa producto, proveedor y fecha de vencimiento.';
+    end if;
+
+    insert into public.supply_reception_records (
+      sede_id,
+      company_id,
+      tipo_formulario,
+      token_qr_utilizado,
+      qr_code_id,
+      operator_name,
+      product_name,
+      provider_name,
+      expiration_date
+    )
+    values (
+      qr_record.branch_id,
+      qr_record.company_id,
+      qr_record.form_type,
+      qr_record.token,
+      qr_record.id,
+      trim(p_operator_name),
+      trim(p_product_name),
+      trim(p_provider_name),
+      p_expiration_date
+    );
+
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if qr_record.form_type = 'water_quality' then
+    if p_chlorine_ppm is null then
+      raise exception 'Ingresa la medición de cloro en ppm.';
+    end if;
+
+    if p_chlorine_ppm < 0.3 or p_chlorine_ppm > 2.0 then
+      raise exception 'La medición de cloro debe estar entre 0.3 y 2.0 ppm.';
+    end if;
+
+    insert into public.water_quality_records (
+      sede_id,
+      company_id,
+      tipo_formulario,
+      token_qr_utilizado,
+      qr_code_id,
+      operator_name,
+      chlorine_ppm
+    )
+    values (
+      qr_record.branch_id,
+      qr_record.company_id,
+      qr_record.form_type,
+      qr_record.token,
+      qr_record.id,
+      trim(p_operator_name),
+      p_chlorine_ppm
+    );
+
+    return jsonb_build_object('ok', true);
+  end if;
+
+  raise exception 'Tipo de formulario no soportado.';
+end;
+$$;
+
 create or replace function public.validate_branch_rules()
 returns trigger
 language plpgsql
@@ -1077,6 +1345,34 @@ create policy "demo_requests_select_policy"
 on public.demo_requests
 for select
 using (public.is_owner() or public.is_super_admin());
+
+revoke all on function public.get_public_operational_form(text) from public;
+revoke all on function public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
+  text,
+  date,
+  numeric
+) from public;
+
+grant execute on function public.get_public_operational_form(text) to anon, authenticated;
+grant execute on function public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
+  text,
+  date,
+  numeric
+) to anon, authenticated;
 
 comment on function public.bootstrap_owner(uuid, text, text) is
 'Run this manually after creating the first auth user in Supabase Auth to promote that user to owner.';
