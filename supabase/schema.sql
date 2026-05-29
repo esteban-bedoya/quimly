@@ -136,7 +136,6 @@ create table if not exists public.branch_form_qr_codes (
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  regenerated_at timestamptz,
   unique (branch_id, form_type),
   constraint branch_form_qr_codes_token_length check (char_length(token) >= 32)
 );
@@ -317,6 +316,20 @@ begin
 end;
 $$;
 
+create or replace function public.prevent_branch_form_qr_token_update()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.token is distinct from old.token then
+    raise exception 'El token del QR es permanente y no puede modificarse.';
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists set_companies_updated_at on public.companies;
 create trigger set_companies_updated_at
 before update on public.companies
@@ -370,6 +383,12 @@ create trigger set_branch_form_qr_codes_updated_at
 before update on public.branch_form_qr_codes
 for each row
 execute function public.set_updated_at();
+
+drop trigger if exists prevent_branch_form_qr_token_update on public.branch_form_qr_codes;
+create trigger prevent_branch_form_qr_token_update
+before update on public.branch_form_qr_codes
+for each row
+execute function public.prevent_branch_form_qr_token_update();
 
 drop trigger if exists set_branch_refrigeration_equipment_company_id on public.branch_refrigeration_equipment;
 create trigger set_branch_refrigeration_equipment_company_id
@@ -749,7 +768,7 @@ begin
   limit 1;
 
   if qr_record.id is null then
-    raise exception 'Este QR no está activo o ya fue regenerado. Solicita el QR vigente de la sede.';
+    raise exception 'Este QR no está activo. Solicita soporte para revisar la sede.';
   end if;
 
   if qr_record.form_type = 'thermal_control' then

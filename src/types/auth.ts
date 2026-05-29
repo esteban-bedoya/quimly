@@ -63,7 +63,6 @@ export type BranchFormQrSummary = {
   formType: OperationalFormType;
   token: string;
   isActive: boolean;
-  regeneratedAt: string | null;
 };
 
 export type BranchCatalogItemSummary = {

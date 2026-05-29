@@ -4,9 +4,6 @@ import { revalidatePath } from "next/cache";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
-import { isOperationalFormType } from "@/lib/operational-forms";
-import { logServerError, logServerInfo } from "@/lib/server/logging";
-import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
 
@@ -459,75 +456,6 @@ export async function deleteBranchDocumentAction(formData: FormData) {
   await deleteBranchDocument(undefined, formData);
 }
 
-export async function regenerateBranchQrAction(formData: FormData) {
-  try {
-    const qrId = readString(formData, "qrId");
-    const branchId = readString(formData, "branchId");
-    const companySlug = readString(formData, "companySlug");
-    const branchSlug = readString(formData, "branchSlug");
-
-    if (!qrId || !branchId || !companySlug || !branchSlug) {
-      logServerError("branch.qr.regenerate.invalid_form_data", new Error("Missing QR regeneration form data."), {
-        qrId,
-        branchId,
-        companySlug,
-        branchSlug,
-      });
-      return;
-    }
-
-    const { branch } = await requireBranchAccess(companySlug, branchSlug);
-
-    if (branch.id !== branchId) {
-      throw new Error("La sede seleccionada no coincide con la ruta actual.");
-    }
-
-    const supabase = await getSupabaseRlsClient();
-
-    if (!supabase) {
-      throw new Error("Supabase RLS no está configurado en el servidor.");
-    }
-
-    logServerInfo("branch.qr.regenerate.start", {
-      qrId,
-      branchId,
-      companyId: branch.companyId,
-      companySlug,
-      branchSlug,
-    });
-
-    const { error } = await supabase
-      .from("branch_form_qr_codes")
-      .update({
-        token: crypto.randomUUID(),
-        regenerated_at: new Date().toISOString(),
-        is_active: true,
-      })
-      .eq("id", qrId)
-      .eq("branch_id", branchId);
-
-    if (error) {
-      throw new Error(formatDatabaseError(error, "No fue posible regenerar el QR."));
-    }
-
-    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
-    logServerInfo("branch.qr.regenerate.done", {
-      qrId,
-      branchId,
-      companyId: branch.companyId,
-      companySlug,
-      branchSlug,
-    });
-  } catch (error) {
-    logServerError("branch.qr.regenerate.failed", error, {
-      qrId: readString(formData, "qrId"),
-      branchId: readString(formData, "branchId"),
-      companySlug: readString(formData, "companySlug"),
-      branchSlug: readString(formData, "branchSlug"),
-    });
-  }
-}
-
 async function createBranchCatalogItem({
   formData,
   tableName,
@@ -626,78 +554,6 @@ export async function createBranchSanitationAreaAction(formData: FormData) {
 
 export async function toggleBranchSanitationAreaAction(formData: FormData) {
   await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
-}
-
-export async function ensureBranchQrCodeAction(formData: FormData) {
-  try {
-    const branchId = readString(formData, "branchId");
-    const companyId = readString(formData, "companyId");
-    const companySlug = readString(formData, "companySlug");
-    const branchSlug = readString(formData, "branchSlug");
-    const formType = readString(formData, "formType");
-
-    if (!branchId || !companyId || !companySlug || !branchSlug || !isOperationalFormType(formType)) {
-      logServerError("branch.qr.ensure.invalid_form_data", new Error("Missing QR ensure form data."), {
-        branchId,
-        companyId,
-        companySlug,
-        branchSlug,
-        formType,
-      });
-      return;
-    }
-
-    const { branch } = await requireBranchAccess(companySlug, branchSlug);
-
-    if (branch.id !== branchId || branch.companyId !== companyId) {
-      throw new Error("La sede seleccionada no coincide con la ruta actual.");
-    }
-
-    const supabase = await getSupabaseRlsClient();
-
-    if (!supabase) {
-      throw new Error("Supabase RLS no está configurado en el servidor.");
-    }
-
-    logServerInfo("branch.qr.ensure.start", {
-      branchId,
-      companyId,
-      companySlug,
-      branchSlug,
-      formType,
-    });
-
-    const { error } = await supabase.from("branch_form_qr_codes").upsert(
-      {
-        branch_id: branchId,
-        company_id: companyId,
-        form_type: formType,
-        is_active: true,
-      },
-      { onConflict: "branch_id,form_type", ignoreDuplicates: true },
-    );
-
-    if (error && error.code !== "23505") {
-      throw new Error(formatDatabaseError(error, "No fue posible crear el QR de la sede."));
-    }
-
-    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
-    logServerInfo("branch.qr.ensure.done", {
-      branchId,
-      companyId,
-      companySlug,
-      branchSlug,
-      formType,
-    });
-  } catch (error) {
-    logServerError("branch.qr.ensure.failed", error, {
-      branchId: readString(formData, "branchId"),
-      companyId: readString(formData, "companyId"),
-      companySlug: readString(formData, "companySlug"),
-      branchSlug: readString(formData, "branchSlug"),
-      formType: readString(formData, "formType"),
-    });
-  }
 }
 
 async function createUserRecord({

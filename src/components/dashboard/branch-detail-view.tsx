@@ -6,8 +6,6 @@ import {
   createBranchSanitationAreaAction,
   createBranchDocumentAction,
   deleteBranchDocumentAction,
-  ensureBranchQrCodeAction,
-  regenerateBranchQrAction,
   toggleBranchRefrigerationEquipmentAction,
   toggleBranchSanitationAreaAction,
   updateBranchDocumentAction,
@@ -586,15 +584,8 @@ function CatalogAdminPanel({
 
 function BranchQrCard({
   qrCode,
-  branchId,
-  companySlug,
-  branchSlug,
 }: {
   qrCode: BranchFormQrSummary | undefined;
-  branchId: string;
-  companySlug: string;
-  branchSlug: string;
-  formType: OperationalFormType;
 }) {
   const formType = qrCode?.formType;
   const label = formType ? operationalFormLabels[formType] : null;
@@ -645,22 +636,10 @@ function BranchQrCard({
             >
               Descargar QR
             </a>
-            <form action={regenerateBranchQrAction}>
-              <input type="hidden" name="qrId" value={qrCode.id} />
-              <input type="hidden" name="branchId" value={branchId} />
-              <input type="hidden" name="companySlug" value={companySlug} />
-              <input type="hidden" name="branchSlug" value={branchSlug} />
-              <button
-                type="submit"
-                className="inline-flex min-h-10 items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-              >
-                Regenerar
-              </button>
-            </form>
           </div>
 
           <p className="text-xs leading-5 text-[#7a838a]">
-            Token activo: {qrCode.token}. Regenerar invalida el QR anterior.
+            Token permanente: {qrCode.token}.
           </p>
         </div>
       </div>
@@ -670,16 +649,8 @@ function BranchQrCard({
 
 function MissingBranchQrCard({
   formType,
-  branchId,
-  companyId,
-  companySlug,
-  branchSlug,
 }: {
   formType: OperationalFormType;
-  branchId: string;
-  companyId: string;
-  companySlug: string;
-  branchSlug: string;
 }) {
   const label = operationalFormLabels[formType];
 
@@ -687,21 +658,9 @@ function MissingBranchQrCard({
     <article className="rounded-[1.6rem] border border-dashed border-[#d8e5e6] bg-white p-4">
       <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h3>
       <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-        No se encontro un QR para este formulario. Puedes crearlo manualmente sin afectar los demas codigos.
+        El QR permanente de este formulario se crea automaticamente. Recarga la sede en unos segundos si acaba de ser
+        creada.
       </p>
-      <form action={ensureBranchQrCodeAction} className="mt-4">
-        <input type="hidden" name="branchId" value={branchId} />
-        <input type="hidden" name="companyId" value={companyId} />
-        <input type="hidden" name="companySlug" value={companySlug} />
-        <input type="hidden" name="branchSlug" value={branchSlug} />
-        <input type="hidden" name="formType" value={formType} />
-        <button
-          type="submit"
-          className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#12110f] px-4 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
-        >
-          Crear QR
-        </button>
-      </form>
     </article>
   );
 }
@@ -866,19 +825,11 @@ export function BranchDetailView({
                   <BranchQrCard
                     key={formType}
                     qrCode={qrCode}
-                    formType={formType}
-                    branchId={branch.id}
-                    companySlug={company.slug}
-                    branchSlug={branch.slug}
                   />
                 ) : (
                   <MissingBranchQrCard
                     key={formType}
                     formType={formType}
-                    branchId={branch.id}
-                    companyId={branch.companyId}
-                    companySlug={company.slug}
-                    branchSlug={branch.slug}
                   />
                 );
               })}

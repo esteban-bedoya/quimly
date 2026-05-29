@@ -45,7 +45,6 @@ type BranchFormQrRow = {
   form_type: OperationalFormType;
   token: string;
   is_active: boolean;
-  regenerated_at: string | null;
 };
 
 type BranchCatalogRow = {
@@ -65,7 +64,6 @@ function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
       formType: qrCode.form_type,
       token: qrCode.token,
       isActive: qrCode.is_active,
-      regeneratedAt: qrCode.regenerated_at,
     })) ?? []
   );
 }
@@ -127,7 +125,7 @@ async function ensureBranchQrCodes({
 
   const { data: refreshedQrRows, error: refreshError } = await supabase
     .from("branch_form_qr_codes")
-    .select("id, branch_id, company_id, form_type, token, is_active, regenerated_at")
+    .select("id, branch_id, company_id, form_type, token, is_active")
     .eq("branch_id", branchId)
     .order("form_type", { ascending: true })
     .returns<BranchFormQrRow[]>();
@@ -202,7 +200,7 @@ export default async function BranchDashboardPage({
         .returns<BranchDocumentRow[]>(),
       supabase
         .from("branch_form_qr_codes")
-        .select("id, branch_id, company_id, form_type, token, is_active, regenerated_at")
+        .select("id, branch_id, company_id, form_type, token, is_active")
         .eq("branch_id", branch.id)
         .order("form_type", { ascending: true })
         .returns<BranchFormQrRow[]>(),
