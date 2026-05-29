@@ -323,7 +323,67 @@ function CompactModuleList({
   );
 }
 
-function CatalogAdminPanel({
+function OperationalQrBlock({
+  qrCode,
+  formType,
+}: {
+  qrCode: BranchFormQrSummary | undefined;
+  formType: OperationalFormType;
+}) {
+  const label = operationalFormLabels[formType];
+
+  if (!qrCode) {
+    return (
+      <div className="rounded-[1.25rem] border border-dashed border-[#d8e5e6] bg-[#fbfdfe] px-4 py-5 text-sm leading-6 text-[#5e6770]">
+        El QR permanente de este formulario se crea automaticamente. Recarga la sede en unos segundos si acaba de ser
+        creada.
+      </div>
+    );
+  }
+
+  const publicPath = createPublicFormPath(qrCode.token);
+  const qrImagePath = `/api/qr/${encodeURIComponent(qrCode.token)}`;
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+      <Image
+        src={qrImagePath}
+        alt={`QR publico para ${label.title}`}
+        width={144}
+        height={144}
+        unoptimized
+        className="h-28 w-28 rounded-2xl border border-[#d8e5e6] bg-white p-2"
+      />
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="rounded-2xl border border-[#d8e5e6] bg-[#fbfdfe] px-3 py-3">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">URL publica</p>
+          <a
+            href={publicPath}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 block truncate text-sm font-semibold text-[#12110f] underline decoration-[#2a7f86]/25 underline-offset-4"
+          >
+            {publicPath}
+          </a>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={qrImagePath}
+            download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
+            className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#12110f] px-4 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
+          >
+            Descargar QR
+          </a>
+        </div>
+
+        <p className="text-xs leading-5 text-[#7a838a]">Token permanente: {qrCode.token}.</p>
+      </div>
+    </div>
+  );
+}
+
+function InlineCatalogManager({
   title,
   hint,
   branchId,
@@ -343,18 +403,18 @@ function CatalogAdminPanel({
   toggleAction: (formData: FormData) => void | Promise<void>;
 }) {
   return (
-    <article className="rounded-[1.6rem] border border-[#d8e5e6] bg-white p-4 shadow-[0_12px_34px_rgba(18,17,15,0.05)]">
+    <div className="space-y-3">
       <div>
-        <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{title}</h3>
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">{title}</p>
         <p className="mt-1 text-sm leading-6 text-[#5e6770]">{hint}</p>
       </div>
 
-      <div className="mt-4 grid gap-2">
+      <div className="grid gap-2">
         {items.length ? (
           items.map((item) => (
             <div
               key={item.id}
-              className="flex flex-col gap-3 rounded-2xl border border-[#d8e5e6] bg-[#fbfdfe] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-2xl border border-[#d8e5e6] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <p className="font-semibold text-[#12110f]">{item.name}</p>
@@ -370,7 +430,7 @@ function CatalogAdminPanel({
                 {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
                 <button
                   type="submit"
-                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#d8e5e6] bg-white px-4 text-sm font-semibold text-[#12110f] transition hover:bg-[#f8fbfb]"
+                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#d8e5e6] bg-[#fbfdfe] px-4 text-sm font-semibold text-[#12110f] transition hover:bg-white"
                 >
                   {item.isActive ? "Desactivar" : "Activar"}
                 </button>
@@ -378,19 +438,19 @@ function CatalogAdminPanel({
             </div>
           ))
         ) : (
-          <p className="rounded-2xl border border-dashed border-[#d8e5e6] bg-[#fbfdfe] px-4 py-4 text-sm leading-6 text-[#5e6770]">
+          <p className="rounded-2xl border border-dashed border-[#d8e5e6] bg-white px-4 py-4 text-sm leading-6 text-[#5e6770]">
             Todavia no hay elementos registrados.
           </p>
         )}
       </div>
 
-      <form action={createAction} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+      <form action={createAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <input type="hidden" name="branchId" value={branchId} />
         <input type="hidden" name="companySlug" value={companySlug} />
         <input type="hidden" name="branchSlug" value={branchSlug} />
         <input
           name="name"
-          placeholder="Nombre para el selector publico"
+          placeholder="Agregar opcion"
           className="min-h-11 rounded-2xl border border-[#d8e5e6] bg-white px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
         />
         <button
@@ -400,87 +460,45 @@ function CatalogAdminPanel({
           Agregar
         </button>
       </form>
-    </article>
+    </div>
   );
 }
 
-function BranchQrCard({
-  qrCode,
-}: {
-  qrCode: BranchFormQrSummary | undefined;
-}) {
-  const formType = qrCode?.formType;
-  const label = formType ? operationalFormLabels[formType] : null;
-  const publicPath = qrCode ? createPublicFormPath(qrCode.token) : "";
-  const qrImagePath = qrCode ? `/api/qr/${encodeURIComponent(qrCode.token)}` : "";
-
-  if (!qrCode || !label) {
-    return null;
-  }
-
-  return (
-    <article className="rounded-[1.6rem] border border-[#d8e5e6] bg-white p-4 shadow-[0_12px_34px_rgba(18,17,15,0.05)]">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <Image
-          src={qrImagePath}
-          alt={`QR publico para ${label.title}`}
-          width={144}
-          height={144}
-          unoptimized
-          className="h-32 w-32 rounded-2xl border border-[#d8e5e6] bg-white p-2"
-        />
-        <div className="min-w-0 flex-1 space-y-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.shortTitle}</p>
-            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h3>
-            <p className="mt-1 text-sm leading-6 text-[#5e6770]">{label.description}</p>
-          </div>
-
-          <div className="rounded-2xl border border-[#d8e5e6] bg-[#fbfdfe] px-3 py-3">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
-              URL publica
-            </p>
-            <a
-              href={publicPath}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 block truncate text-sm font-semibold text-[#12110f] underline decoration-[#2a7f86]/25 underline-offset-4"
-            >
-              {publicPath}
-            </a>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={qrImagePath}
-              download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
-              className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#12110f] px-4 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
-            >
-              Descargar QR
-            </a>
-          </div>
-
-          <p className="text-xs leading-5 text-[#7a838a]">Token permanente: {qrCode.token}.</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function MissingBranchQrCard({
+function OperationalFlowCard({
   formType,
+  qrCode,
+  configuration,
 }: {
   formType: OperationalFormType;
+  qrCode: BranchFormQrSummary | undefined;
+  configuration?: ReactNode;
 }) {
   const label = operationalFormLabels[formType];
 
   return (
-    <article className="rounded-[1.6rem] border border-dashed border-[#d8e5e6] bg-white p-4">
-      <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h3>
-      <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-        El QR permanente de este formulario se crea automaticamente. Recarga la sede en unos segundos si acaba de ser
-        creada.
-      </p>
+    <article className="rounded-[1.7rem] border border-[#d8e5e6] bg-white p-5 shadow-[0_12px_34px_rgba(18,17,15,0.05)]">
+      <div className="space-y-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.shortTitle}</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#12110f]">{label.title}</h2>
+          <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
+        </div>
+
+        <OperationalQrBlock qrCode={qrCode} formType={formType} />
+
+        {configuration ? (
+          <div className="border-t border-[#d8e5e6] pt-4">{configuration}</div>
+        ) : (
+          <div className="border-t border-[#d8e5e6] pt-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
+              Configuracion
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+              Este flujo no requiere selectores adicionales antes de usar el formulario.
+            </p>
+          </div>
+        )}
+      </div>
     </article>
   );
 }
@@ -851,27 +869,6 @@ function ComplianceSectionRepository({
   );
 }
 
-function getOperationalFallbackItems(): BranchModuleItem[] {
-  return [
-    {
-      title: "Saneamiento de Areas",
-      detail: "Checklist de Limpieza para rutinas diarias y cierre operativo.",
-    },
-    {
-      title: "Control Termico",
-      detail: "Control de Frio para validar temperaturas en recepcion y conservacion.",
-    },
-    {
-      title: "Recepcion de Insumos",
-      detail: "Entrada de Mercancia para registrar materias primas y novedades de entrega.",
-    },
-    {
-      title: "Calidad del Agua",
-      detail: "Prueba de Cloro en Agua para control basico de inocuidad.",
-    },
-  ];
-}
-
 function getComplianceFallbackItems(): BranchModuleItem[] {
   return [
     {
@@ -983,80 +980,57 @@ export function BranchLandingView({
 export function BranchOperationalView({
   company,
   branch,
-  operationalItems,
   qrCodes,
   refrigerationEquipment,
   sanitationAreas,
 }: BranchDetailViewProps) {
-  const moduleItems = operationalItems ?? getOperationalFallbackItems();
-
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
-      <div className="grid gap-6">
-        <CompactModuleList
-          title="Control operativo"
-          subtitle="Todo lo relacionado con operacion diaria vive aqui: formularios publicos, QR permanentes y catalogos de apoyo."
-          items={moduleItems}
-        />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {operationalFormTypes.map((formType) => {
+          const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
 
-        <section className="rounded-[1.7rem] border border-[#d8e5e6] bg-white p-5">
-          <div className="max-w-3xl space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a7f86]">QR publicos</p>
-            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">
-              Formularios operativos sin login
-            </h2>
-            <p className="text-sm leading-7 text-[#5e6770]">
-              Cada codigo abre un formulario publico limitado a crear registros para esta sede. El token es
-              permanente y el QR descargado puede imprimirse sin riesgo de cambio.
-            </p>
-          </div>
+          let configuration: ReactNode | undefined;
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            {operationalFormTypes.map((formType) => {
-              const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
+          if (formType === "thermal_control") {
+            configuration = (
+              <InlineCatalogManager
+                title="Equipos de refrigeracion"
+                hint="Opciones disponibles para el registro termico."
+                branchId={branch.id}
+                companySlug={company.slug}
+                branchSlug={branch.slug}
+                items={refrigerationEquipment}
+                createAction={createBranchRefrigerationEquipmentAction}
+                toggleAction={toggleBranchRefrigerationEquipmentAction}
+              />
+            );
+          }
 
-              return qrCode ? (
-                <BranchQrCard key={formType} qrCode={qrCode} />
-              ) : (
-                <MissingBranchQrCard key={formType} formType={formType} />
-              );
-            })}
-          </div>
-        </section>
+          if (formType === "area_sanitation") {
+            configuration = (
+              <InlineCatalogManager
+                title="Areas o zonas"
+                hint="Opciones disponibles para el checklist de saneamiento."
+                branchId={branch.id}
+                companySlug={company.slug}
+                branchSlug={branch.slug}
+                items={sanitationAreas}
+                createAction={createBranchSanitationAreaAction}
+                toggleAction={toggleBranchSanitationAreaAction}
+              />
+            );
+          }
 
-        <section className="rounded-[1.7rem] border border-[#d8e5e6] bg-[#fbfdfd] p-5">
-          <div className="max-w-3xl space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a7f86]">Catalogos rapidos</p>
-            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">Selectores de la sede</h2>
-            <p className="text-sm leading-7 text-[#5e6770]">
-              Equipos y areas alimentan los formularios operativos. Mantenerlos compactos facilita el uso diario en
-              cocina y reduce errores de captura.
-            </p>
-          </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <CatalogAdminPanel
-              title="Equipos de refrigeracion"
-              hint="Aparecen en el QR de control termico."
-              branchId={branch.id}
-              companySlug={company.slug}
-              branchSlug={branch.slug}
-              items={refrigerationEquipment}
-              createAction={createBranchRefrigerationEquipmentAction}
-              toggleAction={toggleBranchRefrigerationEquipmentAction}
+          return (
+            <OperationalFlowCard
+              key={formType}
+              formType={formType}
+              qrCode={qrCode}
+              configuration={configuration}
             />
-            <CatalogAdminPanel
-              title="Areas o zonas"
-              hint="Aparecen en el QR de saneamiento de areas."
-              branchId={branch.id}
-              companySlug={company.slug}
-              branchSlug={branch.slug}
-              items={sanitationAreas}
-              createAction={createBranchSanitationAreaAction}
-              toggleAction={toggleBranchSanitationAreaAction}
-            />
-          </div>
-        </section>
+          );
+        })}
       </div>
     </BranchLayout>
   );
