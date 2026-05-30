@@ -64,25 +64,25 @@ const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
   },
   plant_certifications: {
     title: "Certificaciones de Planta",
-    subtitle: "Fumigacion y Tanques",
+    subtitle: "Fumigación y Tanques",
     hint: "Incluye control visual de fecha de vencimiento.",
   },
   traceability_supplies: {
     title: "Trazabilidad de Insumos",
-    subtitle: "Fichas tecnicas + Hojas de seguridad",
+    subtitle: "Fichas técnicas + Hojas de seguridad",
     hint: "Centraliza soportes por producto y respaldo tecnico.",
   },
   staff_records: {
     title: "Fichas del Personal",
-    subtitle: "Curso de manipulacion + Examenes medicos",
+    subtitle: "Curso de manipulación + Exámenes médicos",
     hint: "Registros con semaforo de vencimiento.",
   },
 };
 
 const productCardSurface =
-  "border border-white/80 bg-white/74 shadow-[0_28px_70px_rgba(18,17,15,0.14)] backdrop-blur-xl";
+  "border border-white/80 bg-white/74 shadow-[0_-18px_40px_rgba(18,17,15,0.08),0_18px_40px_rgba(18,17,15,0.08)] backdrop-blur-xl";
 const productCardSurfaceSoft =
-  "border border-white/55 bg-white/48 shadow-[0_18px_45px_rgba(18,17,15,0.08)] backdrop-blur-xl";
+  "border border-white/55 bg-white/48 shadow-[0_14px_32px_rgba(18,17,15,0.06)] backdrop-blur-xl";
 
 function formatDate(dateValue: string | null) {
   if (!dateValue) {
@@ -211,7 +211,7 @@ function BranchLayout({
                       type="submit"
                       className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16"
                     >
-                      Cerrar sesion
+                      Cerrar sesión
                     </button>
                   </form>
                 </div>
@@ -250,7 +250,7 @@ function BranchLayout({
                       <Link
                         key={item.key}
                         href={item.href}
-                        className={`relative z-10 inline-flex min-h-10 min-w-0 items-center justify-center rounded-[1rem] px-3 text-center text-sm transition duration-300 sm:px-4 ${
+                        className={`relative z-10 inline-flex min-h-10 min-w-0 items-center justify-center rounded-[1rem] px-3 text-center text-sm transition duration-300 hover:scale-[1.04] sm:px-4 ${
                           isActive ? "font-semibold text-[#12110f]" : "font-medium text-white/68 hover:text-white"
                         }`}
                       >
@@ -309,7 +309,7 @@ function LandingModuleCard({
       <div className="flex h-full flex-col gap-5">
         <div className="space-y-3">
           <span className="inline-flex rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">
-            {accent === "operational" ? "Macro modulo" : "Repositorio"}
+            {accent === "operational" ? "Macro módulo" : "Repositorio"}
           </span>
           <div>
             <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">{title}</h2>
@@ -327,7 +327,7 @@ function LandingModuleCard({
           href={href}
           className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition hover:bg-[#1d1b18] sm:w-fit"
         >
-          Abrir modulo
+          Abrir módulo
         </Link>
       </div>
     </article>
@@ -375,7 +375,7 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
   if (!qrCode) {
     return (
       <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
-        El QR administrativo de este modulo estara disponible en unos segundos si la sede acaba de ser creada.
+        El QR administrativo de este módulo estará disponible en unos segundos si la sede acaba de ser creada.
       </div>
     );
   }
@@ -387,13 +387,13 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
       <a
         href={qrImagePath}
         download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
-        className="inline-flex min-h-7 w-full items-center justify-center rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:bg-[#f1f1f1] sm:text-xs"
+        className="inline-flex min-h-7 w-full items-center justify-center rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
       >
         Descargar QR
       </a>
       <button
         type="button"
-        className="min-h-7 w-full rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:bg-[#f1f1f1] sm:text-xs"
+        className="min-h-7 w-full rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
       >
         Agregar registro
       </button>
@@ -403,57 +403,80 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
 
 function InlineCatalogManager({
   title,
-  hint,
   branchId,
   companySlug,
   branchSlug,
   items,
   createAction,
   toggleAction,
-  summarySingular,
-  summaryPlural,
+  activeSummarySingular,
+  activeSummaryPlural,
+  inactiveSummarySingular,
+  inactiveSummaryPlural,
 }: {
   title: string;
-  hint: string;
   branchId: string;
   companySlug: string;
   branchSlug: string;
   items: BranchCatalogItemSummary[];
   createAction: (formData: FormData) => void | Promise<void>;
   toggleAction: (formData: FormData) => void | Promise<void>;
-  summarySingular: string;
-  summaryPlural: string;
+  activeSummarySingular: string;
+  activeSummaryPlural: string;
+  inactiveSummarySingular: string;
+  inactiveSummaryPlural: string;
 }) {
-  const configuredSummary = `${items.length} ${items.length === 1 ? summarySingular : summaryPlural}`;
+  const activeCount = items.filter((item) => item.isActive).length;
+  const inactiveCount = items.length - activeCount;
+  const activeSummary = `${activeCount} ${
+    activeCount === 1 ? activeSummarySingular : activeSummaryPlural
+  }`;
+  const inactiveSummary =
+    inactiveCount > 0
+      ? `${inactiveCount} ${inactiveCount === 1 ? inactiveSummarySingular : inactiveSummaryPlural}`
+      : null;
 
   return (
     <details className="group rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 backdrop-blur-xl">
-      <summary className="cursor-pointer list-none">
-        <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1">
-          <span className="text-sm font-semibold text-[#12110f]">Configurar opciones del formulario</span>
-          <span className="row-span-2 inline-flex h-6 w-6 items-center justify-center self-center">
-            <span className="block h-3 w-3 bg-[#12110f]/70 [clip-path:polygon(50%_0,100%_100%,0_100%)] transition-transform duration-200 group-open:rotate-180" />
-          </span>
-          <p className="text-xs leading-5 text-[#5e6770]">{configuredSummary}</p>
+      <summary className="cursor-pointer list-none transition duration-300 hover:scale-[1.01] hover:text-[#1f8f99]">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold leading-5 text-[#5e6770]">
+            {activeSummary}
+            {inactiveSummary ? ` - ${inactiveSummary}` : ""}
+          </p>
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-3">
+            <span className="inline-flex h-6 w-6 items-center justify-center self-center text-[#12110f]/70 transition-transform duration-200 group-open:rotate-180">
+              <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+                <path
+                  d="M2.25 4.5 6 8.25 9.75 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.8"
+                />
+              </svg>
+            </span>
+            <span className="text-sm font-semibold text-[#12110f]">{`Configurar ${title.toLowerCase()}`}</span>
+          </div>
         </div>
       </summary>
 
       <div className="mt-4 space-y-3">
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7a838a]">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-[#5e6770]">{hint}</p>
-        </div>
-
         <div className="grid gap-2">
           {items.length ? (
             items.map((item) => (
               <div
                 key={item.id}
-                className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white/60 px-4 py-3 shadow-[0_18px_45px_rgba(18,17,15,0.08)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between"
+                className={`flex flex-col gap-3 rounded-2xl border px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between ${
+                  item.isActive
+                    ? "border-emerald-100 bg-emerald-50/75"
+                    : "border-rose-100 bg-rose-50/80"
+                }`}
               >
                 <div>
-                  <p className="font-semibold text-[#12110f]">{item.name}</p>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a838a]">
+                  <p className="text-sm text-[#12110f]">{item.name}</p>
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-[#7a838a]">
                     {item.isActive ? "Activo" : "Inactivo"}
                   </p>
                 </div>
@@ -465,7 +488,8 @@ function InlineCatalogManager({
                   {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
                   <button
                     type="submit"
-                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/80 bg-white/80 px-4 text-sm font-semibold text-[#12110f] transition hover:bg-white"
+                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#12110f]/12 bg-[#fbfbfb] px-4 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1]"
+                    
                   >
                     {item.isActive ? "Desactivar" : "Activar"}
                   </button>
@@ -474,7 +498,7 @@ function InlineCatalogManager({
             ))
           ) : (
             <p className="rounded-2xl border border-dashed border-white/70 bg-white/55 px-4 py-4 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
-              Todavia no hay elementos registrados.
+              Todavía no hay elementos registrados.
             </p>
           )}
         </div>
@@ -485,12 +509,12 @@ function InlineCatalogManager({
           <input type="hidden" name="branchSlug" value={branchSlug} />
           <input
             name="name"
-            placeholder="Agregar opcion"
-            className="min-h-11 rounded-2xl border border-white/80 bg-white/80 px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+            placeholder="Agregar opción"
+            className="min-h-11 rounded-2xl border border-[#2a7f86]/35 bg-white/80 px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]"
           />
           <button
             type="submit"
-            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
+            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition duration-300 hover:scale-[1.04] hover:bg-[#2b2824]"
           >
             Agregar
           </button>
@@ -589,7 +613,7 @@ function BranchDocumentEditor({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Titulo</label>
+            <label className="block text-sm font-medium text-[#12110f]">Título</label>
             <input
               name="title"
               defaultValue={document.title}
@@ -600,7 +624,7 @@ function BranchDocumentEditor({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Descripcion</label>
+            <label className="block text-sm font-medium text-[#12110f]">Descripción</label>
             <input
               name="description"
               defaultValue={document.description ?? ""}
@@ -771,7 +795,7 @@ function CreateDocumentForm({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Titulo</label>
+            <label className="block text-sm font-medium text-[#12110f]">Título</label>
             <input
               name="title"
               placeholder="Nombre del PDF"
@@ -780,7 +804,7 @@ function CreateDocumentForm({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Descripcion</label>
+            <label className="block text-sm font-medium text-[#12110f]">Descripción</label>
             <input
               name="description"
               placeholder="Resumen breve"
@@ -835,7 +859,7 @@ function CreateDocumentForm({
             className="block w-full text-sm text-[#5e6770] file:mr-4 file:rounded-full file:border-0 file:bg-[#12110f] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#1d1b18]"
           />
           <p className="text-xs leading-6 text-[#7a838a]">
-            Puedes subir el archivo o pegar una URL. Si subes archivo, Quimly publicara el PDF en Storage.
+            Puedes subir el archivo o pegar una URL. Si subes archivo, Quimly publicará el PDF en Storage.
           </p>
         </div>
 
@@ -902,7 +926,7 @@ function ComplianceSectionRepository({
           ))
         ) : (
           <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-7 text-[#5e6770] backdrop-blur-xl">
-            Todavia no hay documentos cargados en esta seccion.
+            Todavía no hay documentos cargados en esta sección.
           </div>
         )}
 
@@ -925,16 +949,16 @@ function getComplianceFallbackItems(): BranchModuleItem[] {
     },
     {
       title: "Certificaciones de Planta",
-      detail: "Fumigacion y Tanques con control visual de fecha de vencimiento.",
+      detail: "Fumigación y Tanques con control visual de fecha de vencimiento.",
       badge: "Vencimiento",
     },
     {
       title: "Trazabilidad de Insumos",
-      detail: "Fichas tecnicas de productos + hojas de seguridad indexadas por lote.",
+      detail: "Fichas técnicas de productos + hojas de seguridad indexadas por lote.",
     },
     {
       title: "Fichas del Personal",
-      detail: "Curso de manipulacion + examenes medicos con semaforo de vencimiento.",
+      detail: "Curso de manipulación + exámenes médicos con semáforo de vencimiento.",
       badge: "Vencimiento",
     },
   ];
@@ -973,12 +997,12 @@ export function BranchLandingView({
             Elige el frente que deseas gestionar
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5e6770]">
-            Esta vista concentra solo el contexto esencial. La operacion diaria y el cumplimiento documental viven en
-            modulos separados para reducir scroll y hacer mas clara la gestion.
+            Esta vista concentra solo el contexto esencial. La operación diaria y el cumplimiento documental viven en
+            módulos separados para reducir scroll y hacer más clara la gestión.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <SummaryStat label="QR publicos" value={qrCodes.length} tone="accent" />
+            <SummaryStat label="QR públicos" value={qrCodes.length} tone="accent" />
             <SummaryStat label="Documentos" value={documents.length} />
             <SummaryStat label="Vencen pronto" value={countDocumentsExpiring(documents)} />
           </div>
@@ -988,7 +1012,7 @@ export function BranchLandingView({
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Cobertura actual</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <SummaryStat label="Equipos" value={refrigerationEquipment.length} />
-            <SummaryStat label="Areas" value={sanitationAreas.length} />
+            <SummaryStat label="Áreas" value={sanitationAreas.length} />
             <SummaryStat label="Secciones normativas" value={Object.keys(sectionLabels).length} />
             <SummaryStat label="Estado sede" value={branch.isActive ? "Activa" : "Inactiva"} />
           </div>
@@ -998,19 +1022,19 @@ export function BranchLandingView({
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <LandingModuleCard
           title="Control operativo"
-          description="Gestiona QR publicos, formularios operativos y catalogos rapidos para uso diario en sede."
+          description="Gestiona QR públicos, formularios operativos y catálogos rápidos para uso diario en sede."
           href={`${basePath}/operacion`}
           accent="operational"
           metrics={[
             { label: "QR", value: qrCodes.length },
             { label: "Equipos", value: refrigerationEquipment.length },
-            { label: "Areas", value: sanitationAreas.length },
+            { label: "Áreas", value: sanitationAreas.length },
             { label: "Formularios", value: operationalFormTypes.length },
           ]}
         />
         <LandingModuleCard
           title="Cumplimiento normativo"
-          description="Administra repositorio PDF, vencimientos y documentos por seccion con una vista compacta."
+          description="Administra repositorio PDF, vencimientos y documentos por sección con una vista compacta."
           href={`${basePath}/cumplimiento`}
           accent="compliance"
           metrics={[
@@ -1034,7 +1058,7 @@ export function BranchOperationalView({
 }: BranchDetailViewProps) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
-      <p className="mb-6 max-w-3xl text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
+      <p className="mb-10 mt-3 max-w-[68rem] text-base leading-7 text-[#12110f] sm:mb-12 sm:mt-4 sm:text-lg sm:leading-8">
         Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar su código QR.
       </p>
 
@@ -1047,16 +1071,17 @@ export function BranchOperationalView({
           if (formType === "thermal_control") {
             configuration = (
               <InlineCatalogManager
-                title="EQUIPOS DE REFRIGERACION Y CONGELACION"
-                hint="Opciones disponibles para el registro termico."
+                title="EQUIPOS DE REFRIGERACIÓN Y CONGELACIÓN"
                 branchId={branch.id}
                 companySlug={company.slug}
                 branchSlug={branch.slug}
                 items={refrigerationEquipment}
                 createAction={createBranchRefrigerationEquipmentAction}
                 toggleAction={toggleBranchRefrigerationEquipmentAction}
-                summarySingular="equipo activo"
-                summaryPlural="equipos activos"
+                activeSummarySingular="equipo activo"
+                activeSummaryPlural="equipos activos"
+                inactiveSummarySingular="equipo inactivo"
+                inactiveSummaryPlural="equipos inactivos"
               />
             );
           }
@@ -1064,16 +1089,17 @@ export function BranchOperationalView({
           if (formType === "area_sanitation") {
             configuration = (
               <InlineCatalogManager
-                title="AREAS, EQUIPOS Y UTENSILIOS"
-                hint="Opciones disponibles para el checklist de saneamiento."
+                title="ÁREAS, EQUIPOS Y UTENSILIOS"
                 branchId={branch.id}
                 companySlug={company.slug}
                 branchSlug={branch.slug}
                 items={sanitationAreas}
                 createAction={createBranchSanitationAreaAction}
                 toggleAction={toggleBranchSanitationAreaAction}
-                summarySingular="area activa"
-                summaryPlural="areas activas"
+                activeSummarySingular="área activa"
+                activeSummaryPlural="áreas activas"
+                inactiveSummarySingular="área inactiva"
+                inactiveSummaryPlural="áreas inactivas"
               />
             );
           }
@@ -1111,7 +1137,7 @@ export function BranchComplianceView({
       <div className="grid gap-6">
         <CompactModuleList
           title="Cumplimiento normativo"
-          subtitle="Repositorio documental organizado por seccion, con vencimientos visibles y detalle editable solo cuando hace falta."
+          subtitle="Repositorio documental organizado por sección, con vencimientos visibles y detalle editable solo cuando hace falta."
           items={moduleItems}
         />
 
@@ -1123,7 +1149,7 @@ export function BranchComplianceView({
                 Gestion documental compacta
               </h2>
               <p className="text-sm leading-7 text-[#5e6770]">
-                Cada seccion se abre solo cuando necesitas trabajarla. Asi evitamos tarjetas enormes repetidas y la
+                Cada sección se abre solo cuando necesitas trabajarla. Así evitamos tarjetas enormes repetidas y la
                 sede deja de sentirse como un dashboard infinito.
               </p>
             </div>

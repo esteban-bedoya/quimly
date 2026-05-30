@@ -19,25 +19,25 @@ export const operationalFormLabels: Record<
     title: "CONTROL DE TEMPERATURAS",
     shortTitle: "CONTROL DE TEMPERATURAS",
     description:
-      "Monitoreo diario obligatorio para garantizar la cadena de frio y asegurar la correcta conservacion de materias primas y alimentos.",
+      "Monitoreo diario obligatorio para garantizar la cadena de frío y asegurar la correcta conservación de materias primas y alimentos.",
   },
   area_sanitation: {
-    title: "LIMPIEZA Y DESINFECCION",
-    shortTitle: "LIMPIEZA Y DESINFECCION",
+    title: "LIMPIEZA Y DESINFECCIÓN",
+    shortTitle: "LIMPIEZA Y DESINFECCIÓN",
     description:
-      "Verificacion diaria del cumplimiento de los protocolos higienicos y sanitarios en las zonas operativas de la sede.",
+      "Verificación diaria del cumplimiento de los protocolos higiénicos y sanitarios en las zonas operativas de la sede.",
   },
   supply_reception: {
-    title: "RECEPCION DE MATERIAS PRIMAS",
-    shortTitle: "RECEPCION DE MATERIAS PRIMAS",
+    title: "RECEPCIÓN DE MATERIAS PRIMAS",
+    shortTitle: "RECEPCIÓN DE MATERIAS PRIMAS",
     description:
-      "Inspeccion obligatoria de condiciones sanitarias, empaque, fechas de vencimiento y temperaturas de los productos al momento del ingreso.",
+      "Inspección obligatoria de condiciones sanitarias, empaque, fechas de vencimiento y temperaturas de los productos al momento del ingreso.",
   },
   water_quality: {
     title: "CONTROL DE AGUA POTABLE",
     shortTitle: "CONTROL DE AGUA POTABLE",
     description:
-      "Registro obligatorio para la medicion diaria de cloro libre residual (rango normativo: 0.3 a 2.0 ppm) para garantizar el abastecimiento seguro.",
+      "Registro obligatorio para la medición diaria de cloro libre residual (rango normativo: 0.3 a 2.0 ppm) para garantizar el abastecimiento seguro.",
   },
 };
 
