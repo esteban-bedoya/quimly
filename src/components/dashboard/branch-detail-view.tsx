@@ -3,19 +3,20 @@
 import Image from "next/image";
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
   archiveBranchRefrigerationEquipmentAction,
   archiveBranchSanitationAreaAction,
-  createBranchRefrigerationEquipmentAction,
-  createBranchSanitationAreaAction,
+  createBranchRefrigerationEquipmentStateAction,
+  createBranchSanitationAreaStateAction,
   createBranchDocumentAction,
   deleteBranchDocumentAction,
   toggleBranchRefrigerationEquipmentAction,
   toggleBranchSanitationAreaAction,
   updateBranchDocumentAction,
+  type AdminActionState,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
 import { operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
@@ -412,7 +413,7 @@ function InlineCatalogManager({
   companySlug,
   branchSlug,
   items,
-  createAction,
+  createStateAction,
   toggleAction,
   archiveAction,
   activeSummarySingular,
@@ -426,15 +427,19 @@ function InlineCatalogManager({
   companySlug: string;
   branchSlug: string;
   items: BranchCatalogItemSummary[];
-  createAction: (formData: FormData) => void | Promise<void>;
-  toggleAction: (formData: FormData) => void | Promise<void>;
-  archiveAction: (formData: FormData) => void | Promise<void>;
+  createStateAction: (
+    state: AdminActionState | undefined,
+    formData: FormData,
+  ) => Promise<AdminActionState>;
+  toggleAction: (formData: FormData) => AdminActionState | Promise<AdminActionState | void> | void;
+  archiveAction: (formData: FormData) => AdminActionState | Promise<AdminActionState | void> | void;
   activeSummarySingular: string;
   activeSummaryPlural: string;
   inactiveSummarySingular: string;
   inactiveSummaryPlural: string;
 }) {
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
+  const [createState, createFormAction] = useActionState<AdminActionState | undefined, FormData>(createStateAction, undefined);
   const sortedItems = [...items].sort((leftItem, rightItem) => {
     if (leftItem.isActive !== rightItem.isActive) {
       return leftItem.isActive ? -1 : 1;
@@ -540,7 +545,7 @@ function InlineCatalogManager({
           )}
         </div>
 
-        <form action={createAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <form action={createFormAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <input type="hidden" name="branchId" value={branchId} />
           <input type="hidden" name="companySlug" value={companySlug} />
           <input type="hidden" name="branchSlug" value={branchSlug} />
@@ -555,6 +560,12 @@ function InlineCatalogManager({
           >
             Agregar
           </button>
+
+          {createState?.error ? (
+            <p className="sm:col-span-2 rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
+              {createState.error}
+            </p>
+          ) : null}
         </form>
       </div>
 
@@ -1181,7 +1192,7 @@ export function BranchOperationalView({
           companySlug={company.slug}
           branchSlug={branch.slug}
           items={refrigerationEquipment}
-          createAction={createBranchRefrigerationEquipmentAction}
+          createStateAction={createBranchRefrigerationEquipmentStateAction}
           toggleAction={toggleBranchRefrigerationEquipmentAction}
           archiveAction={archiveBranchRefrigerationEquipmentAction}
           activeSummarySingular="equipo activo"
@@ -1201,7 +1212,7 @@ export function BranchOperationalView({
           companySlug={company.slug}
           branchSlug={branch.slug}
           items={sanitationAreas}
-          createAction={createBranchSanitationAreaAction}
+          createStateAction={createBranchSanitationAreaStateAction}
           toggleAction={toggleBranchSanitationAreaAction}
           archiveAction={archiveBranchSanitationAreaAction}
           activeSummarySingular="área activa"

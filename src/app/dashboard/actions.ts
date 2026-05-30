@@ -118,9 +118,24 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
     if (error.message.includes("branches_company_id_slug")) {
       return "Ya existe una sede con un nombre equivalente dentro de esa empresa.";
     }
+
+    if (
+      error.message.includes("branch_refrigeration_equipment") ||
+      error.message.includes("branch_sanitation_areas")
+    ) {
+      return "Ya existe una opción con ese nombre en este formulario.";
+    }
   }
 
   return error.message || fallback;
+}
+
+function formatActionError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 type BranchRouteTarget = {
@@ -584,27 +599,83 @@ async function archiveBranchCatalogItem({
 }
 
 export async function createBranchRefrigerationEquipmentAction(formData: FormData) {
-  await createBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+  try {
+    await createBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+    return { success: "Opción agregada correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible crear la opción del formulario."),
+    } satisfies AdminActionState;
+  }
+}
+
+export async function createBranchRefrigerationEquipmentStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await createBranchRefrigerationEquipmentAction(formData)) ?? {};
 }
 
 export async function toggleBranchRefrigerationEquipmentAction(formData: FormData) {
-  await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+  try {
+    await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+    return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible actualizar la opción del formulario."),
+    } satisfies AdminActionState;
+  }
 }
 
 export async function archiveBranchRefrigerationEquipmentAction(formData: FormData) {
-  await archiveBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+  try {
+    await archiveBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+    return { success: "Opción eliminada correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible eliminar la opción del formulario."),
+    } satisfies AdminActionState;
+  }
 }
 
 export async function createBranchSanitationAreaAction(formData: FormData) {
-  await createBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+  try {
+    await createBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+    return { success: "Opción agregada correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible crear la opción del formulario."),
+    } satisfies AdminActionState;
+  }
+}
+
+export async function createBranchSanitationAreaStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await createBranchSanitationAreaAction(formData)) ?? {};
 }
 
 export async function toggleBranchSanitationAreaAction(formData: FormData) {
-  await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+  try {
+    await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+    return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible actualizar la opción del formulario."),
+    } satisfies AdminActionState;
+  }
 }
 
 export async function archiveBranchSanitationAreaAction(formData: FormData) {
-  await archiveBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+  try {
+    await archiveBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+    return { success: "Opción eliminada correctamente." } satisfies AdminActionState;
+  } catch (error) {
+    return {
+      error: formatActionError(error, "No fue posible eliminar la opción del formulario."),
+    } satisfies AdminActionState;
+  }
 }
 
 async function createUserRecord({
