@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useActionState, useEffect, useState, type ReactNode } from "react";
@@ -392,15 +391,35 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
       <a
         href={qrImagePath}
         download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
-        className="inline-flex min-h-7 w-full items-center justify-center rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
+        className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
       >
-        Descargar QR
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
+          <path
+            d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.4"
+          />
+        </svg>
+        Formulario para operarios
       </a>
       <button
         type="button"
-        className="min-h-7 w-full rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
+        className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
       >
-        Agregar registro
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
+          <path
+            d="M5 2.5h4l2 2V13a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 13V2.5Z"
+            fill="none"
+            stroke="currentColor"
+            strokeLinejoin="round"
+            strokeWidth="1.4"
+          />
+          <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
+        </svg>
+        Formulario interno
       </button>
     </div>
   );
@@ -559,9 +578,9 @@ function InlineCatalogManager({
                       type="button"
                       aria-label={`Archivar ${item.name}`}
                       onClick={() => setItemPendingArchive(item)}
-                      className="inline-flex h-10 items-center justify-center text-[#8a2d1f] transition duration-300 hover:scale-[1.08] hover:text-[#6f2116]"
+                      className="inline-flex h-10 items-center justify-center text-[#7b5750] transition duration-300 hover:scale-[1.08] hover:text-[#66443e]"
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6">
                         <path
                           d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
                           fill="none"
@@ -612,7 +631,7 @@ function InlineCatalogManager({
             <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
               <div className="w-full max-w-md rounded-[1.7rem] border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(18,17,15,0.22)]">
                 <div className="space-y-3">
-                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f8dfda] text-[#8a2d1f]">
+                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">
                     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
                       <path
                         d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
@@ -694,12 +713,11 @@ function OperationalFlowCard({
   configuration?: ReactNode;
 }) {
   const label = operationalFormLabels[formType];
-  const qrImagePath = qrCode ? `/api/qr/${encodeURIComponent(qrCode.token)}` : null;
 
   return (
     <article className={`rounded-[1.7rem] p-5 ${productCardSurface} border-[#2a7f86]/35`}>
       <div className="space-y-5">
-        <div className="grid grid-cols-[1fr_auto] items-start gap-4">
+        <div>
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
             <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
@@ -707,17 +725,6 @@ function OperationalFlowCard({
               <OperationalActionsBlock qrCode={qrCode} />
             </div>
           </div>
-
-          {qrImagePath ? (
-            <Image
-              src={qrImagePath}
-              alt={`QR administrativo para ${label.title}`}
-              width={144}
-              height={144}
-              unoptimized
-              className="h-24 w-24 p-1 sm:h-28 sm:w-28"
-            />
-          ) : null}
         </div>
 
         <div className="border-t border-black/8" />
@@ -860,7 +867,7 @@ function BranchDocumentEditor({
         <input type="hidden" name="branchSlug" value={branchSlug} />
         <button
           type="submit"
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-5 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#ddc7c1] bg-[#f7efed] px-5 py-2.5 text-sm font-semibold text-[#7b5750] transition hover:bg-[#f0e4e0]"
         >
           Eliminar
         </button>
