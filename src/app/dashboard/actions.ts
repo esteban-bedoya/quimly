@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
+import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
 
@@ -136,6 +137,13 @@ function formatActionError(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function logAdminActionError(event: string, error: unknown, context: Record<string, unknown> = {}) {
+  logServerError(event, error, {
+    source: "dashboard.actions",
+    ...context,
+  });
 }
 
 type BranchRouteTarget = {
@@ -482,8 +490,10 @@ async function createBranchCatalogItem({
   const companySlug = readString(formData, "companySlug");
   const branchSlug = readString(formData, "branchSlug");
   const name = readString(formData, "name");
+  const logContext = { tableName, branchId, companySlug, branchSlug, itemName: name };
 
   if (!branchId || !companySlug || !branchSlug || !name) {
+    logServerInfo("branch.catalog.create.skipped_invalid_form", logContext);
     return;
   }
 
@@ -508,9 +518,17 @@ async function createBranchCatalogItem({
   });
 
   if (error) {
+    logAdminActionError("branch.catalog.create.failed", error, {
+      ...logContext,
+      companyId: branch.companyId,
+    });
     throw new Error(formatDatabaseError(error, "No fue posible crear el catalogo de la sede."));
   }
 
+  logServerInfo("branch.catalog.create.done", {
+    ...logContext,
+    companyId: branch.companyId,
+  });
   revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
 }
 
@@ -526,8 +544,11 @@ async function toggleBranchCatalogItem({
   const companySlug = readString(formData, "companySlug");
   const branchSlug = readString(formData, "branchSlug");
   const nextIsActive = readBoolean(formData, "nextIsActive");
+  const nextStatus = nextIsActive ? "active" : "inactive";
+  const logContext = { tableName, itemId, branchId, companySlug, branchSlug, nextIsActive, nextStatus };
 
   if (!itemId || !branchId || !companySlug || !branchSlug) {
+    logServerInfo("branch.catalog.toggle.skipped_invalid_form", logContext);
     return;
   }
 
@@ -545,14 +566,16 @@ async function toggleBranchCatalogItem({
 
   const { error } = await supabase
     .from(tableName)
-    .update({ is_active: nextIsActive, status: nextIsActive ? "active" : "inactive" })
+    .update({ is_active: nextIsActive, status: nextStatus })
     .eq("id", itemId)
     .eq("branch_id", branchId);
 
   if (error) {
+    logAdminActionError("branch.catalog.toggle.failed", error, logContext);
     throw new Error(formatDatabaseError(error, "No fue posible actualizar el catalogo de la sede."));
   }
 
+  logServerInfo("branch.catalog.toggle.done", logContext);
   revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
 }
 
@@ -567,8 +590,10 @@ async function archiveBranchCatalogItem({
   const branchId = readString(formData, "branchId");
   const companySlug = readString(formData, "companySlug");
   const branchSlug = readString(formData, "branchSlug");
+  const logContext = { tableName, itemId, branchId, companySlug, branchSlug };
 
   if (!itemId || !branchId || !companySlug || !branchSlug) {
+    logServerInfo("branch.catalog.archive.skipped_invalid_form", logContext);
     return;
   }
 
@@ -592,9 +617,11 @@ async function archiveBranchCatalogItem({
     .eq("is_active", false);
 
   if (error) {
+    logAdminActionError("branch.catalog.archive.failed", error, logContext);
     throw new Error(formatDatabaseError(error, "No fue posible archivar el catalogo de la sede."));
   }
 
+  logServerInfo("branch.catalog.archive.done", logContext);
   revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
 }
 
@@ -603,6 +630,7 @@ export async function createBranchRefrigerationEquipmentAction(formData: FormDat
     await createBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
     return { success: "Opción agregada correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.refrigeration.create.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible crear la opción del formulario."),
     } satisfies AdminActionState;
@@ -621,6 +649,7 @@ export async function toggleBranchRefrigerationEquipmentAction(formData: FormDat
     await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
     return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.refrigeration.toggle.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible actualizar la opción del formulario."),
     } satisfies AdminActionState;
@@ -632,6 +661,7 @@ export async function archiveBranchRefrigerationEquipmentAction(formData: FormDa
     await archiveBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
     return { success: "Opción eliminada correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.refrigeration.archive.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible eliminar la opción del formulario."),
     } satisfies AdminActionState;
@@ -643,6 +673,7 @@ export async function createBranchSanitationAreaAction(formData: FormData) {
     await createBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
     return { success: "Opción agregada correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.sanitation.create.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible crear la opción del formulario."),
     } satisfies AdminActionState;
@@ -661,6 +692,7 @@ export async function toggleBranchSanitationAreaAction(formData: FormData) {
     await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
     return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.sanitation.toggle.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible actualizar la opción del formulario."),
     } satisfies AdminActionState;
@@ -672,10 +704,27 @@ export async function archiveBranchSanitationAreaAction(formData: FormData) {
     await archiveBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
     return { success: "Opción eliminada correctamente." } satisfies AdminActionState;
   } catch (error) {
+    logAdminActionError("branch.catalog.sanitation.archive.action_failed", error);
     return {
       error: formatActionError(error, "No fue posible eliminar la opción del formulario."),
     } satisfies AdminActionState;
   }
+}
+
+export async function toggleBranchRefrigerationEquipmentFormAction(formData: FormData): Promise<void> {
+  await toggleBranchRefrigerationEquipmentAction(formData);
+}
+
+export async function archiveBranchRefrigerationEquipmentFormAction(formData: FormData): Promise<void> {
+  await archiveBranchRefrigerationEquipmentAction(formData);
+}
+
+export async function toggleBranchSanitationAreaFormAction(formData: FormData): Promise<void> {
+  await toggleBranchSanitationAreaAction(formData);
+}
+
+export async function archiveBranchSanitationAreaFormAction(formData: FormData): Promise<void> {
+  await archiveBranchSanitationAreaAction(formData);
 }
 
 async function createUserRecord({

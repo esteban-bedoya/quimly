@@ -7,14 +7,14 @@ import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
-  archiveBranchRefrigerationEquipmentAction,
-  archiveBranchSanitationAreaAction,
+  archiveBranchRefrigerationEquipmentFormAction,
+  archiveBranchSanitationAreaFormAction,
   createBranchRefrigerationEquipmentStateAction,
   createBranchSanitationAreaStateAction,
   createBranchDocumentAction,
   deleteBranchDocumentAction,
-  toggleBranchRefrigerationEquipmentAction,
-  toggleBranchSanitationAreaAction,
+  toggleBranchRefrigerationEquipmentFormAction,
+  toggleBranchSanitationAreaFormAction,
   updateBranchDocumentAction,
   type AdminActionState,
 } from "@/app/dashboard/actions";
@@ -431,8 +431,8 @@ function InlineCatalogManager({
     state: AdminActionState | undefined,
     formData: FormData,
   ) => Promise<AdminActionState>;
-  toggleAction: (formData: FormData) => AdminActionState | Promise<AdminActionState | void> | void;
-  archiveAction: (formData: FormData) => AdminActionState | Promise<AdminActionState | void> | void;
+  toggleAction: (formData: FormData) => void | Promise<void>;
+  archiveAction: (formData: FormData) => void | Promise<void>;
   activeSummarySingular: string;
   activeSummaryPlural: string;
   inactiveSummarySingular: string;
@@ -1193,8 +1193,8 @@ export function BranchOperationalView({
           branchSlug={branch.slug}
           items={refrigerationEquipment}
           createStateAction={createBranchRefrigerationEquipmentStateAction}
-          toggleAction={toggleBranchRefrigerationEquipmentAction}
-          archiveAction={archiveBranchRefrigerationEquipmentAction}
+          toggleAction={toggleBranchRefrigerationEquipmentFormAction}
+          archiveAction={archiveBranchRefrigerationEquipmentFormAction}
           activeSummarySingular="equipo activo"
           activeSummaryPlural="equipos activos"
           inactiveSummarySingular="equipo inactivo"
@@ -1213,8 +1213,8 @@ export function BranchOperationalView({
           branchSlug={branch.slug}
           items={sanitationAreas}
           createStateAction={createBranchSanitationAreaStateAction}
-          toggleAction={toggleBranchSanitationAreaAction}
-          archiveAction={archiveBranchSanitationAreaAction}
+          toggleAction={toggleBranchSanitationAreaFormAction}
+          archiveAction={archiveBranchSanitationAreaFormAction}
           activeSummarySingular="área activa"
           activeSummaryPlural="áreas activas"
           inactiveSummarySingular="área inactiva"
