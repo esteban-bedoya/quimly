@@ -2,9 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useEffect, useState, type ReactNode } from "react";
+import { useFormStatus } from "react-dom";
 
 import {
+  archiveBranchRefrigerationEquipmentAction,
+  archiveBranchSanitationAreaAction,
   createBranchRefrigerationEquipmentAction,
   createBranchSanitationAreaAction,
   createBranchDocumentAction,
@@ -403,29 +407,41 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
 
 function InlineCatalogManager({
   title,
+  formLabel,
   branchId,
   companySlug,
   branchSlug,
   items,
   createAction,
   toggleAction,
+  archiveAction,
   activeSummarySingular,
   activeSummaryPlural,
   inactiveSummarySingular,
   inactiveSummaryPlural,
 }: {
   title: string;
+  formLabel: string;
   branchId: string;
   companySlug: string;
   branchSlug: string;
   items: BranchCatalogItemSummary[];
   createAction: (formData: FormData) => void | Promise<void>;
   toggleAction: (formData: FormData) => void | Promise<void>;
+  archiveAction: (formData: FormData) => void | Promise<void>;
   activeSummarySingular: string;
   activeSummaryPlural: string;
   inactiveSummarySingular: string;
   inactiveSummaryPlural: string;
 }) {
+  const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
+  const sortedItems = [...items].sort((leftItem, rightItem) => {
+    if (leftItem.isActive !== rightItem.isActive) {
+      return leftItem.isActive ? -1 : 1;
+    }
+
+    return leftItem.name.localeCompare(rightItem.name, "es");
+  });
   const activeCount = items.filter((item) => item.isActive).length;
   const inactiveCount = items.length - activeCount;
   const activeSummary = `${activeCount} ${
@@ -439,25 +455,25 @@ function InlineCatalogManager({
   return (
     <details className="group rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 backdrop-blur-xl">
       <summary className="cursor-pointer list-none transition duration-300 hover:scale-[1.01] hover:text-[#1f8f99]">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold leading-5 text-[#5e6770]">
-            {activeSummary}
-            {inactiveSummary ? ` - ${inactiveSummary}` : ""}
-          </p>
-          <div className="grid grid-cols-[auto_1fr] items-center gap-x-3">
-            <span className="inline-flex h-6 w-6 items-center justify-center self-center text-[#12110f]/70 transition-transform duration-200 group-open:rotate-180">
-              <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
-                <path
-                  d="M2.25 4.5 6 8.25 9.75 4.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </span>
-            <span className="text-sm font-semibold text-[#12110f]">{`Configurar ${title.toLowerCase()}`}</span>
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3">
+          <span className="inline-flex h-6 w-6 items-center justify-center self-center text-[#12110f]/70 transition-transform duration-200 group-open:rotate-180">
+            <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+              <path
+                d="M2.25 4.5 6 8.25 9.75 4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              />
+            </svg>
+          </span>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold leading-5 text-[#5e6770]">
+              {activeSummary}
+              {inactiveSummary ? ` - ${inactiveSummary}` : ""}
+            </p>
+            <span className="block text-sm font-semibold text-[#12110f]">{`Configurar ${title.toLowerCase()}`}</span>
           </div>
         </div>
       </summary>
@@ -465,7 +481,7 @@ function InlineCatalogManager({
       <div className="mt-4 space-y-3">
         <div className="grid gap-2">
           {items.length ? (
-            items.map((item) => (
+            sortedItems.map((item) => (
               <div
                 key={item.id}
                 className={`flex flex-col gap-3 rounded-2xl border px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between ${
@@ -480,20 +496,41 @@ function InlineCatalogManager({
                     {item.isActive ? "Activo" : "Inactivo"}
                   </p>
                 </div>
-                <form action={toggleAction}>
-                  <input type="hidden" name="itemId" value={item.id} />
-                  <input type="hidden" name="branchId" value={branchId} />
-                  <input type="hidden" name="companySlug" value={companySlug} />
-                  <input type="hidden" name="branchSlug" value={branchSlug} />
-                  {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#12110f]/12 bg-[#fbfbfb] px-4 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1]"
-                    
-                  >
-                    {item.isActive ? "Desactivar" : "Activar"}
-                  </button>
-                </form>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <form action={toggleAction}>
+                    <input type="hidden" name="itemId" value={item.id} />
+                    <input type="hidden" name="branchId" value={branchId} />
+                    <input type="hidden" name="companySlug" value={companySlug} />
+                    <input type="hidden" name="branchSlug" value={branchSlug} />
+                    {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#12110f]/12 bg-[#fbfbfb] px-4 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1]"
+                    >
+                      {item.isActive ? "Desactivar" : "Activar"}
+                    </button>
+                  </form>
+
+                  {item.status === "inactive" ? (
+                    <button
+                      type="button"
+                      aria-label={`Archivar ${item.name}`}
+                      onClick={() => setItemPendingArchive(item)}
+                      className="inline-flex h-10 items-center justify-center text-[#8a2d1f] transition duration-300 hover:scale-[1.08] hover:text-[#6f2116]"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7">
+                        <path
+                          d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))
           ) : (
@@ -520,7 +557,81 @@ function InlineCatalogManager({
           </button>
         </form>
       </div>
+
+      {typeof document !== "undefined" && itemPendingArchive
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+              <div className="w-full max-w-md rounded-[1.7rem] border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(18,17,15,0.22)]">
+                <div className="space-y-3">
+                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f8dfda] text-[#8a2d1f]">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+                      <path
+                        d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.8"
+                      />
+                    </svg>
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">¿Eliminar opción?</h3>
+                    <div className="space-y-3 text-sm leading-6 text-[#5e6770]">
+                      <p>
+                        • Si eliminas{" "}
+                        <span className="font-semibold uppercase text-[#12110f]">
+                          &quot;{itemPendingArchive.name}&quot;
+                        </span>{" "}
+                        del formulario <span className="font-semibold text-[#12110f]">&quot;{formLabel}&quot;</span>, ya no
+                        se podrá restaurar.
+                      </p>
+                      <p>• Pero se mantendrá en los registros ya realizados.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setItemPendingArchive(null)}
+                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 px-5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+                  >
+                    Cancelar
+                  </button>
+                  <form
+                    action={async (formData) => {
+                      setItemPendingArchive(null);
+                      await archiveAction(formData);
+                    }}
+                  >
+                    <input type="hidden" name="itemId" value={itemPendingArchive.id} />
+                    <input type="hidden" name="branchId" value={branchId} />
+                    <input type="hidden" name="companySlug" value={companySlug} />
+                    <input type="hidden" name="branchSlug" value={branchSlug} />
+                    <ArchiveConfirmButton />
+                  </form>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </details>
+  );
+}
+
+function ArchiveConfirmButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#8a2d1f] px-5 text-sm font-semibold text-white transition hover:bg-[#6f2116] disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+    >
+      {pending ? "Eliminando..." : "Confirmar eliminación"}
+    </button>
   );
 }
 
@@ -537,11 +648,11 @@ function OperationalFlowCard({
   const qrImagePath = qrCode ? `/api/qr/${encodeURIComponent(qrCode.token)}` : null;
 
   return (
-    <article className={`rounded-[1.7rem] p-5 ${productCardSurface}`}>
+    <article className={`rounded-[1.7rem] p-5 ${productCardSurface} border-[#2a7f86]/35`}>
       <div className="space-y-5">
         <div className="grid grid-cols-[1fr_auto] items-start gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
             <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
             <div className="mt-4 max-w-md">
               <OperationalActionsBlock qrCode={qrCode} />
@@ -1056,6 +1167,64 @@ export function BranchOperationalView({
   refrigerationEquipment,
   sanitationAreas,
 }: BranchDetailViewProps) {
+  const operationalCards = operationalFormTypes.map((formType) => {
+    const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
+
+    let configuration: ReactNode | undefined;
+
+    if (formType === "thermal_control") {
+      configuration = (
+        <InlineCatalogManager
+          title="EQUIPOS DE REFRIGERACIÓN Y CONGELACIÓN"
+          formLabel={operationalFormLabels[formType].title}
+          branchId={branch.id}
+          companySlug={company.slug}
+          branchSlug={branch.slug}
+          items={refrigerationEquipment}
+          createAction={createBranchRefrigerationEquipmentAction}
+          toggleAction={toggleBranchRefrigerationEquipmentAction}
+          archiveAction={archiveBranchRefrigerationEquipmentAction}
+          activeSummarySingular="equipo activo"
+          activeSummaryPlural="equipos activos"
+          inactiveSummarySingular="equipo inactivo"
+          inactiveSummaryPlural="equipos inactivos"
+        />
+      );
+    }
+
+    if (formType === "area_sanitation") {
+      configuration = (
+        <InlineCatalogManager
+          title="ÁREAS, EQUIPOS Y UTENSILIOS"
+          formLabel={operationalFormLabels[formType].title}
+          branchId={branch.id}
+          companySlug={company.slug}
+          branchSlug={branch.slug}
+          items={sanitationAreas}
+          createAction={createBranchSanitationAreaAction}
+          toggleAction={toggleBranchSanitationAreaAction}
+          archiveAction={archiveBranchSanitationAreaAction}
+          activeSummarySingular="área activa"
+          activeSummaryPlural="áreas activas"
+          inactiveSummarySingular="área inactiva"
+          inactiveSummaryPlural="áreas inactivas"
+        />
+      );
+    }
+
+    return (
+      <OperationalFlowCard
+        key={formType}
+        formType={formType}
+        qrCode={qrCode}
+        configuration={configuration}
+      />
+    );
+  });
+
+  const leftColumnCards = operationalCards.filter((_, index) => index % 2 === 0);
+  const rightColumnCards = operationalCards.filter((_, index) => index % 2 === 1);
+
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
       <p className="mb-10 mt-3 max-w-[68rem] text-base leading-7 text-[#12110f] sm:mb-12 sm:mt-4 sm:text-lg sm:leading-8">
@@ -1063,56 +1232,8 @@ export function BranchOperationalView({
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {operationalFormTypes.map((formType) => {
-          const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
-
-          let configuration: ReactNode | undefined;
-
-          if (formType === "thermal_control") {
-            configuration = (
-              <InlineCatalogManager
-                title="EQUIPOS DE REFRIGERACIÓN Y CONGELACIÓN"
-                branchId={branch.id}
-                companySlug={company.slug}
-                branchSlug={branch.slug}
-                items={refrigerationEquipment}
-                createAction={createBranchRefrigerationEquipmentAction}
-                toggleAction={toggleBranchRefrigerationEquipmentAction}
-                activeSummarySingular="equipo activo"
-                activeSummaryPlural="equipos activos"
-                inactiveSummarySingular="equipo inactivo"
-                inactiveSummaryPlural="equipos inactivos"
-              />
-            );
-          }
-
-          if (formType === "area_sanitation") {
-            configuration = (
-              <InlineCatalogManager
-                title="ÁREAS, EQUIPOS Y UTENSILIOS"
-                branchId={branch.id}
-                companySlug={company.slug}
-                branchSlug={branch.slug}
-                items={sanitationAreas}
-                createAction={createBranchSanitationAreaAction}
-                toggleAction={toggleBranchSanitationAreaAction}
-                activeSummarySingular="área activa"
-                activeSummaryPlural="áreas activas"
-                inactiveSummarySingular="área inactiva"
-                inactiveSummaryPlural="áreas inactivas"
-              />
-            );
-          }
-
-          return (
-            <OperationalFlowCard
-              key={formType}
-              formType={formType}
-              qrCode={qrCode}
-              configuration={configuration}
-            />
-          );
-        })}
+        <div className="space-y-4">{leftColumnCards}</div>
+        <div className="space-y-4">{rightColumnCards}</div>
       </div>
     </BranchLayout>
   );

@@ -4,6 +4,7 @@ import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type {
   BranchCatalogItemSummary,
+  BranchCatalogItemStatus,
   BranchDocumentSummary,
   BranchFormQrSummary,
   OperationalFormType,
@@ -44,6 +45,7 @@ type BranchCatalogRow = {
   company_id: string;
   name: string;
   is_active: boolean;
+  status: BranchCatalogItemStatus;
 };
 
 function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
@@ -198,14 +200,16 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         .returns<BranchFormQrRow[]>(),
       supabase
         .from("branch_refrigeration_equipment")
-        .select("id, branch_id, company_id, name, is_active")
+        .select("id, branch_id, company_id, name, is_active, status")
         .eq("branch_id", branch.id)
+        .neq("status", "archived")
         .order("name", { ascending: true })
         .returns<BranchCatalogRow[]>(),
       supabase
         .from("branch_sanitation_areas")
-        .select("id, branch_id, company_id, name, is_active")
+        .select("id, branch_id, company_id, name, is_active, status")
         .eq("branch_id", branch.id)
+        .neq("status", "archived")
         .order("name", { ascending: true })
         .returns<BranchCatalogRow[]>(),
     ]);
@@ -284,6 +288,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         companyId: item.company_id,
         name: item.name,
         isActive: item.is_active,
+        status: item.status,
       })) ?? [];
 
     sanitationAreas =
@@ -293,6 +298,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         companyId: item.company_id,
         name: item.name,
         isActive: item.is_active,
+        status: item.status,
       })) ?? [];
 
     logServerInfo("branch.view.load.done", {

@@ -56,6 +56,8 @@ export type OperationalFormType =
   | "supply_reception"
   | "water_quality";
 
+export type BranchCatalogItemStatus = "active" | "inactive" | "archived";
+
 export type BranchFormQrSummary = {
   id: string;
   branchId: string;
@@ -71,6 +73,7 @@ export type BranchCatalogItemSummary = {
   companyId: string;
   name: string;
   isActive: boolean;
+  status: BranchCatalogItemStatus;
 };
 
 export type AuthenticatedUserContext = {

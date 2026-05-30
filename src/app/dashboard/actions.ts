@@ -489,6 +489,7 @@ async function createBranchCatalogItem({
     company_id: branch.companyId,
     name,
     is_active: true,
+    status: "active",
   });
 
   if (error) {
@@ -529,12 +530,54 @@ async function toggleBranchCatalogItem({
 
   const { error } = await supabase
     .from(tableName)
-    .update({ is_active: nextIsActive })
+    .update({ is_active: nextIsActive, status: nextIsActive ? "active" : "inactive" })
     .eq("id", itemId)
     .eq("branch_id", branchId);
 
   if (error) {
     throw new Error(formatDatabaseError(error, "No fue posible actualizar el catalogo de la sede."));
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+}
+
+async function archiveBranchCatalogItem({
+  formData,
+  tableName,
+}: {
+  formData: FormData;
+  tableName: "branch_refrigeration_equipment" | "branch_sanitation_areas";
+}) {
+  const itemId = readString(formData, "itemId");
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+
+  if (!itemId || !branchId || !companySlug || !branchSlug) {
+    return;
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    throw new Error("La sede seleccionada no coincide con la ruta actual.");
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase no está configurado en el servidor.");
+  }
+
+  const { error } = await supabase
+    .from(tableName)
+    .update({ is_active: false, status: "archived" })
+    .eq("id", itemId)
+    .eq("branch_id", branchId)
+    .eq("is_active", false);
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible archivar el catalogo de la sede."));
   }
 
   revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
@@ -548,12 +591,20 @@ export async function toggleBranchRefrigerationEquipmentAction(formData: FormDat
   await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
 }
 
+export async function archiveBranchRefrigerationEquipmentAction(formData: FormData) {
+  await archiveBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+}
+
 export async function createBranchSanitationAreaAction(formData: FormData) {
   await createBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
 }
 
 export async function toggleBranchSanitationAreaAction(formData: FormData) {
   await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
+}
+
+export async function archiveBranchSanitationAreaAction(formData: FormData) {
+  await archiveBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
 }
 
 async function createUserRecord({

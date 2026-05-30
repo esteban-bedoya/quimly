@@ -12,6 +12,17 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'branch_catalog_status'
+  ) then
+    create type public.branch_catalog_status as enum ('active', 'inactive', 'archived');
+  end if;
+end $$;
+
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -146,9 +157,13 @@ create table if not exists public.branch_refrigeration_equipment (
   company_id uuid not null references public.companies (id) on delete cascade,
   name text not null,
   is_active boolean not null default true,
+  status public.branch_catalog_status not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (branch_id, name)
+  constraint branch_refrigeration_equipment_status_consistency check (
+    (status = 'active' and is_active = true)
+    or (status in ('inactive', 'archived') and is_active = false)
+  )
 );
 
 create table if not exists public.branch_sanitation_areas (
@@ -157,10 +172,22 @@ create table if not exists public.branch_sanitation_areas (
   company_id uuid not null references public.companies (id) on delete cascade,
   name text not null,
   is_active boolean not null default true,
+  status public.branch_catalog_status not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (branch_id, name)
+  constraint branch_sanitation_areas_status_consistency check (
+    (status = 'active' and is_active = true)
+    or (status in ('inactive', 'archived') and is_active = false)
+  )
 );
+
+create unique index if not exists branch_refrigeration_equipment_active_name_idx
+on public.branch_refrigeration_equipment (branch_id, name)
+where status <> 'archived';
+
+create unique index if not exists branch_sanitation_areas_active_name_idx
+on public.branch_sanitation_areas (branch_id, name)
+where status <> 'archived';
 
 create table if not exists public.thermal_control_records (
   id uuid primary key default gen_random_uuid(),
@@ -686,7 +713,7 @@ begin
         )
         from public.branch_refrigeration_equipment equipment
         where equipment.branch_id = qr.branch_id
-          and equipment.is_active = true
+          and equipment.status = 'active'
       ),
       '[]'::jsonb
     ),
@@ -701,7 +728,7 @@ begin
         )
         from public.branch_sanitation_areas area
         where area.branch_id = qr.branch_id
-          and area.is_active = true
+          and area.status = 'active'
       ),
       '[]'::jsonb
     )
@@ -781,7 +808,7 @@ begin
     from public.branch_refrigeration_equipment equipment
     where equipment.id = p_equipment_id
       and equipment.branch_id = qr_record.branch_id
-      and equipment.is_active = true
+      and equipment.status = 'active'
     limit 1;
 
     if equipment_record.id is null then
@@ -824,7 +851,7 @@ begin
     from public.branch_sanitation_areas area
     where area.id = p_area_id
       and area.branch_id = qr_record.branch_id
-      and area.is_active = true
+      and area.status = 'active'
     limit 1;
 
     if area_record.id is null then
