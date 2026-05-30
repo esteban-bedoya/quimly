@@ -7,14 +7,14 @@ import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
-  archiveBranchRefrigerationEquipmentFormAction,
-  archiveBranchSanitationAreaFormAction,
+  archiveBranchRefrigerationEquipmentStateAction,
+  archiveBranchSanitationAreaStateAction,
   createBranchRefrigerationEquipmentStateAction,
   createBranchSanitationAreaStateAction,
   createBranchDocumentAction,
   deleteBranchDocumentAction,
-  toggleBranchRefrigerationEquipmentFormAction,
-  toggleBranchSanitationAreaFormAction,
+  toggleBranchRefrigerationEquipmentStateAction,
+  toggleBranchSanitationAreaStateAction,
   updateBranchDocumentAction,
   type AdminActionState,
 } from "@/app/dashboard/actions";
@@ -414,8 +414,8 @@ function InlineCatalogManager({
   branchSlug,
   items,
   createStateAction,
-  toggleAction,
-  archiveAction,
+  toggleStateAction,
+  archiveStateAction,
   activeSummarySingular,
   activeSummaryPlural,
   inactiveSummarySingular,
@@ -431,8 +431,14 @@ function InlineCatalogManager({
     state: AdminActionState | undefined,
     formData: FormData,
   ) => Promise<AdminActionState>;
-  toggleAction: (formData: FormData) => void | Promise<void>;
-  archiveAction: (formData: FormData) => void | Promise<void>;
+  toggleStateAction: (
+    state: AdminActionState | undefined,
+    formData: FormData,
+  ) => Promise<AdminActionState>;
+  archiveStateAction: (
+    state: AdminActionState | undefined,
+    formData: FormData,
+  ) => Promise<AdminActionState>;
   activeSummarySingular: string;
   activeSummaryPlural: string;
   inactiveSummarySingular: string;
@@ -440,6 +446,14 @@ function InlineCatalogManager({
 }) {
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
   const [createState, createFormAction] = useActionState<AdminActionState | undefined, FormData>(createStateAction, undefined);
+  const [toggleState, toggleFormAction] = useActionState<AdminActionState | undefined, FormData>(
+    toggleStateAction,
+    undefined,
+  );
+  const [archiveState, archiveFormAction] = useActionState<AdminActionState | undefined, FormData>(
+    archiveStateAction,
+    undefined,
+  );
   const sortedItems = [...items].sort((leftItem, rightItem) => {
     if (leftItem.isActive !== rightItem.isActive) {
       return leftItem.isActive ? -1 : 1;
@@ -484,6 +498,30 @@ function InlineCatalogManager({
       </summary>
 
       <div className="mt-4 space-y-3">
+        {toggleState?.error || toggleState?.success ? (
+          <p
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              toggleState.error
+                ? "border-[#c66b5c]/22 bg-[#fff1ee] text-[#8a2d1f]"
+                : "border-emerald-200/70 bg-emerald-50/80 text-emerald-700"
+            }`}
+          >
+            {toggleState.error ?? toggleState.success}
+          </p>
+        ) : null}
+
+        {archiveState?.error || archiveState?.success ? (
+          <p
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              archiveState.error
+                ? "border-[#c66b5c]/22 bg-[#fff1ee] text-[#8a2d1f]"
+                : "border-emerald-200/70 bg-emerald-50/80 text-emerald-700"
+            }`}
+          >
+            {archiveState.error ?? archiveState.success}
+          </p>
+        ) : null}
+
         <div className="grid gap-2">
           {items.length ? (
             sortedItems.map((item) => (
@@ -502,7 +540,7 @@ function InlineCatalogManager({
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <form action={toggleAction}>
+                  <form action={toggleFormAction}>
                     <input type="hidden" name="itemId" value={item.id} />
                     <input type="hidden" name="branchId" value={branchId} />
                     <input type="hidden" name="companySlug" value={companySlug} />
@@ -613,7 +651,7 @@ function InlineCatalogManager({
                   <form
                     action={async (formData) => {
                       setItemPendingArchive(null);
-                      await archiveAction(formData);
+                      await archiveFormAction(formData);
                     }}
                   >
                     <input type="hidden" name="itemId" value={itemPendingArchive.id} />
@@ -1193,8 +1231,8 @@ export function BranchOperationalView({
           branchSlug={branch.slug}
           items={refrigerationEquipment}
           createStateAction={createBranchRefrigerationEquipmentStateAction}
-          toggleAction={toggleBranchRefrigerationEquipmentFormAction}
-          archiveAction={archiveBranchRefrigerationEquipmentFormAction}
+          toggleStateAction={toggleBranchRefrigerationEquipmentStateAction}
+          archiveStateAction={archiveBranchRefrigerationEquipmentStateAction}
           activeSummarySingular="equipo activo"
           activeSummaryPlural="equipos activos"
           inactiveSummarySingular="equipo inactivo"
@@ -1213,8 +1251,8 @@ export function BranchOperationalView({
           branchSlug={branch.slug}
           items={sanitationAreas}
           createStateAction={createBranchSanitationAreaStateAction}
-          toggleAction={toggleBranchSanitationAreaFormAction}
-          archiveAction={archiveBranchSanitationAreaFormAction}
+          toggleStateAction={toggleBranchSanitationAreaStateAction}
+          archiveStateAction={archiveBranchSanitationAreaStateAction}
           activeSummarySingular="área activa"
           activeSummaryPlural="áreas activas"
           inactiveSummarySingular="área inactiva"

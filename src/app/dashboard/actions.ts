@@ -684,6 +684,13 @@ export async function toggleBranchRefrigerationEquipmentAction(formData: FormDat
   }
 }
 
+export async function toggleBranchRefrigerationEquipmentStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await toggleBranchRefrigerationEquipmentAction(formData)) ?? {};
+}
+
 export async function archiveBranchRefrigerationEquipmentAction(formData: FormData) {
   try {
     await archiveBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
@@ -694,6 +701,13 @@ export async function archiveBranchRefrigerationEquipmentAction(formData: FormDa
       error: formatActionError(error, "No fue posible eliminar la opción del formulario."),
     } satisfies AdminActionState;
   }
+}
+
+export async function archiveBranchRefrigerationEquipmentStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await archiveBranchRefrigerationEquipmentAction(formData)) ?? {};
 }
 
 export async function createBranchSanitationAreaAction(formData: FormData) {
@@ -727,6 +741,13 @@ export async function toggleBranchSanitationAreaAction(formData: FormData) {
   }
 }
 
+export async function toggleBranchSanitationAreaStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await toggleBranchSanitationAreaAction(formData)) ?? {};
+}
+
 export async function archiveBranchSanitationAreaAction(formData: FormData) {
   try {
     await archiveBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
@@ -739,20 +760,11 @@ export async function archiveBranchSanitationAreaAction(formData: FormData) {
   }
 }
 
-export async function toggleBranchRefrigerationEquipmentFormAction(formData: FormData): Promise<void> {
-  await toggleBranchRefrigerationEquipmentAction(formData);
-}
-
-export async function archiveBranchRefrigerationEquipmentFormAction(formData: FormData): Promise<void> {
-  await archiveBranchRefrigerationEquipmentAction(formData);
-}
-
-export async function toggleBranchSanitationAreaFormAction(formData: FormData): Promise<void> {
-  await toggleBranchSanitationAreaAction(formData);
-}
-
-export async function archiveBranchSanitationAreaFormAction(formData: FormData): Promise<void> {
-  await archiveBranchSanitationAreaAction(formData);
+export async function archiveBranchSanitationAreaStateAction(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  return (await archiveBranchSanitationAreaAction(formData)) ?? {};
 }
 
 async function createUserRecord({
