@@ -517,27 +517,15 @@ function InlineCatalogManager({
       </summary>
 
       <div className="mt-4 space-y-3">
-        {toggleState?.error || toggleState?.success ? (
-          <p
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              toggleState.error
-                ? "border-[#c66b5c]/22 bg-[#fff1ee] text-[#8a2d1f]"
-                : "border-emerald-200/70 bg-emerald-50/80 text-emerald-700"
-            }`}
-          >
-            {toggleState.error ?? toggleState.success}
+        {toggleState?.error ? (
+          <p className="rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
+            {toggleState.error}
           </p>
         ) : null}
 
-        {archiveState?.error || archiveState?.success ? (
-          <p
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              archiveState.error
-                ? "border-[#c66b5c]/22 bg-[#fff1ee] text-[#8a2d1f]"
-                : "border-emerald-200/70 bg-emerald-50/80 text-emerald-700"
-            }`}
-          >
-            {archiveState.error ?? archiveState.success}
+        {archiveState?.error ? (
+          <p className="rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
+            {archiveState.error}
           </p>
         ) : null}
 
