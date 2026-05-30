@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
+import { getMissingSupabaseServerConfigKeys } from "@/lib/supabase/config";
+import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
 
@@ -64,11 +66,12 @@ async function uploadBranchDocumentFile({
   branchId: string;
   file: File;
 }) {
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = getSupabaseServerClientOrThrow({
+    operation: "uploadBranchDocumentFile",
+    branchId,
+    fileName: file.name,
+    fileSize: file.size,
+  });
 
   const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
   const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "");
@@ -146,17 +149,54 @@ function logAdminActionError(event: string, error: unknown, context: Record<stri
   });
 }
 
+function getSupabaseServerClientOrThrow(context: Record<string, unknown> = {}) {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    const missingConfigKeys = getMissingSupabaseServerConfigKeys();
+    logAdminActionError(
+      "dashboard.supabase.server_client_missing",
+      new Error("Supabase no está configurado en el servidor."),
+      {
+        ...context,
+        missingConfigKeys,
+      },
+    );
+    throw new Error(
+      missingConfigKeys.length
+        ? `Supabase no está configurado en el servidor. Faltan: ${missingConfigKeys.join(", ")}.`
+        : "Supabase no está configurado en el servidor.",
+    );
+  }
+
+  return supabase;
+}
+
+async function getSupabaseRlsClientOrThrow(context: Record<string, unknown> = {}) {
+  const supabase = await getSupabaseRlsClient();
+
+  if (!supabase) {
+    logAdminActionError(
+      "dashboard.supabase.rls_client_missing",
+      new Error("Supabase no está configurado para la sesión autenticada."),
+      context,
+    );
+    throw new Error("No fue posible validar tu sesión para actualizar esta opción.");
+  }
+
+  return supabase;
+}
+
 type BranchRouteTarget = {
   companySlug: string;
   branchSlug: string;
 };
 
 async function resolveBranchRouteTarget(branchId: string) {
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = getSupabaseServerClientOrThrow({
+    operation: "resolveBranchRouteTarget",
+    branchId,
+  });
 
   const { data, error } = await supabase
     .from("branches")
@@ -503,11 +543,7 @@ async function createBranchCatalogItem({
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow(logContext);
 
   const { error } = await supabase.from(tableName).insert({
     branch_id: branchId,
@@ -558,11 +594,7 @@ async function toggleBranchCatalogItem({
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow(logContext);
 
   const { error } = await supabase
     .from(tableName)
@@ -603,11 +635,7 @@ async function archiveBranchCatalogItem({
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow(logContext);
 
   const { error } = await supabase
     .from(tableName)

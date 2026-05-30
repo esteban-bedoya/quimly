@@ -13,3 +13,10 @@ export function getSupabaseAnonKey() {
 export function getSupabaseServiceRoleKey() {
   return supabaseServiceKey ?? null;
 }
+
+export function getMissingSupabaseServerConfigKeys() {
+  return [
+    !supabaseUrl ? "NEXT_PUBLIC_SUPABASE_URL" : null,
+    !supabaseServiceKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,
+  ].filter((key): key is string => Boolean(key));
+}
