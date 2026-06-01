@@ -1211,6 +1211,8 @@ export function BranchOperationalView({
   refrigerationEquipment,
   sanitationAreas,
 }: BranchDetailViewProps) {
+  const activeOperationalQrCodes = qrCodes.filter((qrCode) => qrCode.isActive);
+  const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
   const operationalCards = operationalFormTypes.map((formType) => {
     const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
 
@@ -1271,9 +1273,33 @@ export function BranchOperationalView({
 
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
-      <p className="mb-10 mt-3 max-w-[68rem] text-base leading-7 text-[#12110f] sm:mb-12 sm:mt-4 sm:text-lg sm:leading-8">
-        Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar su código QR.
-      </p>
+      <div className="mb-10 mt-3 flex max-w-[68rem] flex-col gap-4 sm:mb-12 sm:mt-4 lg:flex-row lg:items-end lg:justify-between">
+        <p className="max-w-[48rem] text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
+          Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar su código QR.
+        </p>
+        {activeOperationalQrCodes.length ? (
+          <a
+            href={allOperationalFormsPdfPath}
+            className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-full border border-[#12110f]/12 bg-white/70 px-5 py-3 text-sm font-medium text-[#5e6770] transition duration-300 hover:scale-[1.02] hover:border-[#12110f]/18 hover:bg-[#f1f1f1] hover:text-[#12110f]"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 shrink-0">
+              <path
+                d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.4"
+              />
+            </svg>
+            Descargar todos los formularios para los operarios en una sola hoja
+          </a>
+        ) : (
+          <span className="inline-flex min-h-11 items-center justify-center self-start rounded-full border border-dashed border-[#12110f]/18 px-5 py-3 text-sm font-semibold text-[#5e6770]">
+            No hay formularios activos para descargar
+          </span>
+        )}
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">{leftColumnCards}</div>
