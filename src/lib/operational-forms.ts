@@ -37,7 +37,7 @@ export const operationalFormLabels: Record<
     title: "CONTROL DE AGUA POTABLE",
     shortTitle: "CONTROL DE AGUA POTABLE",
     description:
-      "Registro obligatorio para la medición diaria de cloro libre residual (rango normativo: 0.3 a 2.0 ppm) para garantizar el abastecimiento seguro.",
+      "Registro obligatorio para la medición diaria de cloro libre residual (rango normativo: 0.3 a 2.0 ppm) y pH (rango permitido: 6.5 a 9.0) para garantizar el abastecimiento seguro.",
   },
 };
 

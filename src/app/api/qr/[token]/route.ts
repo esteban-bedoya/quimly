@@ -51,6 +51,7 @@ export async function GET(
       branchName: payload.branch_name,
       companyName: payload.company_name,
       formTitle: operationalFormLabels[payload.form_type].title,
+      formType: payload.form_type,
     });
 
     return new NextResponse(svg, {

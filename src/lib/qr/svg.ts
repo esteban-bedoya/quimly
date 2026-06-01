@@ -1,5 +1,7 @@
 import QRCode from "qrcode";
 
+import type { OperationalFormType } from "@/lib/operational-forms";
+
 function escapeXml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -48,6 +50,37 @@ type PrintableQrCardInput = {
   branchName: string;
   companyName: string;
   formTitle: string;
+  formType: OperationalFormType;
+};
+
+type PrintableQrInstructionItem = {
+  label: string;
+  value: string;
+};
+
+const printableQrInstructions: Record<OperationalFormType, PrintableQrInstructionItem[]> = {
+  thermal_control: [
+    { label: "Frecuencia de registro:", value: "Mínimo 2 veces al día por equipo." },
+    { label: "Aplica para:", value: "Equipos de refrigeración y congelación." },
+  ],
+  area_sanitation: [
+    { label: "Frecuencia de registro:", value: "Después de cada limpieza o desinfección." },
+    {
+      label: "Aplica para:",
+      value: "Áreas, equipos y utensilios incluidos en el Plan de Saneamiento Básico.",
+    },
+  ],
+  supply_reception: [
+    { label: "Frecuencia de registro:", value: "En cada ingreso de proveedores." },
+    {
+      label: "Aplica para:",
+      value: "Carnes, pescados, huevos, lácteos y demás productos de alto riesgo sanitario.",
+    },
+  ],
+  water_quality: [
+    { label: "Frecuencia de registro:", value: "Diariamente al inicio de la jornada." },
+    { label: "Aplica para:", value: "Medición de cloro libre residual y pH del agua." },
+  ],
 };
 
 function wrapText(value: string, maxCharsPerLine: number) {
@@ -78,50 +111,57 @@ export function createPrintableQrSvg({
   branchName,
   companyName,
   formTitle,
+  formType,
 }: PrintableQrCardInput) {
-  const width = 1040;
-  const height = 1140;
-  const cutMargin = 18;
-  const innerPadding = 86;
+  const width = 1140;
+  const height = 1320;
+  const cutMargin = 20;
+  const innerPadding = 94;
   const { path, viewBoxSize } = createQrPathData(value);
 
   const branchLines = wrapText(branchName, 28).slice(0, 2);
   const companyLines = wrapText(companyName, 34).slice(0, 2);
   const formTitleLines = wrapText(formTitle, 14).slice(0, 3);
-  const instructionLines = wrapText("Escanee este código para registrar el control correspondiente.", 38).slice(0, 2);
+  const instructionItems = printableQrInstructions[formType].map((item) => ({
+    label: item.label,
+    valueLines: wrapText(item.value, 56),
+  }));
 
-  const branchFontSize = 31;
-  const branchLineHeight = 29;
-  const companyFontSize = 41;
-  const companyLineHeight = 38;
-  const formTitleFirstLineFontSize = 52;
-  const formTitleNextLineFontSize = 48;
-  const formTitleLineHeight = 43;
-  const qrBoxMaxSize = 640;
+  const branchFontSize = 33;
+  const branchLineHeight = 31;
+  const companyFontSize = 45;
+  const companyLineHeight = 42;
+  const formTitleFirstLineFontSize = 56;
+  const formTitleNextLineFontSize = 52;
+  const formTitleLineHeight = 47;
+  const qrBoxMaxSize = 680;
   const qrPadding = 24;
-  const gapBeforeQr = 26;
-  const instructionFontSize = 27;
-  const instructionLineHeight = 35;
-  const instructionTopGap = 36;
-  const poweredByFontSize = 24;
-  const poweredByY = 1084;
-  const poweredByGap = 26;
+  const gapBeforeQr = 34;
+  const instructionLabelFontSize = 33;
+  const instructionLabelLineHeight = companyLineHeight;
+  const instructionValueFontSize = branchFontSize;
+  const instructionValueLineHeight = branchLineHeight;
+  const instructionItemGap = 18;
+  const instructionTopGap = 72;
+  const poweredByFontSize = 27;
+  const poweredByY = 1242;
+  const poweredByGap = 42;
 
-  let currentY = 94;
-  const branchText = branchLines
+  let currentY = 100;
+  const companyText = companyLines
     .map((line) => {
-      const text = `<text x="${innerPadding}" y="${currentY}" font-family="Arial, Helvetica, sans-serif" font-size="${branchFontSize}" font-weight="500" fill="#526168">${escapeXml(line)}</text>`;
-      currentY += branchLineHeight;
+      const text = `<text x="${innerPadding}" y="${currentY}" font-family="Arial, Helvetica, sans-serif" font-size="${companyFontSize}" font-weight="700" fill="#12110f">${escapeXml(line)}</text>`;
+      currentY += companyLineHeight;
       return text;
     })
     .join("");
 
   currentY += 6;
 
-  const companyText = companyLines
+  const branchText = branchLines
     .map((line) => {
-      const text = `<text x="${innerPadding}" y="${currentY}" font-family="Arial, Helvetica, sans-serif" font-size="${companyFontSize}" font-weight="700" fill="#12110f">${escapeXml(line)}</text>`;
-      currentY += companyLineHeight;
+      const text = `<text x="${innerPadding}" y="${currentY}" font-family="Arial, Helvetica, sans-serif" font-size="${branchFontSize}" font-weight="500" fill="#526168">${escapeXml(line)}</text>`;
+      currentY += branchLineHeight;
       return text;
     })
     .join("");
@@ -136,7 +176,10 @@ export function createPrintableQrSvg({
     })
     .join("");
 
-  const instructionBlockHeight = Math.max(1, instructionLines.length) * instructionLineHeight;
+  const instructionBlockHeight = instructionItems.reduce((totalHeight, item, index) => {
+    const itemHeight = instructionLabelLineHeight + item.valueLines.length * instructionValueLineHeight;
+    return totalHeight + itemHeight + (index === instructionItems.length - 1 ? 0 : instructionItemGap);
+  }, 0);
   const qrBoxX = Math.round((width - qrBoxMaxSize) / 2);
   const qrBoxY = currentY + gapBeforeQr;
   const qrBoxSize = Math.min(
@@ -145,18 +188,34 @@ export function createPrintableQrSvg({
   );
   const qrSize = qrBoxSize - qrPadding * 2;
   const instructionStartY = qrBoxY + qrBoxSize + instructionTopGap;
-  const instructionText = instructionLines
-    .map((line, index) => {
-      return `<text x="${width / 2}" y="${instructionStartY + index * instructionLineHeight}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${instructionFontSize}" font-weight="500" fill="#3e4a52">${escapeXml(line)}</text>`;
+  let instructionCurrentY = instructionStartY;
+  const instructionText = instructionItems
+    .map((item, itemIndex) => {
+      const labelText = `<text x="${innerPadding}" y="${instructionCurrentY}" font-family="Arial, Helvetica, sans-serif" font-size="${instructionLabelFontSize}" font-weight="700" fill="#12110f">${escapeXml(item.label)}</text>`;
+      instructionCurrentY += instructionLabelLineHeight;
+
+      const valueText = item.valueLines
+        .map((line) => {
+          const text = `<text x="${innerPadding}" y="${instructionCurrentY}" font-family="Arial, Helvetica, sans-serif" font-size="${instructionValueFontSize}" font-weight="500" fill="#526168">${escapeXml(line)}</text>`;
+          instructionCurrentY += instructionValueLineHeight;
+          return text;
+        })
+        .join("");
+
+      if (itemIndex < instructionItems.length - 1) {
+        instructionCurrentY += instructionItemGap;
+      }
+
+      return `${labelText}${valueText}`;
     })
     .join("");
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" width="10.4cm" height="11.4cm" viewBox="0 0 ${width} ${height}" role="img" aria-label="QR imprimible para ${escapeXml(formTitle)}" shape-rendering="geometricPrecision">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="11.4cm" height="13.2cm" viewBox="0 0 ${width} ${height}" role="img" aria-label="QR imprimible para ${escapeXml(formTitle)}" shape-rendering="geometricPrecision">`,
     `<rect width="${width}" height="${height}" fill="#ffffff"/>`,
     `<rect x="${cutMargin}" y="${cutMargin}" width="${width - cutMargin * 2}" height="${height - cutMargin * 2}" rx="24" fill="none" stroke="#cfd8db" stroke-width="2" stroke-dasharray="8 6"/>`,
-    `<rect x="42" y="42" width="${width - 84}" height="${height - 84}" rx="38" fill="#ffffff" stroke="#dde6e8" stroke-width="2"/>`,
+    `<rect x="48" y="48" width="${width - 96}" height="${height - 96}" rx="40" fill="#ffffff" stroke="#dde6e8" stroke-width="2"/>`,
     branchText,
     companyText,
     formTitleText,
