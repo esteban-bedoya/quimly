@@ -127,14 +127,18 @@ function pushCompanyBranchLine({
   branchColor?: string;
 }) {
   const branchText = ` | ${branchName}`;
-  const lineFontSize = fontSizeToFitText(`${companyName}${branchText}`, maxWidth, fontSize);
+  const companyFontSize = fontSize * 1.06;
+  const lineWidth = estimateTextWidth(companyName, companyFontSize) + estimateTextWidth(branchText, fontSize);
+  const scale = lineWidth > maxWidth ? maxWidth / lineWidth : 1;
+  const fittedCompanyFontSize = companyFontSize * scale;
+  const fittedBranchFontSize = fontSize * scale;
 
   commands.push(`${companyColor} rg`);
   commands.push("BT");
-  commands.push(`/F2 ${lineFontSize.toFixed(2)} Tf`);
+  commands.push(`/F2 ${fittedCompanyFontSize.toFixed(2)} Tf`);
   commands.push(`${x.toFixed(2)} ${y.toFixed(2)} Td`);
   commands.push(`(${pdfEscapeText(companyName)}) Tj`);
-  commands.push(`/F1 ${lineFontSize.toFixed(2)} Tf`);
+  commands.push(`/F1 ${fittedBranchFontSize.toFixed(2)} Tf`);
   commands.push(`${branchColor} rg`);
   commands.push(`(${pdfEscapeText(branchText)}) Tj`);
   commands.push("ET");
