@@ -10,12 +10,11 @@ type BranchOperationalPdfForm = {
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const PAGE_MARGIN = 36;
-const GRID_GAP = 18;
-const HEADER_TOP = 36;
-const HEADER_BOTTOM = 96;
-const GRID_BOTTOM_MARGIN = 78;
-const FOOTER_Y = 34;
+const PAGE_MARGIN = 28;
+const GRID_GAP = 14;
+const TEXT_BAND_HEIGHT = 82;
+const HEADER_TEXT_FONT_SIZE = 11;
+const HEADER_TEXT_TOP = 43;
 const CSS_SHADOW_BLUR = 40;
 const CSS_SHADOW_LAYER_COUNT = 24;
 const CSS_SHADOW_OPACITY = 0.08;
@@ -129,17 +128,16 @@ function pushCompanyBranchLine({
 }) {
   const branchText = ` | ${branchName}`;
   const lineFontSize = fontSizeToFitText(`${companyName}${branchText}`, maxWidth, fontSize);
-  const branchX = x + estimateTextWidth(companyName, lineFontSize);
 
   commands.push(`${companyColor} rg`);
-  commands.push("BT /F2 " + lineFontSize.toFixed(2) + " Tf");
+  commands.push("BT");
+  commands.push(`/F2 ${lineFontSize.toFixed(2)} Tf`);
   commands.push(`${x.toFixed(2)} ${y.toFixed(2)} Td`);
-  commands.push(`(${pdfEscapeText(companyName)}) Tj ET`);
-
+  commands.push(`(${pdfEscapeText(companyName)}) Tj`);
+  commands.push(`/F1 ${lineFontSize.toFixed(2)} Tf`);
   commands.push(`${branchColor} rg`);
-  commands.push("BT /F1 " + lineFontSize.toFixed(2) + " Tf");
-  commands.push(`${branchX.toFixed(2)} ${y.toFixed(2)} Td`);
-  commands.push(`(${pdfEscapeText(branchText)}) Tj ET`);
+  commands.push(`(${pdfEscapeText(branchText)}) Tj`);
+  commands.push("ET");
 }
 
 function shadowGStateName(index: number) {
@@ -226,12 +224,15 @@ export function createBranchOperationalFormsPdf({
   forms: BranchOperationalPdfForm[];
 }) {
   const cardWidth = (PAGE_WIDTH - PAGE_MARGIN * 2 - GRID_GAP) / 2;
-  const gridTopOffset = HEADER_BOTTOM;
-  const totalGridHeight = PAGE_HEIGHT - gridTopOffset - GRID_BOTTOM_MARGIN;
+  const gridTopOffset = TEXT_BAND_HEIGHT;
+  const totalGridHeight = PAGE_HEIGHT - gridTopOffset - TEXT_BAND_HEIGHT;
   const cardHeight = (totalGridHeight - GRID_GAP) / 2;
   const textBlockWidth = 210;
   const qrSize = 114;
   const cardRadius = 18;
+  const instructionFontSize = 10;
+  const instructionLabelGap = 13;
+  const instructionLineGap = 12.5;
 
   const commands: string[] = [
     "1 1 1 rg",
@@ -242,11 +243,11 @@ export function createBranchOperationalFormsPdf({
   pushCompanyBranchLine({
     commands,
     x: PAGE_MARGIN,
-    y: yFromTop(HEADER_TOP),
+    y: yFromTop(HEADER_TEXT_TOP),
     maxWidth: PAGE_WIDTH - PAGE_MARGIN * 2,
     companyName,
     branchName,
-    fontSize: 15,
+    fontSize: HEADER_TEXT_FONT_SIZE,
   });
 
   const cardLayouts = forms.map((form, index) => {
@@ -286,7 +287,7 @@ export function createBranchOperationalFormsPdf({
       maxWidth: cardWidth - 32,
       companyName,
       branchName,
-      fontSize: 7.5,
+      fontSize: 8.5,
       branchColor: "0.42 0.46 0.48",
     });
 
@@ -315,35 +316,30 @@ export function createBranchOperationalFormsPdf({
 
     instructions.forEach((item) => {
       commands.push("0.07 0.07 0.06 rg");
-      commands.push("BT /F2 11 Tf");
+      commands.push(`BT /F2 ${instructionFontSize} Tf`);
       commands.push(`${textBlockX.toFixed(2)} ${textY.toFixed(2)} Td`);
       commands.push(`(${pdfEscapeText(item.label)}) Tj ET`);
-      textY -= 15;
+      textY -= instructionLabelGap;
 
       commands.push("0.36 0.4 0.44 rg");
-      const valueLines = wrapTextByWidth(item.value, maxTextWidth, 11);
+      const valueLines = wrapTextByWidth(item.value, maxTextWidth, instructionFontSize);
       valueLines.forEach((line) => {
-        commands.push("BT /F1 11 Tf");
+        commands.push(`BT /F1 ${instructionFontSize} Tf`);
         commands.push(`${textBlockX.toFixed(2)} ${textY.toFixed(2)} Td`);
         commands.push(`(${pdfEscapeText(line)}) Tj ET`);
-        textY -= 14;
+        textY -= instructionLineGap;
       });
 
       textY -= 10;
     });
 
-    commands.push("0.72 0.74 0.75 rg");
+    commands.push("0.56 0.59 0.61 rg");
     commands.push("BT /F1 6.5 Tf");
     commands.push(
       `${(cardX + cardWidth - 14 - estimateTextWidth("Powered by Quimly", 6.5)).toFixed(2)} ${(cardBottomY + 8).toFixed(2)} Td`,
     );
     commands.push(`(${pdfEscapeText("Powered by Quimly")}) Tj ET`);
   });
-
-  commands.push("0.54 0.58 0.6 rg");
-  commands.push("BT /F1 9 Tf");
-  commands.push(`${(PAGE_WIDTH - PAGE_MARGIN - estimateTextWidth("Powered by Quimly", 9)).toFixed(2)} ${FOOTER_Y.toFixed(2)} Td`);
-  commands.push(`(${pdfEscapeText("Powered by Quimly")}) Tj ET`);
 
   return buildPdf(commands);
 }
