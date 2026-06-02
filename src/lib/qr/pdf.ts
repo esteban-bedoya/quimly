@@ -96,6 +96,52 @@ function centeredTextXInBox(boxX: number, boxWidth: number, text: string, fontSi
   return boxX + (boxWidth - estimateTextWidth(text, fontSize)) / 2;
 }
 
+function fontSizeToFitText(value: string, maxWidth: number, fontSize: number) {
+  const textWidth = estimateTextWidth(value, fontSize);
+
+  if (textWidth <= maxWidth) {
+    return fontSize;
+  }
+
+  return (maxWidth / textWidth) * fontSize;
+}
+
+function pushCompanyBranchLine({
+  commands,
+  x,
+  y,
+  maxWidth,
+  companyName,
+  branchName,
+  fontSize,
+  companyColor = "0.07 0.07 0.06",
+  branchColor = "0.36 0.4 0.44",
+}: {
+  commands: string[];
+  x: number;
+  y: number;
+  maxWidth: number;
+  companyName: string;
+  branchName: string;
+  fontSize: number;
+  companyColor?: string;
+  branchColor?: string;
+}) {
+  const branchText = ` | ${branchName}`;
+  const lineFontSize = fontSizeToFitText(`${companyName}${branchText}`, maxWidth, fontSize);
+  const branchX = x + estimateTextWidth(companyName, lineFontSize);
+
+  commands.push(`${companyColor} rg`);
+  commands.push("BT /F2 " + lineFontSize.toFixed(2) + " Tf");
+  commands.push(`${x.toFixed(2)} ${y.toFixed(2)} Td`);
+  commands.push(`(${pdfEscapeText(companyName)}) Tj ET`);
+
+  commands.push(`${branchColor} rg`);
+  commands.push("BT /F1 " + lineFontSize.toFixed(2) + " Tf");
+  commands.push(`${branchX.toFixed(2)} ${y.toFixed(2)} Td`);
+  commands.push(`(${pdfEscapeText(branchText)}) Tj ET`);
+}
+
 function shadowGStateName(index: number) {
   return `GS${index + 1}`;
 }
@@ -191,11 +237,17 @@ export function createBranchOperationalFormsPdf({
     "1 1 1 rg",
     `0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT} re f`,
     "/GS0 gs",
-    "0.07 0.07 0.06 rg",
-    `BT /F2 16 Tf ${PAGE_MARGIN} ${yFromTop(HEADER_TOP).toFixed(2)} Td (${pdfEscapeText(companyName)}) Tj ET`,
-    "0.36 0.4 0.44 rg",
-    `BT /F1 12 Tf ${PAGE_MARGIN} ${yFromTop(HEADER_TOP + 22).toFixed(2)} Td (${pdfEscapeText(branchName)}) Tj ET`,
   ];
+
+  pushCompanyBranchLine({
+    commands,
+    x: PAGE_MARGIN,
+    y: yFromTop(HEADER_TOP),
+    maxWidth: PAGE_WIDTH - PAGE_MARGIN * 2,
+    companyName,
+    branchName,
+    fontSize: 15,
+  });
 
   const cardLayouts = forms.map((form, index) => {
     const column = index % 2;
@@ -219,13 +271,24 @@ export function createBranchOperationalFormsPdf({
   cardLayouts.forEach(({ cardBottomY, cardTopY, cardX, form }) => {
     const cardCenterX = cardX + cardWidth / 2;
     const textBlockX = cardCenterX - textBlockWidth / 2;
-    const contentTop = cardTopY - 18;
+    const contentTop = cardTopY - 36;
     const label = operationalFormLabels[form.formType];
     const instructions = printableQrInstructions[form.formType];
     const maxTextWidth = textBlockWidth;
 
     commands.push("1 1 1 rg");
     commands.push(roundedRectPath(cardX, cardBottomY, cardWidth, cardHeight, cardRadius) + " f");
+
+    pushCompanyBranchLine({
+      commands,
+      x: cardX + 16,
+      y: cardTopY - 18,
+      maxWidth: cardWidth - 32,
+      companyName,
+      branchName,
+      fontSize: 7.5,
+      branchColor: "0.42 0.46 0.48",
+    });
 
     commands.push("0.165 0.498 0.525 rg");
     commands.push("BT /F2 12 Tf");
@@ -268,6 +331,13 @@ export function createBranchOperationalFormsPdf({
 
       textY -= 10;
     });
+
+    commands.push("0.72 0.74 0.75 rg");
+    commands.push("BT /F1 6.5 Tf");
+    commands.push(
+      `${(cardX + cardWidth - 14 - estimateTextWidth("Powered by Quimly", 6.5)).toFixed(2)} ${(cardBottomY + 8).toFixed(2)} Td`,
+    );
+    commands.push(`(${pdfEscapeText("Powered by Quimly")}) Tj ET`);
   });
 
   commands.push("0.54 0.58 0.6 rg");
