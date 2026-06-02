@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
-import { isOperationalFormType, operationalFormTypes } from "@/lib/operational-forms";
+import {
+  isOperationalFormType,
+  operationalFormTypes,
+  type OperationalFormType,
+} from "@/lib/operational-forms";
 import { createBranchOperationalFormsPdf } from "@/lib/qr/pdf";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
@@ -10,6 +14,11 @@ type BranchQrRow = {
   form_type: string;
   token: string;
   is_active: boolean;
+};
+
+type ActiveOperationalForm = {
+  formType: OperationalFormType;
+  token: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -39,13 +48,15 @@ export async function GET(
       throw new Error(error.message);
     }
 
-    const activeForms =
+    const activeForms: ActiveOperationalForm[] =
       data
-        ?.filter((row) => row.is_active && isOperationalFormType(row.form_type))
-        .map((row) => ({
-          formType: row.form_type,
-          token: row.token,
-        }))
+        ?.flatMap((row) => {
+          if (!row.is_active || !isOperationalFormType(row.form_type)) {
+            return [];
+          }
+
+          return [{ formType: row.form_type, token: row.token }];
+        })
         .sort(
           (left, right) =>
             operationalFormTypes.indexOf(left.formType) - operationalFormTypes.indexOf(right.formType),
