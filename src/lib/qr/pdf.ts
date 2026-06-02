@@ -95,16 +95,6 @@ function centeredTextXInBox(boxX: number, boxWidth: number, text: string, fontSi
   return boxX + (boxWidth - estimateTextWidth(text, fontSize)) / 2;
 }
 
-function fontSizeToFitText(value: string, maxWidth: number, fontSize: number) {
-  const textWidth = estimateTextWidth(value, fontSize);
-
-  if (textWidth <= maxWidth) {
-    return fontSize;
-  }
-
-  return (maxWidth / textWidth) * fontSize;
-}
-
 function pushCompanyBranchLine({
   commands,
   x,

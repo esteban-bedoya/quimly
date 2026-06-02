@@ -19,6 +19,7 @@ import {
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
 import { operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
+import { printableQrInstructions } from "@/lib/qr/printable";
 import type {
   BranchCatalogItemSummary,
   BranchDocumentSectionKey,
@@ -375,36 +376,9 @@ function CompactModuleList({
   );
 }
 
-function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | undefined }) {
-  if (!qrCode) {
-    return (
-      <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
-        El QR administrativo de este módulo estará disponible en unos segundos si la sede acaba de ser creada.
-      </div>
-    );
-  }
-
-  const qrImagePath = `/api/qr/${encodeURIComponent(qrCode.token)}`;
-
+function OperationalActionsBlock() {
   return (
-    <div className="grid min-h-9 grid-cols-2 rounded-full border border-[#12110f]/12 bg-[#fbfbfb] p-1">
-      <a
-        href={qrImagePath}
-        download={`quimly-${qrCode.formType}-${qrCode.token}.svg`}
-        className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-full border-r border-[#12110f]/10 px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
-          <path
-            d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.4"
-          />
-        </svg>
-        Formulario para operarios
-      </a>
+    <div className="inline-flex min-h-9 rounded-full border border-[#12110f]/12 bg-[#fbfbfb] p-1">
       <button
         type="button"
         className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
@@ -419,7 +393,7 @@ function OperationalActionsBlock({ qrCode }: { qrCode: BranchFormQrSummary | und
           />
           <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
         </svg>
-        Formulario interno
+        Registrar control interno
       </button>
     </div>
   );
@@ -693,14 +667,13 @@ function ArchiveConfirmButton() {
 
 function OperationalFlowCard({
   formType,
-  qrCode,
   configuration,
 }: {
   formType: OperationalFormType;
-  qrCode: BranchFormQrSummary | undefined;
   configuration?: ReactNode;
 }) {
   const label = operationalFormLabels[formType];
+  const instructions = printableQrInstructions[formType];
 
   return (
     <article className={`rounded-[1.7rem] p-5 ${productCardSurface} border-[#2a7f86]/35`}>
@@ -708,9 +681,15 @@ function OperationalFlowCard({
         <div>
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
-            <p className="mt-2 text-sm leading-6 text-[#5e6770]">{label.description}</p>
+            <div className="mt-3 grid gap-2 text-sm leading-6 text-[#5e6770]">
+              {instructions.map((item) => (
+                <p key={item.label}>
+                  <span className="font-semibold text-[#12110f]">{item.label}</span> {item.value}
+                </p>
+              ))}
+            </div>
             <div className="mt-4 max-w-md">
-              <OperationalActionsBlock qrCode={qrCode} />
+              <OperationalActionsBlock />
             </div>
           </div>
         </div>
@@ -1214,8 +1193,6 @@ export function BranchOperationalView({
   const activeOperationalQrCodes = qrCodes.filter((qrCode) => qrCode.isActive);
   const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
   const operationalCards = operationalFormTypes.map((formType) => {
-    const qrCode = qrCodes.find((candidate) => candidate.formType === formType);
-
     let configuration: ReactNode | undefined;
 
     if (formType === "thermal_control") {
@@ -1262,7 +1239,6 @@ export function BranchOperationalView({
       <OperationalFlowCard
         key={formType}
         formType={formType}
-        qrCode={qrCode}
         configuration={configuration}
       />
     );
@@ -1275,7 +1251,7 @@ export function BranchOperationalView({
     <BranchLayout company={company} branch={branch} currentSection="operational">
       <div className="mb-10 mt-3 flex max-w-[68rem] flex-col gap-4 sm:mb-12 sm:mt-4 lg:flex-row lg:items-end lg:justify-between">
         <p className="max-w-[48rem] text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
-          Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar su código QR.
+          Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar los carteles QR consolidados.
         </p>
         {activeOperationalQrCodes.length ? (
           <a
@@ -1292,7 +1268,7 @@ export function BranchOperationalView({
                 strokeWidth="1.4"
               />
             </svg>
-            Descargar todos los formularios para los operarios en una sola hoja
+            Descargar todos los formularios en QR para los operarios
           </a>
         ) : (
           <span className="inline-flex min-h-11 items-center justify-center self-start rounded-full border border-dashed border-[#12110f]/18 px-5 py-3 text-sm font-semibold text-[#5e6770]">
