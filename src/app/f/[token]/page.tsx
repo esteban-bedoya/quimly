@@ -4,6 +4,7 @@ import { OperationalPublicForm } from "@/components/public-forms/operational-pub
 import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
+import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ type PublicOperationalFormPayload = {
 type CatalogRow = {
   id: string;
   name: string;
+  equipment_type?: BranchRefrigerationEquipmentType | null;
 };
 
 export async function generateMetadata({

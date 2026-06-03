@@ -5,6 +5,7 @@ import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type {
   BranchCatalogItemSummary,
   BranchCatalogItemStatus,
+  BranchRefrigerationEquipmentType,
   BranchDocumentSummary,
   BranchFormQrSummary,
   OperationalFormType,
@@ -44,6 +45,7 @@ type BranchCatalogRow = {
   branch_id: string;
   company_id: string;
   name: string;
+  equipment_type?: BranchRefrigerationEquipmentType | null;
   is_active: boolean;
   status: BranchCatalogItemStatus;
 };
@@ -200,7 +202,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         .returns<BranchFormQrRow[]>(),
       supabase
         .from("branch_refrigeration_equipment")
-        .select("id, branch_id, company_id, name, is_active, status")
+        .select("id, branch_id, company_id, name, equipment_type, is_active, status")
         .eq("branch_id", branch.id)
         .neq("status", "archived")
         .order("name", { ascending: true })
@@ -287,6 +289,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         branchId: item.branch_id,
         companyId: item.company_id,
         name: item.name,
+        equipmentType: item.equipment_type ?? null,
         isActive: item.is_active,
         status: item.status,
       })) ?? [];

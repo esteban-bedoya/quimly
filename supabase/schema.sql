@@ -23,6 +23,17 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'refrigeration_equipment_type'
+  ) then
+    create type public.refrigeration_equipment_type as enum ('refrigerator', 'freezer');
+  end if;
+end $$;
+
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -156,6 +167,7 @@ create table if not exists public.branch_refrigeration_equipment (
   branch_id uuid not null references public.branches (id) on delete cascade,
   company_id uuid not null references public.companies (id) on delete cascade,
   name text not null,
+  equipment_type public.refrigeration_equipment_type not null default 'refrigerator',
   is_active boolean not null default true,
   status public.branch_catalog_status not null default 'active',
   created_at timestamptz not null default now(),
@@ -165,6 +177,9 @@ create table if not exists public.branch_refrigeration_equipment (
     or (status in ('inactive', 'archived') and is_active = false)
   )
 );
+
+alter table public.branch_refrigeration_equipment
+add column if not exists equipment_type public.refrigeration_equipment_type not null default 'refrigerator';
 
 create table if not exists public.branch_sanitation_areas (
   id uuid primary key default gen_random_uuid(),
@@ -707,7 +722,8 @@ begin
         select jsonb_agg(
           jsonb_build_object(
             'id', equipment.id,
-            'name', equipment.name
+            'name', equipment.name,
+            'equipment_type', equipment.equipment_type
           )
           order by equipment.name
         )

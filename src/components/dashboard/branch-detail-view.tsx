@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { useActionState, useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -25,6 +25,7 @@ import type {
   BranchDocumentSectionKey,
   BranchDocumentSummary,
   BranchFormQrSummary,
+  BranchRefrigerationEquipmentType,
   CompanySummary,
   OperationalFormType,
 } from "@/types/auth";
@@ -84,10 +85,13 @@ const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
   },
 };
 
-const productCardSurface =
-  "border border-white/80 bg-white/74 shadow-[0_-18px_40px_rgba(18,17,15,0.08),0_18px_40px_rgba(18,17,15,0.08)] backdrop-blur-xl";
-const productCardSurfaceSoft =
-  "border border-white/55 bg-white/48 shadow-[0_14px_32px_rgba(18,17,15,0.06)] backdrop-blur-xl";
+const productCardSurface = "dashboard-card-surface";
+const productCardSurfaceSoft = "dashboard-card-surface-soft";
+const mutedActionCompact = "ui-muted-action ui-muted-action-compact";
+const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType, string> = {
+  refrigerator: "Refrigerador",
+  freezer: "Congelador",
+};
 
 function formatDate(dateValue: string | null) {
   if (!dateValue) {
@@ -378,24 +382,22 @@ function CompactModuleList({
 
 function OperationalActionsBlock() {
   return (
-    <div className="inline-flex min-h-9 rounded-full border border-[#12110f]/12 bg-[#fbfbfb] p-1">
-      <button
-        type="button"
-        className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-center text-[0.72rem] font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1] sm:text-xs"
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
-          <path
-            d="M5 2.5h4l2 2V13a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 13V2.5Z"
-            fill="none"
-            stroke="currentColor"
-            strokeLinejoin="round"
-            strokeWidth="1.4"
-          />
-          <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
-        </svg>
-        Registrar control interno
-      </button>
-    </div>
+    <button
+      type="button"
+      className={mutedActionCompact}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
+        <path
+          d="M5 2.5h4l2 2V13a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 13V2.5Z"
+          fill="none"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.4"
+        />
+        <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
+      </svg>
+      Registrar control interno
+    </button>
   );
 }
 
@@ -413,6 +415,7 @@ function InlineCatalogManager({
   activeSummaryPlural,
   inactiveSummarySingular,
   inactiveSummaryPlural,
+  showRefrigerationEquipmentType = false,
 }: {
   title: string;
   formLabel: string;
@@ -436,8 +439,10 @@ function InlineCatalogManager({
   activeSummaryPlural: string;
   inactiveSummarySingular: string;
   inactiveSummaryPlural: string;
+  showRefrigerationEquipmentType?: boolean;
 }) {
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createState, createFormAction] = useActionState<AdminActionState | undefined, FormData>(createStateAction, undefined);
   const [toggleState, toggleFormAction] = useActionState<AdminActionState | undefined, FormData>(
     toggleStateAction,
@@ -456,19 +461,38 @@ function InlineCatalogManager({
   });
   const activeCount = items.filter((item) => item.isActive).length;
   const inactiveCount = items.length - activeCount;
-  const activeSummary = `${activeCount} ${
-    activeCount === 1 ? activeSummarySingular : activeSummaryPlural
-  }`;
+  const getStatusLabel = (summary: string) => {
+    const words = summary.trim().split(" ");
+    return words[words.length - 1] ?? summary;
+  };
+  const activeSummary = `${activeCount} ${getStatusLabel(
+    activeCount === 1 ? activeSummarySingular : activeSummaryPlural,
+  )}`;
   const inactiveSummary =
     inactiveCount > 0
-      ? `${inactiveCount} ${inactiveCount === 1 ? inactiveSummarySingular : inactiveSummaryPlural}`
+      ? `${inactiveCount} ${getStatusLabel(inactiveCount === 1 ? inactiveSummarySingular : inactiveSummaryPlural)}`
       : null;
+  const isEquipmentManager = showRefrigerationEquipmentType;
+  const creationHeading = isEquipmentManager ? "Nuevo equipo" : "Nuevo elemento";
+  const inputLabel = isEquipmentManager ? "Nombre del equipo" : "Nombre";
+  const inputPlaceholder = isEquipmentManager
+    ? "Ej. Nevera de carnes"
+    : formLabel === "LIMPIEZA Y DESINFECCIÓN"
+      ? "Ej. Mesón de producción"
+      : "Agregar opción";
+  const creationButtonLabel = isEquipmentManager ? "+ Agregar equipo" : "+ Agregar elemento";
+
+  useEffect(() => {
+    if (createState?.success) {
+      setIsCreateModalOpen(false);
+    }
+  }, [createState?.success]);
 
   return (
-    <details className="group rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 backdrop-blur-xl">
-      <summary className="cursor-pointer list-none transition duration-300 hover:scale-[1.01] hover:text-[#1f8f99]">
-        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3">
-          <span className="inline-flex h-6 w-6 items-center justify-center self-center text-[#12110f]/70 transition-transform duration-200 group-open:rotate-180">
+    <details className="group">
+      <summary className="cursor-pointer list-none transition duration-300 hover:text-[#1f8f99]">
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5">
+          <span className="inline-flex h-5 w-5 items-center justify-center self-center text-[#12110f]/42 transition-transform duration-200 group-open:rotate-180">
             <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
               <path
                 d="M2.25 4.5 6 8.25 9.75 4.5"
@@ -480,25 +504,25 @@ function InlineCatalogManager({
               />
             </svg>
           </span>
-          <div className="space-y-1">
-            <p className="text-xs font-semibold leading-5 text-[#5e6770]">
+          <div className="space-y-0.5">
+            <span className="type-accordion-title block text-[#12110f]">{title}</span>
+            <p className="text-xs font-medium leading-5 text-[#8a9298]">
               {activeSummary}
-              {inactiveSummary ? ` - ${inactiveSummary}` : ""}
+              {inactiveSummary ? ` · ${inactiveSummary}` : ""}
             </p>
-            <span className="block text-sm font-semibold text-[#12110f]">{`Configurar ${title.toLowerCase()}`}</span>
           </div>
         </div>
       </summary>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-3.5">
         {toggleState?.error ? (
-          <p className="rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
+          <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
             {toggleState.error}
           </p>
         ) : null}
 
         {archiveState?.error ? (
-          <p className="rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
+          <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
             {archiveState.error}
           </p>
         ) : null}
@@ -508,85 +532,116 @@ function InlineCatalogManager({
             sortedItems.map((item) => (
               <div
                 key={item.id}
-                className={`flex flex-col gap-3 rounded-2xl border px-4 py-3 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between ${
-                  item.isActive
-                    ? "border-emerald-100 bg-emerald-50/75"
-                    : "border-rose-100 bg-rose-50/80"
-                }`}
+                className="catalog-item-surface flex items-center justify-between gap-3 rounded-[1rem] px-3.5 py-2.5 transition duration-300"
               >
-                <div>
-                  <p className="text-sm text-[#12110f]">{item.name}</p>
-                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-[#7a838a]">
-                    {item.isActive ? "Activo" : "Inactivo"}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <p className="type-metadata font-medium text-[#12110f]">{item.name}</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-[#7f878d]">
+                    {showRefrigerationEquipmentType && item.equipmentType ? (
+                      <span>{refrigerationEquipmentTypeLabels[item.equipmentType]}</span>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 self-end sm:self-auto">
+                <div className="shrink-0 flex items-center gap-2">
                   <form action={toggleFormAction}>
                     <input type="hidden" name="itemId" value={item.id} />
                     <input type="hidden" name="branchId" value={branchId} />
                     <input type="hidden" name="companySlug" value={companySlug} />
                     <input type="hidden" name="branchSlug" value={branchSlug} />
-                    {item.isActive ? null : <input type="hidden" name="nextIsActive" value="on" />}
-                    <button
-                      type="submit"
-                      className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#12110f]/12 bg-[#fbfbfb] px-4 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.04] hover:bg-[#f1f1f1]"
-                    >
-                      {item.isActive ? "Desactivar" : "Activar"}
-                    </button>
+                    <CatalogItemStatusSelect
+                      isActive={item.isActive}
+                      onDelete={() => setItemPendingArchive(item)}
+                    />
                   </form>
-
-                  {item.status === "inactive" ? (
-                    <button
-                      type="button"
-                      aria-label={`Archivar ${item.name}`}
-                      onClick={() => setItemPendingArchive(item)}
-                      className="inline-flex h-10 items-center justify-center text-[#7b5750] transition duration-300 hover:scale-[1.08] hover:text-[#66443e]"
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6">
-                        <path
-                          d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="1.8"
-                        />
-                      </svg>
-                    </button>
-                  ) : null}
                 </div>
               </div>
             ))
           ) : (
-            <p className="rounded-2xl border border-dashed border-white/70 bg-white/55 px-4 py-4 text-sm leading-6 text-[#5e6770] backdrop-blur-xl">
+            <p className="px-1 py-1 text-sm font-medium leading-6 text-[#8a9298]">
               Todavía no hay elementos registrados.
             </p>
           )}
         </div>
 
-        <form action={createFormAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <input type="hidden" name="branchId" value={branchId} />
-          <input type="hidden" name="companySlug" value={companySlug} />
-          <input type="hidden" name="branchSlug" value={branchSlug} />
-          <input
-            name="name"
-            placeholder="Agregar opción"
-            className="min-h-11 rounded-2xl border border-[#2a7f86]/35 bg-white/80 px-4 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]"
-          />
+        <div className="flex justify-center">
           <button
-            type="submit"
-            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition duration-300 hover:scale-[1.04] hover:bg-[#2b2824]"
+            type="button"
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center justify-center border-b border-[#12110f]/18 px-1 py-0 text-[0.82rem] font-medium text-[#5f6870] transition duration-300 hover:scale-[1.04] hover:border-[#12110f]/40 hover:text-[#12110f]"
           >
-            Agregar
+            {creationButtonLabel}
           </button>
-
-          {createState?.error ? (
-            <p className="sm:col-span-2 rounded-2xl border border-[#c66b5c]/22 bg-[#fff1ee] px-4 py-3 text-sm text-[#8a2d1f]">
-              {createState.error}
-            </p>
-          ) : null}
-        </form>
+        </div>
       </div>
+
+      {typeof document !== "undefined" && isCreateModalOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+              <div className="w-full max-w-lg rounded-[1.7rem] border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(18,17,15,0.22)]">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{creationHeading}</h3>
+                  <p className="text-sm leading-6 text-[#5e6770]">
+                    Agrega una nueva opción para el formulario <span className="font-semibold text-[#12110f]">{formLabel}</span>.
+                  </p>
+                </div>
+
+                <form action={createFormAction} className="mt-5 grid gap-4">
+                  <input type="hidden" name="branchId" value={branchId} />
+                  <input type="hidden" name="companySlug" value={companySlug} />
+                  <input type="hidden" name="branchSlug" value={branchSlug} />
+
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-medium leading-4 text-[#7f878d]">{inputLabel}</span>
+                    <input
+                      name="name"
+                      required
+                      placeholder={inputPlaceholder}
+                      className="min-h-11 rounded-[1rem] border border-[#bcc2c7] bg-white px-3.5 text-sm text-[#12110f] outline-none transition placeholder:text-[#a0a7ad] focus:border-[#bcc2c7]"
+                    />
+                  </label>
+
+                  {showRefrigerationEquipmentType ? (
+                    <fieldset className="min-w-0" aria-label="Tipo de equipo">
+                      <div className="inline-grid min-h-9 grid-cols-2 overflow-hidden rounded-[1rem] border border-[#12110f]/70 bg-[#12110f] p-0.5">
+                        {Object.entries(refrigerationEquipmentTypeLabels).map(([value, label]) => (
+                          <label key={value} className="relative">
+                            <input className="peer sr-only" type="radio" name="equipmentType" value={value} required />
+                            <span className="flex min-h-8 items-center justify-center rounded-[0.82rem] border border-transparent px-4 text-xs font-semibold text-white/88 transition duration-300 hover:text-white peer-checked:border-white/70 peer-checked:bg-white peer-checked:text-[#12110f]">
+                              {label}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+
+                  {createState?.error ? (
+                    <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
+                      {createState.error}
+                    </p>
+                  ) : null}
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(false)}
+                      className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 px-5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition duration-300 hover:bg-[#2b2824]"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {typeof document !== "undefined" && itemPendingArchive
         ? createPortal(
@@ -665,6 +720,142 @@ function ArchiveConfirmButton() {
   );
 }
 
+function CatalogItemStatusSelect({
+  isActive,
+  onDelete,
+}: {
+  isActive: boolean;
+  onDelete: () => void;
+}) {
+  const { pending } = useFormStatus();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!containerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) {
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+
+      if (!rect) {
+        return;
+      }
+
+      setMenuPosition({
+        top: rect.bottom + 7,
+        left: rect.right - 132,
+      });
+    };
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        disabled={pending}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label="Cambiar estado del elemento"
+        onClick={() => setIsOpen((currentValue) => !currentValue)}
+        className={`status-select-trigger ${
+          isActive ? "status-select-trigger-active" : "status-select-trigger-inactive"
+        }`}
+      >
+        <span>{isActive ? "Activo" : "Inactivo"}</span>
+        <svg viewBox="0 0 12 12" className="h-3.5 w-3.5">
+          <path
+            d="M2.25 4.5 6 8.25 9.75 4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.8"
+          />
+        </svg>
+      </button>
+
+      {isOpen && menuPosition && typeof document !== "undefined"
+        ? createPortal(
+        <div
+          ref={menuRef}
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+          className="status-select-menu"
+        >
+          <button
+            type="submit"
+            name="nextIsActive"
+            value="on"
+            disabled={pending}
+            onClick={() => setIsOpen(false)}
+            className={`status-select-option ${
+              isActive ? "status-select-option-active" : "status-select-option-active-hover"
+            }`}
+          >
+            <span>{isActive ? "✓ Activo" : "Activar"}</span>
+          </button>
+          <button
+            type="submit"
+            name="nextIsActive"
+            value="off"
+            disabled={pending}
+            onClick={() => setIsOpen(false)}
+            className={`status-select-option ${
+              isActive ? "status-select-option-inactive-hover" : "status-select-option-inactive"
+            }`}
+          >
+            <span>{!isActive ? "✓ Inactivo" : "Inactivar"}</span>
+          </button>
+          <div className="status-select-divider my-1" />
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              onDelete();
+            }}
+            className="status-select-option status-select-delete"
+          >
+            Eliminar
+          </button>
+        </div>,
+        document.body,
+      ) : null}
+    </div>
+  );
+}
+
 function OperationalFlowCard({
   formType,
   configuration,
@@ -676,32 +867,35 @@ function OperationalFlowCard({
   const instructions = printableQrInstructions[formType];
 
   return (
-    <article className={`rounded-[1.7rem] p-5 ${productCardSurface} border-[#2a7f86]/35`}>
-      <div className="space-y-5">
+    <article className={`rounded-[1.45rem] p-5 ${productCardSurface} dashboard-card-surface-operational`}>
+      <div className="space-y-4">
         <div>
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">{label.title}</p>
-            <div className="mt-3 grid gap-2 text-sm leading-6 text-[#5e6770]">
-              {instructions.map((item) => (
-                <p key={item.label}>
-                  <span className="font-semibold text-[#12110f]">{item.label}</span> {item.value}
-                </p>
-              ))}
-            </div>
-            <div className="mt-4 max-w-md">
-              <OperationalActionsBlock />
-            </div>
+          <p className="text-sm font-semibold leading-5 tracking-[0.08em] text-[#2a7f86]">
+            {label.title}
+          </p>
+
+          <div className="my-3">
+            <OperationalActionsBlock />
+          </div>
+
+          <div className="type-metadata space-y-1 text-[#7f878d]">
+            {instructions.map((instruction) => (
+              <p key={instruction.label}>
+                <span className="font-semibold text-[#606a72]">{instruction.label}</span>{" "}
+                <span>{instruction.value}</span>
+              </p>
+            ))}
           </div>
         </div>
 
-        <div className="border-t border-black/8" />
+        <div className="border-t border-[#12110f]/[0.22]" />
 
         {configuration ? (
           configuration
         ) : (
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/55 px-4 py-4 text-sm font-medium text-[#5e6770] backdrop-blur-xl">
-            Sin opciones configurables para el formulario
-          </div>
+          <p className="text-sm font-medium leading-6 text-[#8a9298]">
+            No requiere configuración
+          </p>
         )}
 
       </div>
@@ -1198,7 +1392,7 @@ export function BranchOperationalView({
     if (formType === "thermal_control") {
       configuration = (
         <InlineCatalogManager
-          title="EQUIPOS DE REFRIGERACIÓN Y CONGELACIÓN"
+          title="Administrar equipos"
           formLabel={operationalFormLabels[formType].title}
           branchId={branch.id}
           companySlug={company.slug}
@@ -1211,6 +1405,7 @@ export function BranchOperationalView({
           activeSummaryPlural="equipos activos"
           inactiveSummarySingular="equipo inactivo"
           inactiveSummaryPlural="equipos inactivos"
+          showRefrigerationEquipmentType
         />
       );
     }
@@ -1218,7 +1413,7 @@ export function BranchOperationalView({
     if (formType === "area_sanitation") {
       configuration = (
         <InlineCatalogManager
-          title="ÁREAS, EQUIPOS Y UTENSILIOS"
+          title="Administrar elementos"
           formLabel={operationalFormLabels[formType].title}
           branchId={branch.id}
           companySlug={company.slug}
@@ -1249,14 +1444,17 @@ export function BranchOperationalView({
 
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
-      <div className="mb-10 mt-3 flex max-w-[68rem] flex-col gap-4 sm:mb-12 sm:mt-4 lg:flex-row lg:items-end lg:justify-between">
-        <p className="max-w-[48rem] text-base leading-7 text-[#12110f] sm:text-lg sm:leading-8">
-          Formularios obligatorios de control sanitario para esta sede. Acá puedes configurar sus opciones y descargar los carteles QR consolidados.
+      <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-between gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
+        <p className="operational-toolbar-copy min-w-0">
+          Formularios de control sanitario para esta sede.
+          <br />
+          Configura, registra y descarga los códigos QR desde aquí.
         </p>
+
         {activeOperationalQrCodes.length ? (
           <a
             href={allOperationalFormsPdfPath}
-            className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-full border border-[#12110f]/12 bg-white/70 px-5 py-3 text-sm font-medium text-[#5e6770] transition duration-300 hover:scale-[1.02] hover:border-[#12110f]/18 hover:bg-[#f1f1f1] hover:text-[#12110f]"
+            className="ui-muted-action ui-muted-action-large operational-toolbar-action shrink-0"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 shrink-0">
               <path
@@ -1268,10 +1466,11 @@ export function BranchOperationalView({
                 strokeWidth="1.4"
               />
             </svg>
-            Descargar todos los formularios en QR para los operarios
+            <span className="operational-toolbar-action-label-short">QR</span>
+            <span className="operational-toolbar-action-label-full">Descargar formularios QR operativos</span>
           </a>
         ) : (
-          <span className="inline-flex min-h-11 items-center justify-center self-start rounded-full border border-dashed border-[#12110f]/18 px-5 py-3 text-sm font-semibold text-[#5e6770]">
+          <span className="operational-toolbar-empty">
             No hay formularios activos para descargar
           </span>
         )}

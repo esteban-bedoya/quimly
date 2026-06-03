@@ -8,7 +8,7 @@ import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseServerConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { AppRole } from "@/types/auth";
+import type { AppRole, BranchRefrigerationEquipmentType } from "@/types/auth";
 
 export type AdminActionState = {
   error?: string;
@@ -23,6 +23,12 @@ type PostgrestErrorLike = {
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readRefrigerationEquipmentType(formData: FormData) {
+  const value = readString(formData, "equipmentType");
+
+  return value === "refrigerator" || value === "freezer" ? value : null;
 }
 
 function readBoolean(formData: FormData, key: string) {
@@ -522,9 +528,11 @@ export async function deleteBranchDocumentAction(formData: FormData) {
 async function createBranchCatalogItem({
   formData,
   tableName,
+  extraFields = {},
 }: {
   formData: FormData;
   tableName: "branch_refrigeration_equipment" | "branch_sanitation_areas";
+  extraFields?: Record<string, string>;
 }) {
   const branchId = readString(formData, "branchId");
   const companySlug = readString(formData, "companySlug");
@@ -551,6 +559,7 @@ async function createBranchCatalogItem({
     name,
     is_active: true,
     status: "active",
+    ...extraFields,
   });
 
   if (error) {
@@ -655,7 +664,17 @@ async function archiveBranchCatalogItem({
 
 export async function createBranchRefrigerationEquipmentAction(formData: FormData) {
   try {
-    await createBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
+    const equipmentType = readRefrigerationEquipmentType(formData);
+
+    if (!equipmentType) {
+      return { error: "Selecciona si el equipo es refrigerador o congelador." } satisfies AdminActionState;
+    }
+
+    await createBranchCatalogItem({
+      formData,
+      tableName: "branch_refrigeration_equipment",
+      extraFields: { equipment_type: equipmentType satisfies BranchRefrigerationEquipmentType },
+    });
     return { success: "Opción agregada correctamente." } satisfies AdminActionState;
   } catch (error) {
     logAdminActionError("branch.catalog.refrigeration.create.action_failed", error);

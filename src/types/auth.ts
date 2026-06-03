@@ -58,6 +58,8 @@ export type OperationalFormType =
 
 export type BranchCatalogItemStatus = "active" | "inactive" | "archived";
 
+export type BranchRefrigerationEquipmentType = "refrigerator" | "freezer";
+
 export type BranchFormQrSummary = {
   id: string;
   branchId: string;
@@ -72,6 +74,7 @@ export type BranchCatalogItemSummary = {
   branchId: string;
   companyId: string;
   name: string;
+  equipmentType?: BranchRefrigerationEquipmentType | null;
   isActive: boolean;
   status: BranchCatalogItemStatus;
 };

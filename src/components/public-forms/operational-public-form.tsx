@@ -5,10 +5,17 @@ import { useActionState } from "react";
 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
+import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 type CatalogItem = {
   id: string;
   name: string;
+  equipment_type?: BranchRefrigerationEquipmentType | null;
+};
+
+const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType, string> = {
+  refrigerator: "Refrigerador",
+  freezer: "Congelador",
 };
 
 export function OperationalPublicForm({
@@ -83,7 +90,9 @@ export function OperationalPublicForm({
                     <option value="">Seleccionar equipo</option>
                     {equipment.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name}
+                        {item.equipment_type
+                          ? `${item.name} - ${refrigerationEquipmentTypeLabels[item.equipment_type]}`
+                          : item.name}
                       </option>
                     ))}
                   </select>
