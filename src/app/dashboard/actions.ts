@@ -650,8 +650,7 @@ async function archiveBranchCatalogItem({
     .from(tableName)
     .update({ is_active: false, status: "archived" })
     .eq("id", itemId)
-    .eq("branch_id", branchId)
-    .eq("is_active", false);
+    .eq("branch_id", branchId);
 
   if (error) {
     logAdminActionError("branch.catalog.archive.failed", error, logContext);
@@ -693,8 +692,11 @@ export async function createBranchRefrigerationEquipmentStateAction(
 
 export async function toggleBranchRefrigerationEquipmentAction(formData: FormData) {
   try {
+    const nextIsActive = readBoolean(formData, "nextIsActive");
     await toggleBranchCatalogItem({ formData, tableName: "branch_refrigeration_equipment" });
-    return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
+    return {
+      success: nextIsActive ? "Elemento activado correctamente." : "Elemento inactivado correctamente.",
+    } satisfies AdminActionState;
   } catch (error) {
     logAdminActionError("branch.catalog.refrigeration.toggle.action_failed", error);
     return {
@@ -750,8 +752,11 @@ export async function createBranchSanitationAreaStateAction(
 
 export async function toggleBranchSanitationAreaAction(formData: FormData) {
   try {
+    const nextIsActive = readBoolean(formData, "nextIsActive");
     await toggleBranchCatalogItem({ formData, tableName: "branch_sanitation_areas" });
-    return { success: "Estado actualizado correctamente." } satisfies AdminActionState;
+    return {
+      success: nextIsActive ? "Elemento activado correctamente." : "Elemento inactivado correctamente.",
+    } satisfies AdminActionState;
   } catch (error) {
     logAdminActionError("branch.catalog.sanitation.toggle.action_failed", error);
     return {

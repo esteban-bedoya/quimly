@@ -443,6 +443,7 @@ function InlineCatalogManager({
 }) {
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [statusToast, setStatusToast] = useState<string | null>(null);
   const [createState, createFormAction] = useActionState<AdminActionState | undefined, FormData>(createStateAction, undefined);
   const [toggleState, toggleFormAction] = useActionState<AdminActionState | undefined, FormData>(
     toggleStateAction,
@@ -488,6 +489,14 @@ function InlineCatalogManager({
     }
   }, [createState?.success]);
 
+  useEffect(() => {
+    if (!toggleState?.success) {
+      return;
+    }
+
+    setStatusToast(toggleState.success);
+  }, [toggleState]);
+
   return (
     <details className="group">
       <summary className="cursor-pointer list-none transition duration-300 hover:text-[#1f8f99]">
@@ -529,33 +538,39 @@ function InlineCatalogManager({
 
         <div className="grid gap-2">
           {items.length ? (
-            sortedItems.map((item) => (
-              <div
-                key={item.id}
-                className="catalog-item-surface flex items-center justify-between gap-3 rounded-[1rem] px-3.5 py-2.5 transition duration-300"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="type-metadata font-medium text-[#12110f]">{item.name}</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-[#7f878d]">
-                    {showRefrigerationEquipmentType && item.equipmentType ? (
-                      <span>{refrigerationEquipmentTypeLabels[item.equipmentType]}</span>
-                    ) : null}
+            sortedItems.map((item) => {
+              const statusFormId = `catalog-status-${item.id}`;
+
+              return (
+                <div
+                  key={item.id}
+                  className="catalog-item-surface flex items-center justify-between gap-3 rounded-[1rem] px-3.5 py-2.5 transition duration-300"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="type-metadata font-medium text-[#12110f]">{item.name}</p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-[#7f878d]">
+                      {showRefrigerationEquipmentType && item.equipmentType ? (
+                        <span>{refrigerationEquipmentTypeLabels[item.equipmentType]}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <form id={statusFormId} action={toggleFormAction}>
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <input type="hidden" name="branchId" value={branchId} />
+                      <input type="hidden" name="companySlug" value={companySlug} />
+                      <input type="hidden" name="branchSlug" value={branchSlug} />
+                      <input type="hidden" name="nextIsActive" value={item.isActive ? "on" : "off"} />
+                      <CatalogItemStatusSelect
+                        isActive={item.isActive}
+                        formId={statusFormId}
+                        onDelete={() => setItemPendingArchive(item)}
+                      />
+                    </form>
                   </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
-                  <form action={toggleFormAction}>
-                    <input type="hidden" name="itemId" value={item.id} />
-                    <input type="hidden" name="branchId" value={branchId} />
-                    <input type="hidden" name="companySlug" value={companySlug} />
-                    <input type="hidden" name="branchSlug" value={branchSlug} />
-                    <CatalogItemStatusSelect
-                      isActive={item.isActive}
-                      onDelete={() => setItemPendingArchive(item)}
-                    />
-                  </form>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="ui-empty-state px-1 py-1">
               Todavía no hay elementos registrados.
@@ -645,6 +660,28 @@ function InlineCatalogManager({
           )
         : null}
 
+      {typeof document !== "undefined" && statusToast
+        ? createPortal(
+            <div className="fixed inset-0 z-[110] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/32 px-4 backdrop-blur-md">
+              <div className="ui-modal-surface w-full max-w-sm rounded-[1.7rem] px-6 py-7 text-center">
+                <div className="space-y-5">
+                  <p className="text-sm font-semibold text-[#12110f]">{statusToast}</p>
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setStatusToast(null)}
+                      className="ui-pill-button-secondary ui-modal-action-secondary min-w-28 bg-[#f1f1f1] border-[#12110f]/18 text-[#12110f] hover:bg-[#dcdcdc] hover:border-[#12110f]/34"
+                    >
+                      Aceptar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
       {typeof document !== "undefined" && itemPendingArchive
         ? createPortal(
             <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
@@ -724,9 +761,11 @@ function ArchiveConfirmButton() {
 
 function CatalogItemStatusSelect({
   isActive,
+  formId,
   onDelete,
 }: {
   isActive: boolean;
+  formId: string;
   onDelete: () => void;
 }) {
   const { pending } = useFormStatus();
@@ -734,6 +773,24 @@ function CatalogItemStatusSelect({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const submitStatusChange = (nextIsActive: "on" | "off") => {
+    const formElement = document.getElementById(formId);
+
+    if (!(formElement instanceof HTMLFormElement)) {
+      return;
+    }
+
+    const nextIsActiveInput = formElement.elements.namedItem("nextIsActive");
+
+    if (!(nextIsActiveInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    nextIsActiveInput.value = nextIsActive;
+    formElement.requestSubmit();
+    setIsOpen(false);
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -817,11 +874,9 @@ function CatalogItemStatusSelect({
           className="status-select-menu"
         >
           <button
-            type="submit"
-            name="nextIsActive"
-            value="on"
+            type="button"
             disabled={pending}
-            onClick={() => setIsOpen(false)}
+            onClick={() => submitStatusChange("on")}
             className={`status-select-option ${
               isActive ? "status-select-option-active" : "status-select-option-active-hover"
             }`}
@@ -829,11 +884,9 @@ function CatalogItemStatusSelect({
             <span>{isActive ? "✓ Activo" : "Activar"}</span>
           </button>
           <button
-            type="submit"
-            name="nextIsActive"
-            value="off"
+            type="button"
             disabled={pending}
-            onClick={() => setIsOpen(false)}
+            onClick={() => submitStatusChange("off")}
             className={`status-select-option ${
               isActive ? "status-select-option-inactive-hover" : "status-select-option-inactive"
             }`}
