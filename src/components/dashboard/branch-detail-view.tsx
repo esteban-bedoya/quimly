@@ -473,12 +473,12 @@ function InlineCatalogManager({
       ? `${inactiveCount} ${getStatusLabel(inactiveCount === 1 ? inactiveSummarySingular : inactiveSummaryPlural)}`
       : null;
   const isEquipmentManager = showRefrigerationEquipmentType;
-  const creationHeading = isEquipmentManager ? "Registrar nuevo equipo" : "Nuevo elemento";
+  const creationHeading = isEquipmentManager ? "Registrar nuevo equipo" : "Registrar nuevo elemento";
   const inputLabel = isEquipmentManager ? "Nombre del equipo" : "Nombre";
   const inputPlaceholder = isEquipmentManager
     ? "Ej. Nevera de carnes"
     : formLabel === "LIMPIEZA Y DESINFECCIÓN"
-      ? "Ej. Mesón de producción"
+      ? "Ej. Trampa de grasa"
       : "Agregar opción";
   const creationButtonLabel = isEquipmentManager ? "+ Agregar equipo" : "+ Agregar elemento";
 
@@ -583,13 +583,13 @@ function InlineCatalogManager({
                   <p className="ui-modal-copy">
                     {isEquipmentManager ? (
                       <>
-                        Este equipo estará disponible para los registros de{" "}
+                        Este equipo estará disponible para el formulario de{" "}
                         <span className="font-semibold text-[#12110f]">control de temperaturas</span>.
                       </>
                     ) : (
                       <>
-                        Agrega una nueva opción para el formulario{" "}
-                        <span className="font-semibold text-[#12110f]">{formLabel}</span>.
+                        Este elemento estará disponible para el formulario de{" "}
+                        <span className="font-semibold text-[#12110f]">limpieza y desinfección</span>.
                       </>
                     )}
                   </p>
@@ -627,13 +627,13 @@ function InlineCatalogManager({
                     <button
                       type="button"
                       onClick={() => setIsCreateModalOpen(false)}
-                      className="ui-pill-button-secondary"
+                      className="ui-pill-button-secondary ui-modal-action-secondary"
                     >
                       Cancelar
                     </button>
                     <button
                       type="submit"
-                      className="ui-pill-button-primary"
+                      className="ui-pill-button-primary ui-modal-action-primary"
                     >
                       Agregar
                     </button>
@@ -682,7 +682,7 @@ function InlineCatalogManager({
                   <button
                     type="button"
                     onClick={() => setItemPendingArchive(null)}
-                    className="ui-pill-button-secondary"
+                    className="ui-pill-button-secondary ui-modal-action-secondary"
                   >
                     Cancelar
                   </button>
