@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -364,8 +364,8 @@ function CompactModuleList({
           <div key={item.title} className={`rounded-[1.2rem] px-4 py-4 ${productCardSurfaceSoft}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-base font-semibold tracking-[-0.02em] text-[#12110f]">{item.title}</p>
-                <p className="mt-1 text-sm leading-6 text-[#5e6770]">{item.detail}</p>
+                <p className="ui-item-title">{item.title}</p>
+                <p className="ui-copy-compact mt-1">{item.detail}</p>
               </div>
               {item.badge ? (
                 <span className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#1c6a71]">
@@ -473,7 +473,7 @@ function InlineCatalogManager({
       ? `${inactiveCount} ${getStatusLabel(inactiveCount === 1 ? inactiveSummarySingular : inactiveSummaryPlural)}`
       : null;
   const isEquipmentManager = showRefrigerationEquipmentType;
-  const creationHeading = isEquipmentManager ? "Nuevo equipo" : "Nuevo elemento";
+  const creationHeading = isEquipmentManager ? "Registrar nuevo equipo" : "Nuevo elemento";
   const inputLabel = isEquipmentManager ? "Nombre del equipo" : "Nombre";
   const inputPlaceholder = isEquipmentManager
     ? "Ej. Nevera de carnes"
@@ -506,23 +506,23 @@ function InlineCatalogManager({
           </span>
           <div className="space-y-0.5">
             <span className="type-accordion-title block text-[#12110f]">{title}</span>
-            <p className="text-xs font-medium leading-5 text-[#8a9298]">
-              {activeSummary}
-              {inactiveSummary ? ` · ${inactiveSummary}` : ""}
-            </p>
+          <p className="text-xs font-medium leading-5 text-[#8a9298]">
+            {activeSummary}
+            {inactiveSummary ? ` · ${inactiveSummary}` : ""}
+          </p>
           </div>
         </div>
       </summary>
 
       <div className="mt-4 space-y-3.5">
         {toggleState?.error ? (
-          <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
+          <p className="ui-inline-alert ui-inline-alert-error">
             {toggleState.error}
           </p>
         ) : null}
 
         {archiveState?.error ? (
-          <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
+          <p className="ui-inline-alert ui-inline-alert-error">
             {archiveState.error}
           </p>
         ) : null}
@@ -557,7 +557,7 @@ function InlineCatalogManager({
               </div>
             ))
           ) : (
-            <p className="px-1 py-1 text-sm font-medium leading-6 text-[#8a9298]">
+            <p className="ui-empty-state px-1 py-1">
               Todavía no hay elementos registrados.
             </p>
           )}
@@ -567,7 +567,7 @@ function InlineCatalogManager({
           <button
             type="button"
             onClick={() => setIsCreateModalOpen(true)}
-            className="inline-flex items-center justify-center border-b border-[#12110f]/18 px-1 py-0 text-[0.82rem] font-medium text-[#5f6870] transition duration-300 hover:scale-[1.04] hover:border-[#12110f]/40 hover:text-[#12110f]"
+            className="ui-list-action"
           >
             {creationButtonLabel}
           </button>
@@ -577,46 +577,48 @@ function InlineCatalogManager({
       {typeof document !== "undefined" && isCreateModalOpen
         ? createPortal(
             <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
-              <div className="w-full max-w-lg rounded-[1.7rem] border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(18,17,15,0.22)]">
+              <div className="ui-modal-surface w-full max-w-lg rounded-[1.7rem] p-6">
                 <div className="space-y-2">
-                  <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">{creationHeading}</h3>
-                  <p className="text-sm leading-6 text-[#5e6770]">
-                    Agrega una nueva opción para el formulario <span className="font-semibold text-[#12110f]">{formLabel}</span>.
+                  <h3 className="ui-modal-title">{creationHeading}</h3>
+                  <p className="ui-modal-copy">
+                    {isEquipmentManager ? (
+                      <>
+                        Este equipo estará disponible para los registros de{" "}
+                        <span className="font-semibold text-[#12110f]">control de temperaturas</span>.
+                      </>
+                    ) : (
+                      <>
+                        Agrega una nueva opción para el formulario{" "}
+                        <span className="font-semibold text-[#12110f]">{formLabel}</span>.
+                      </>
+                    )}
                   </p>
                 </div>
 
-                <form action={createFormAction} className="mt-5 grid gap-4">
+                <form action={createFormAction} className="mt-4 grid gap-3">
                   <input type="hidden" name="branchId" value={branchId} />
                   <input type="hidden" name="companySlug" value={companySlug} />
                   <input type="hidden" name="branchSlug" value={branchSlug} />
 
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-medium leading-4 text-[#7f878d]">{inputLabel}</span>
+                  <label className="ui-form-field">
+                    <span className="ui-form-label">{inputLabel}</span>
                     <input
                       name="name"
                       required
                       placeholder={inputPlaceholder}
-                      className="min-h-11 rounded-[1rem] border border-[#bcc2c7] bg-white px-3.5 text-sm text-[#12110f] outline-none transition placeholder:text-[#a0a7ad] focus:border-[#bcc2c7]"
+                      className="ui-form-control"
                     />
                   </label>
 
                   {showRefrigerationEquipmentType ? (
-                    <fieldset className="min-w-0" aria-label="Tipo de equipo">
-                      <div className="inline-grid min-h-9 grid-cols-2 overflow-hidden rounded-[1rem] border border-[#12110f]/70 bg-[#12110f] p-0.5">
-                        {Object.entries(refrigerationEquipmentTypeLabels).map(([value, label]) => (
-                          <label key={value} className="relative">
-                            <input className="peer sr-only" type="radio" name="equipmentType" value={value} required />
-                            <span className="flex min-h-8 items-center justify-center rounded-[0.82rem] border border-transparent px-4 text-xs font-semibold text-white/88 transition duration-300 hover:text-white peer-checked:border-white/70 peer-checked:bg-white peer-checked:text-[#12110f]">
-                              {label}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </fieldset>
+                    <div className="ui-form-field min-w-0">
+                      <span className="ui-form-label">Tipo de equipo</span>
+                      <EquipmentTypeSelect />
+                    </div>
                   ) : null}
 
                   {createState?.error ? (
-                    <p className="rounded-[1rem] border border-[#c66b5c]/18 bg-[#fff1ee]/90 px-4 py-3 text-sm text-[#8a2d1f]">
+                    <p className="ui-inline-alert ui-inline-alert-error">
                       {createState.error}
                     </p>
                   ) : null}
@@ -625,13 +627,13 @@ function InlineCatalogManager({
                     <button
                       type="button"
                       onClick={() => setIsCreateModalOpen(false)}
-                      className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 px-5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+                      className="ui-pill-button-secondary"
                     >
                       Cancelar
                     </button>
                     <button
                       type="submit"
-                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition duration-300 hover:bg-[#2b2824]"
+                      className="ui-pill-button-primary"
                     >
                       Agregar
                     </button>
@@ -646,7 +648,7 @@ function InlineCatalogManager({
       {typeof document !== "undefined" && itemPendingArchive
         ? createPortal(
             <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
-              <div className="w-full max-w-md rounded-[1.7rem] border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(18,17,15,0.22)]">
+              <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
                 <div className="space-y-3">
                   <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">
                     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
@@ -661,8 +663,8 @@ function InlineCatalogManager({
                     </svg>
                   </div>
                   <div className="space-y-2">
-                    <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">¿Eliminar opción?</h3>
-                    <div className="space-y-3 text-sm leading-6 text-[#5e6770]">
+                    <h3 className="ui-modal-title">¿Eliminar opción?</h3>
+                    <div className="ui-modal-copy space-y-3">
                       <p>
                         • Si eliminas{" "}
                         <span className="font-semibold uppercase text-[#12110f]">
@@ -680,7 +682,7 @@ function InlineCatalogManager({
                   <button
                     type="button"
                     onClick={() => setItemPendingArchive(null)}
-                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 px-5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+                    className="ui-pill-button-secondary"
                   >
                     Cancelar
                   </button>
@@ -713,7 +715,7 @@ function ArchiveConfirmButton() {
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#8a2d1f] px-5 text-sm font-semibold text-white transition hover:bg-[#6f2116] disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+      className="ui-pill-button-danger w-full sm:w-auto"
     >
       {pending ? "Eliminando..." : "Confirmar eliminación"}
     </button>
@@ -856,6 +858,187 @@ function CatalogItemStatusSelect({
   );
 }
 
+function EquipmentTypeSelect() {
+  const { pending } = useFormStatus();
+  const options = Object.entries(refrigerationEquipmentTypeLabels) as Array<
+    [BranchRefrigerationEquipmentType, string]
+  >;
+  const listboxId = useId();
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedType, setSelectedType] = useState<BranchRefrigerationEquipmentType | "">("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!containerRef.current?.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    optionRefs.current[activeIndex]?.focus();
+  }, [activeIndex, isOpen]);
+
+  useEffect(() => {
+    if (!selectedType) {
+      setActiveIndex(0);
+      return;
+    }
+
+    const selectedIndex = options.findIndex(([value]) => value === selectedType);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [options, selectedType]);
+
+  const openMenu = () => {
+    setIsOpen(true);
+    if (selectedType) {
+      const selectedIndex = options.findIndex(([value]) => value === selectedType);
+      setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    } else {
+      setActiveIndex(0);
+    }
+  };
+
+  const selectOption = (value: BranchRefrigerationEquipmentType) => {
+    setSelectedType(value);
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openMenu();
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsOpen(false);
+    }
+  };
+
+  const handleOptionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((index + 1) % options.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((index - 1 + options.length) % options.length);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(options.length - 1);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectOption(options[index][0]);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input type="hidden" name="equipmentType" value={selectedType} required />
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={listboxId}
+        aria-label="Seleccionar tipo de equipo"
+        data-select-trigger="true"
+        disabled={pending}
+        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
+        onKeyDown={handleTriggerKeyDown}
+        className="neutral-select-trigger"
+      >
+        <span className={selectedType ? "" : "neutral-select-trigger-placeholder"}>
+          {selectedType ? refrigerationEquipmentTypeLabels[selectedType] : "Selecciona un tipo"}
+        </span>
+        <svg
+          viewBox="0 0 12 12"
+          className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+        >
+          <path
+            d="M2.25 4.5 6 8.25 9.75 4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.8"
+          />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div id={listboxId} role="listbox" aria-label="Tipo de equipo" className="neutral-select-menu absolute inset-x-0 top-[calc(100%+0.35rem)]">
+          {options.map(([value, label], index) => {
+            const isSelected = selectedType === value;
+
+            return (
+              <button
+                key={value}
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                tabIndex={activeIndex === index ? 0 : -1}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => selectOption(value)}
+                className={`neutral-select-option ${isSelected ? "neutral-select-option-selected" : ""}`}
+              >
+                <span>{isSelected ? `✓ ${label}` : label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function OperationalFlowCard({
   formType,
   configuration,
@@ -893,7 +1076,7 @@ function OperationalFlowCard({
         {configuration ? (
           configuration
         ) : (
-          <p className="text-sm font-medium leading-6 text-[#8a9298]">
+          <p className="ui-empty-state">
             No requiere configuración
           </p>
         )}
@@ -926,11 +1109,11 @@ function BranchDocumentEditor({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Seccion</label>
+            <label className="ui-document-form-label block">Seccion</label>
             <select
               name="sectionKey"
               defaultValue={document.sectionKey}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             >
               {Object.entries(sectionLabels).map(([key, label]) => (
                 <option key={key} value={key}>
@@ -941,58 +1124,58 @@ function BranchDocumentEditor({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Título</label>
+            <label className="ui-document-form-label block">Título</label>
             <input
               name="title"
               defaultValue={document.title}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Descripción</label>
+            <label className="ui-document-form-label block">Descripción</label>
             <input
               name="description"
               defaultValue={document.description ?? ""}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">URL del PDF</label>
+            <label className="ui-document-form-label block">URL del PDF</label>
             <input
               name="fileUrl"
               defaultValue={document.fileUrl ?? ""}
               placeholder="https://..."
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Vencimiento</label>
+            <label className="ui-document-form-label block">Vencimiento</label>
             <input
               name="expiresAt"
               type="date"
               defaultValue={document.expiresAt ?? ""}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Orden</label>
+            <label className="ui-document-form-label block">Orden</label>
             <input
               name="sortOrder"
               type="number"
               defaultValue={document.sortOrder}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#3f3831] backdrop-blur-xl">
+          <label className="ui-checkbox-surface rounded-2xl">
             <input
               type="checkbox"
               name="isActive"
@@ -1004,18 +1187,18 @@ function BranchDocumentEditor({
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-[#12110f]">Reemplazar PDF</label>
+          <label className="ui-document-form-label block">Reemplazar PDF</label>
           <input
             type="file"
             name="pdfFile"
             accept="application/pdf"
-            className="block w-full text-sm text-[#5e6770] file:mr-4 file:rounded-full file:border-0 file:bg-[#12110f] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#1d1b18]"
+            className="ui-file-input"
           />
         </div>
 
         <button
           type="submit"
-          className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
+          className="ui-pill-button-primary ui-pill-button-primary-soft"
         >
           Guardar cambios
         </button>
@@ -1052,8 +1235,8 @@ function CompactBranchDocumentRow({
     <div className={`rounded-[1.25rem] px-4 py-4 ${productCardSurfaceSoft}`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <p className="text-base font-semibold tracking-[-0.02em] text-[#161412]">{document.title}</p>
-          <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+          <p className="ui-item-title text-[#161412]">{document.title}</p>
+          <p className="ui-copy-compact mt-1">
             {document.description || "Documento PDF indexado para la sede."}
           </p>
         </div>
@@ -1123,68 +1306,68 @@ function CreateDocumentForm({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Título</label>
+            <label className="ui-document-form-label block">Título</label>
             <input
               name="title"
               placeholder="Nombre del PDF"
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Descripción</label>
+            <label className="ui-document-form-label block">Descripción</label>
             <input
               name="description"
               placeholder="Resumen breve"
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2 md:col-span-2">
-            <label className="block text-sm font-medium text-[#12110f]">URL del PDF</label>
+            <label className="ui-document-form-label block">URL del PDF</label>
             <input
               name="fileUrl"
               placeholder="https://..."
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Orden</label>
+            <label className="ui-document-form-label block">Orden</label>
             <input
               name="sortOrder"
               type="number"
               defaultValue={0}
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[#12110f]">Vencimiento</label>
+            <label className="ui-document-form-label block">Vencimiento</label>
             <input
               name="expiresAt"
               type="date"
-              className="min-h-11 w-full rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#2a7f86]/35"
+              className="ui-document-form-control rounded-2xl"
             />
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-[#3f3831] backdrop-blur-xl">
+          <label className="ui-checkbox-surface ui-checkbox-surface-soft rounded-2xl">
             <input type="checkbox" name="isActive" defaultChecked className="h-4 w-4 rounded border-[#c9c0b6]" />
             <span>Documento activo</span>
           </label>
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-[#12110f]">Subir PDF</label>
+          <label className="ui-document-form-label block">Subir PDF</label>
           <input
             type="file"
             name="pdfFile"
             accept="application/pdf"
-            className="block w-full text-sm text-[#5e6770] file:mr-4 file:rounded-full file:border-0 file:bg-[#12110f] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-[#1d1b18]"
+            className="ui-file-input"
           />
           <p className="text-xs leading-6 text-[#7a838a]">
             Puedes subir el archivo o pegar una URL. Si subes archivo, Quimly publicará el PDF en Storage.
@@ -1193,7 +1376,7 @@ function CreateDocumentForm({
 
         <button
           type="submit"
-          className="inline-flex min-h-11 w-fit items-center justify-center rounded-full bg-[#12110f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d1b18]"
+          className="ui-pill-button-primary ui-pill-button-primary-soft w-fit"
         >
           Guardar PDF
         </button>
@@ -1253,7 +1436,7 @@ function ComplianceSectionRepository({
             />
           ))
         ) : (
-          <div className="rounded-[1.25rem] border border-dashed border-white/70 bg-white/55 px-4 py-5 text-sm leading-7 text-[#5e6770] backdrop-blur-xl">
+          <div className="ui-empty-state-block">
             Todavía no hay documentos cargados en esta sección.
           </div>
         )}
@@ -1321,10 +1504,10 @@ export function BranchLandingView({
       <div className="grid gap-6 xl:grid-cols-2">
         <section className={`rounded-[1.8rem] p-5 ${productCardSurface}`}>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Resumen de sede</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">
+          <h2 className="ui-card-title mt-3">
             Elige el frente que deseas gestionar
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5e6770]">
+          <p className="ui-card-copy mt-3 max-w-2xl">
             Esta vista concentra solo el contexto esencial. La operación diaria y el cumplimiento documental viven en
             módulos separados para reducir scroll y hacer más clara la gestión.
           </p>
@@ -1511,10 +1694,10 @@ export function BranchComplianceView({
           <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr] lg:items-end">
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a7f86]">Repositorio PDF</p>
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">
+              <h2 className="ui-card-title">
                 Gestion documental compacta
               </h2>
-              <p className="text-sm leading-7 text-[#5e6770]">
+              <p className="ui-card-copy">
                 Cada sección se abre solo cuando necesitas trabajarla. Así evitamos tarjetas enormes repetidas y la
                 sede deja de sentirse como un dashboard infinito.
               </p>
