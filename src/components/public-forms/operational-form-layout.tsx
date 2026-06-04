@@ -1,19 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import type { ReactNode } from "react";
 
 export const operationalFormStyles = {
-  page: "min-h-screen bg-[linear-gradient(180deg,#eafbf7_0%,#f2f7f5_300px,#f2f7f5_100%)] px-4 py-5 text-[#111816]",
+  page: "min-h-screen bg-[#12110F] px-4 py-5 text-[#111816]",
   shell: "mx-auto flex w-full max-w-lg flex-col",
   layoutContent: "grid gap-0",
   header: "pb-5 pt-4",
   formBody: "grid gap-4 pb-5 pt-3",
-  logo: "h-10 w-auto",
-  title: "mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]",
-  description: "mt-3 text-base leading-7 text-[#51645f]",
-  location: "mt-4 text-sm font-black tracking-[-0.01em] text-[#111816]",
-  locationMuted: "text-[#7b8c87]",
+  title: "text-3xl font-black tracking-[-0.05em] text-[#48c7d2]",
+  description: "mt-3 text-base leading-7 text-white/70",
+  location: "mt-4 text-sm font-black tracking-[-0.01em] text-white",
+  locationMuted: "text-white/50",
   sectionContainer:
     "grid gap-4 rounded-2xl border border-[#e1e8e5] bg-[#fbfffd] p-4 shadow-[0_12px_28px_rgba(17,24,22,0.08)]",
   sectionHeader: "grid gap-2",
@@ -49,9 +47,10 @@ export const operationalFormStyles = {
   statusSuccess:
     "rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold leading-6 text-emerald-800",
   responsibleSummary: "grid gap-1 px-1 pt-1",
-  responsibleLabel: "text-sm font-bold text-[#51645f]",
-  responsibleValue: "text-xl font-black text-[#111816]",
-  responsibleValueEmpty: "text-xl font-black text-[#7b8c87]",
+  responsibleLabel: "text-sm font-bold text-white",
+  responsibleValue: "text-xl font-black text-white",
+  responsibleValueEmpty: "text-xl font-black text-white/45",
+  poweredBy: "pb-6 text-right text-xs font-bold text-white/32",
   successDialogBackdrop:
     "fixed inset-0 z-50 flex items-center justify-center bg-[#111816]/35 px-5 backdrop-blur-md",
   successDialogCard: "w-full max-w-sm rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]",
@@ -84,6 +83,7 @@ export function OperationalFormLayout({
             branchName={branchName}
           />
           {children}
+          <p className={operationalFormStyles.poweredBy}>Powered by Quimly</p>
         </div>
       </div>
     </main>
@@ -103,14 +103,6 @@ export function OperationalFormHeader({
 }) {
   return (
     <header className={operationalFormStyles.header}>
-      <Image
-        src="/logos/quimly_logoo.png"
-        alt="Quimly"
-        width={146}
-        height={48}
-        priority
-        className={operationalFormStyles.logo}
-      />
       <h1 className={operationalFormStyles.title}>{title}</h1>
       {description ? <p className={operationalFormStyles.description}>{description}</p> : null}
       <p className={operationalFormStyles.location}>
