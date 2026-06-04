@@ -265,7 +265,7 @@ export function OperationalPublicForm({
               className="h-10 w-auto"
             />
             <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]">{label.title}</h1>
-            <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p>
+            {!isSupplyReception ? <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p> : null}
             <div className="mt-4 rounded-2xl border border-[#cfe0dc] bg-white/80 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#147060]">{branchName}</p>
               <p className="mt-1 text-lg font-black tracking-[-0.03em] text-[#111816]">{companyName}</p>
@@ -275,20 +275,18 @@ export function OperationalPublicForm({
           <form action={action} className="grid gap-4 px-5 py-5">
             <input type="hidden" name="token" value={token} />
 
-            <label className="grid gap-2">
-              <span className="text-sm font-black text-[#111816]">
-                {isSupplyReception ? "¿Quién recibe el producto?" : "Nombre del operador"}
-              </span>
-              <input
-                name="operatorName"
-                autoComplete="name"
-                required
-                placeholder="Ej. Ana Gomez"
-                value={isSupplyReception ? operatorName : undefined}
-                onChange={isSupplyReception ? (event) => setOperatorName(event.target.value) : undefined}
-                className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
-              />
-            </label>
+            {!isSupplyReception ? (
+              <label className="grid gap-2">
+                <span className="text-sm font-black text-[#111816]">Nombre del operador</span>
+                <input
+                  name="operatorName"
+                  autoComplete="name"
+                  required
+                  placeholder="Ej. Ana Gomez"
+                  className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
+                />
+              </label>
+            ) : null}
 
             {formType === "thermal_control" ? (
               <>
@@ -367,237 +365,276 @@ export function OperationalPublicForm({
 
             {formType === "supply_reception" ? (
               <>
-                <label className="grid gap-2">
-                  <span className="text-sm font-black text-[#111816]">¿Qué producto recibió y de quién?</span>
-                  <input
-                    name="productName"
-                    required
-                    placeholder="Ej. Pechuga de pollo - Distriaves"
-                    value={productName}
-                    onChange={(event) => setProductName(event.target.value)}
-                    className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
-                  />
-                </label>
-
-                <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">¿Cómo debe conservarse este producto?</legend>
-                  <div className="grid grid-cols-3 gap-2">
-                    {supplyProductTypes.map((option) => (
-                      <label key={option} className="relative">
-                        <input
-                          className="peer sr-only"
-                          type="radio"
-                          name="productType"
-                          value={option}
-                          checked={productType === option}
-                          onChange={() => selectProductType(option)}
-                          required
-                        />
-                        <span className="flex min-h-14 items-center justify-center rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-2 text-center text-sm font-black text-[#111816] transition peer-checked:border-[#147060] peer-checked:bg-[#147060] peer-checked:text-white">
-                          {option}
-                        </span>
-                      </label>
-                    ))}
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                  <div className="grid gap-2">
+                    <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
+                      DATOS DE RECEPCIÓN
+                    </h2>
+                    <div className="h-px bg-[#dbe7e3]" />
                   </div>
-                </fieldset>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-black text-[#111816]">¿Quién recibe el producto?</span>
+                    <input
+                      name="operatorName"
+                      autoComplete="name"
+                      required
+                      placeholder="Ej. Ana Gomez"
+                      value={operatorName}
+                      onChange={(event) => setOperatorName(event.target.value)}
+                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-black text-[#111816]">¿Qué producto recibió y de quién?</span>
+                    <input
+                      name="productName"
+                      required
+                      placeholder="Ej. Pechuga de pollo - Distriaves"
+                      value={productName}
+                      onChange={(event) => setProductName(event.target.value)}
+                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                    />
+                  </label>
+                </div>
 
-                {showTemperaturePicker ? (
-                  <>
-                    <div ref={temperaturePickerRef} className="grid gap-2">
-                      <span className="text-sm font-black text-[#111816]">
-                        ¿Cuál es la temperatura al recibir producto?
-                      </span>
-                      <input type="hidden" name="temperatureC" value={temperatureC} />
-                      <button
-                        type="button"
-                        aria-expanded={isTemperatureMenuOpen}
-                        onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
-                        className={[
-                          "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border px-4 text-left text-lg font-black outline-none transition focus:border-[#147060]",
-                          hasSelectedTemperature && temperatureCompliant
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                            : "border-[#c7d8d4] bg-[#fbfffd] text-[#111816]",
-                        ].join(" ")}
-                      >
-                        <span className={hasSelectedTemperature ? "" : "text-[#7b8c87]"}>
-                          {hasSelectedTemperature ? formatTemperature(temperatureC) : "Seleccione la temperatura"}
-                        </span>
-                        <span aria-hidden="true" className="text-xl leading-none text-[#147060]">
-                          ▾
-                        </span>
-                      </button>
-
-                      {isTemperatureMenuOpen ? (
-                        <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#cfe0dc] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.14)]">
-                          <div className="grid gap-1">
-                            {temperatureOptions.map((option) => {
-                              const optionCompliant = isTemperatureCompliant(productType, String(option));
-                              const isSelected = temperatureC === String(option);
-
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => {
-                                    setTemperatureC(String(option));
-                                    setIsTemperatureMenuOpen(false);
-                                  }}
-                                  className={[
-                                    "flex min-h-11 items-center justify-between rounded-xl border px-4 text-left text-base font-black transition",
-                                    optionCompliant
-                                      ? "border-emerald-100 bg-emerald-50 text-emerald-900"
-                                      : "border-[#dbe7e3] bg-[#fbfffd] text-[#111816]",
-                                    isSelected ? "ring-2 ring-[#147060]" : "",
-                                  ].join(" ")}
-                                >
-                                  <span>{formatTemperature(option)}</span>
-                                  {optionCompliant ? (
-                                    <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-emerald-400" />
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {hasSelectedTemperature ? (
-                      <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[#cfe0dc] bg-[#fbfffd] px-4 py-3">
-                        <span className="text-sm font-black text-[#111816]">Resultado de temperatura</span>
-                        <span
-                          className={[
-                            "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black",
-                            temperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
-                          ].join(" ")}
-                        >
-                          <span aria-hidden="true">{temperatureCompliant ? "✓" : "!"}</span>
-                          {temperatureCompliant ? "Cumple" : "No cumple"}
-                        </span>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-
-                <fieldset className="grid gap-2">
-                  <legend className="grid gap-1 text-sm font-black text-[#111816]">
-                    <span>Revise el empaque y la fecha</span>
-                    <span>¿Todo está correcto?</span>
-                  </legend>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="relative">
-                      <input
-                        className="peer sr-only"
-                        type="radio"
-                        name="packageIntactDateValid"
-                        value="true"
-                        checked={packageIntactDateValid === "true"}
-                        onChange={() => setPackageIntactDateValid("true")}
-                        required
-                      />
-                      <span className="flex min-h-14 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-lg font-black text-emerald-800 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-700 peer-checked:text-white">
-                        Si
-                      </span>
-                    </label>
-                    <label className="relative">
-                      <input
-                        className="peer sr-only"
-                        type="radio"
-                        name="packageIntactDateValid"
-                        value="false"
-                        checked={packageIntactDateValid === "false"}
-                        onChange={() => setPackageIntactDateValid("false")}
-                        required
-                      />
-                      <span className="flex min-h-14 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 text-lg font-black text-rose-800 transition peer-checked:border-rose-700 peer-checked:bg-rose-700 peer-checked:text-white">
-                        No
-                      </span>
-                    </label>
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                  <div className="grid gap-2">
+                    <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
+                      CONTROL DE TEMPERATURA
+                    </h2>
+                    <div className="h-px bg-[#dbe7e3]" />
                   </div>
-                </fieldset>
-
-                <fieldset className="grid gap-2">
-                  <legend className="grid gap-1 text-sm font-black text-[#111816]">
-                    <span>Revise el producto</span>
-                    <span>¿Se ve y huele bien?</span>
-                  </legend>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="relative">
-                      <input
-                        className="peer sr-only"
-                        type="radio"
-                        name="organolepticAdequate"
-                        value="true"
-                        checked={organolepticAdequate === "true"}
-                        onChange={() => setOrganolepticAdequate("true")}
-                        required
-                      />
-                      <span className="flex min-h-14 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-lg font-black text-emerald-800 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-700 peer-checked:text-white">
-                        Si
-                      </span>
-                    </label>
-                    <label className="relative">
-                      <input
-                        className="peer sr-only"
-                        type="radio"
-                        name="organolepticAdequate"
-                        value="false"
-                        checked={organolepticAdequate === "false"}
-                        onChange={() => setOrganolepticAdequate("false")}
-                        required
-                      />
-                      <span className="flex min-h-14 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 text-lg font-black text-rose-800 transition peer-checked:border-rose-700 peer-checked:bg-rose-700 peer-checked:text-white">
-                        No
-                      </span>
-                    </label>
-                  </div>
-                </fieldset>
-
-                <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">Decisión de aceptación</legend>
-                  <div className="grid grid-cols-2 gap-3">
-                    {supplyDecisions.map((option) => {
-                      const isAccept = option === "Aceptar Producto";
-
-                      return (
+                  <fieldset className="grid gap-2">
+                    <legend className="text-sm font-black text-[#111816]">¿Cómo debe conservarse este producto?</legend>
+                    <div className="grid grid-cols-3 gap-2">
+                      {supplyProductTypes.map((option) => (
                         <label key={option} className="relative">
                           <input
                             className="peer sr-only"
                             type="radio"
-                            name="decision"
+                            name="productType"
                             value={option}
-                            checked={decision === option}
-                            onChange={() => setDecision(option)}
+                            checked={productType === option}
+                            onChange={() => selectProductType(option)}
                             required
                           />
-                          <span
-                            className={[
-                              "flex min-h-16 items-center justify-center rounded-2xl border px-3 text-center text-base font-black transition peer-checked:text-white",
-                              isAccept
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-800 peer-checked:border-emerald-700 peer-checked:bg-emerald-700"
-                                : "border-rose-200 bg-rose-50 text-rose-800 peer-checked:border-rose-700 peer-checked:bg-rose-700",
-                            ].join(" ")}
-                          >
+                          <span className="flex min-h-14 items-center justify-center rounded-2xl border border-[#c7d8d4] bg-white px-2 text-center text-sm font-black text-[#111816] transition peer-checked:border-[#147060] peer-checked:bg-[#147060] peer-checked:text-white">
                             {option}
                           </span>
                         </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
+                      ))}
+                    </div>
+                  </fieldset>
 
-                <label className="grid gap-2">
-                  <span className="text-sm font-black text-[#111816]">Observaciones / Acción tomada</span>
-                  <textarea
-                    name="observations"
-                    required={decision === "Rechazar Producto"}
-                    rows={3}
-                    placeholder="Ej. Empaque roto, temperatura fuera de rango, producto en mal estado..."
-                    value={observations}
-                    onChange={(event) => setObservations(event.target.value)}
-                    className="min-h-24 resize-none rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 py-3 text-base font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
-                  />
-                </label>
+                  {showTemperaturePicker ? (
+                    <>
+                      <div ref={temperaturePickerRef} className="grid gap-2">
+                        <span className="text-sm font-black text-[#111816]">Temperatura</span>
+                        <input type="hidden" name="temperatureC" value={temperatureC} />
+                        <button
+                          type="button"
+                          aria-expanded={isTemperatureMenuOpen}
+                          onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
+                          className={[
+                            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border px-4 text-left text-lg font-black outline-none transition focus:border-[#147060]",
+                            hasSelectedTemperature && temperatureCompliant
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                              : "border-[#c7d8d4] bg-white text-[#111816]",
+                          ].join(" ")}
+                        >
+                          <span className={hasSelectedTemperature ? "" : "text-[#7b8c87]"}>
+                            {hasSelectedTemperature ? formatTemperature(temperatureC) : "Seleccione la temperatura"}
+                          </span>
+                          <span aria-hidden="true" className="text-xl leading-none text-[#147060]">
+                            ▾
+                          </span>
+                        </button>
+
+                        {isTemperatureMenuOpen ? (
+                          <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#cfe0dc] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.14)]">
+                            <div className="grid gap-1">
+                              {temperatureOptions.map((option) => {
+                                const optionCompliant = isTemperatureCompliant(productType, String(option));
+                                const isSelected = temperatureC === String(option);
+
+                                return (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    onClick={() => {
+                                      setTemperatureC(String(option));
+                                      setIsTemperatureMenuOpen(false);
+                                    }}
+                                    className={[
+                                      "flex min-h-11 items-center justify-between rounded-xl border px-4 text-left text-base font-black transition",
+                                      optionCompliant
+                                        ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+                                        : "border-rose-100 bg-rose-50 text-rose-900",
+                                      isSelected ? "ring-2 ring-[#147060]" : "",
+                                    ].join(" ")}
+                                  >
+                                    <span>{formatTemperature(option)}</span>
+                                    <span
+                                      aria-hidden="true"
+                                      className={[
+                                        "h-3 w-3 rounded-[3px]",
+                                        optionCompliant ? "bg-emerald-400" : "bg-rose-400",
+                                      ].join(" ")}
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {hasSelectedTemperature ? (
+                        <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[#cfe0dc] bg-white px-4 py-3">
+                          <span className="text-sm font-black text-[#111816]">Resultado</span>
+                          <span
+                            className={[
+                              "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black",
+                              temperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
+                            ].join(" ")}
+                          >
+                            <span aria-hidden="true">{temperatureCompliant ? "✓" : "!"}</span>
+                            {temperatureCompliant ? "Cumple" : "No cumple"}
+                          </span>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                  <div className="grid gap-2">
+                    <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
+                      INSPECCIÓN VISUAL
+                    </h2>
+                    <div className="h-px bg-[#dbe7e3]" />
+                  </div>
+                  <fieldset className="grid gap-2">
+                    <legend className="text-sm font-black text-[#111816]">¿Todo está correcto?</legend>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="relative">
+                        <input
+                          className="peer sr-only"
+                          type="radio"
+                          name="packageIntactDateValid"
+                          value="true"
+                          checked={packageIntactDateValid === "true"}
+                          onChange={() => setPackageIntactDateValid("true")}
+                          required
+                        />
+                        <span className="flex min-h-14 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-lg font-black text-emerald-800 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-700 peer-checked:text-white">
+                          Si
+                        </span>
+                      </label>
+                      <label className="relative">
+                        <input
+                          className="peer sr-only"
+                          type="radio"
+                          name="packageIntactDateValid"
+                          value="false"
+                          checked={packageIntactDateValid === "false"}
+                          onChange={() => setPackageIntactDateValid("false")}
+                          required
+                        />
+                        <span className="flex min-h-14 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 text-lg font-black text-rose-800 transition peer-checked:border-rose-700 peer-checked:bg-rose-700 peer-checked:text-white">
+                          No
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="grid gap-2">
+                    <legend className="text-sm font-black text-[#111816]">¿Se ve y huele bien?</legend>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="relative">
+                        <input
+                          className="peer sr-only"
+                          type="radio"
+                          name="organolepticAdequate"
+                          value="true"
+                          checked={organolepticAdequate === "true"}
+                          onChange={() => setOrganolepticAdequate("true")}
+                          required
+                        />
+                        <span className="flex min-h-14 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-lg font-black text-emerald-800 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-700 peer-checked:text-white">
+                          Si
+                        </span>
+                      </label>
+                      <label className="relative">
+                        <input
+                          className="peer sr-only"
+                          type="radio"
+                          name="organolepticAdequate"
+                          value="false"
+                          checked={organolepticAdequate === "false"}
+                          onChange={() => setOrganolepticAdequate("false")}
+                          required
+                        />
+                        <span className="flex min-h-14 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 text-lg font-black text-rose-800 transition peer-checked:border-rose-700 peer-checked:bg-rose-700 peer-checked:text-white">
+                          No
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
+                </div>
+
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                  <div className="grid gap-2">
+                    <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">DECISIÓN</h2>
+                    <div className="h-px bg-[#dbe7e3]" />
+                  </div>
+                  <fieldset className="grid gap-2">
+                    <legend className="text-sm font-black text-[#111816]">Decisión de aceptación</legend>
+                    <div className="grid gap-3">
+                      {supplyDecisions.map((option) => {
+                        const isAccept = option === "Aceptar Producto";
+                        const optionLabel = isAccept ? "Aceptar" : "Rechazar";
+
+                        return (
+                          <label key={option} className="relative">
+                            <input
+                              className="peer sr-only"
+                              type="radio"
+                              name="decision"
+                              value={option}
+                              checked={decision === option}
+                              onChange={() => setDecision(option)}
+                              required
+                            />
+                            <span
+                              className={[
+                                "flex min-h-14 items-center justify-center rounded-2xl border px-3 text-center text-base font-black transition peer-checked:text-white",
+                                isAccept
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 peer-checked:border-emerald-700 peer-checked:bg-emerald-700"
+                                  : "border-rose-200 bg-rose-50 text-rose-800 peer-checked:border-rose-700 peer-checked:bg-rose-700",
+                              ].join(" ")}
+                            >
+                              {optionLabel}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
+                  <label className="grid gap-2">
+                    <span className="text-sm font-black text-[#111816]">Observaciones / Acción tomada</span>
+                    <textarea
+                      name="observations"
+                      required={decision === "Rechazar Producto"}
+                      rows={3}
+                      placeholder="Ej. Empaque roto, temperatura fuera de rango, producto en mal estado..."
+                      value={observations}
+                      onChange={(event) => setObservations(event.target.value)}
+                      className="min-h-24 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-4 py-3 text-base font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                    />
+                  </label>
+                </div>
               </>
             ) : null}
 
