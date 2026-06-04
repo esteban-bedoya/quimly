@@ -485,7 +485,9 @@ function InlineCatalogManager({
 
   useEffect(() => {
     if (createState?.success) {
-      setIsCreateModalOpen(false);
+      const frameId = window.requestAnimationFrame(() => setIsCreateModalOpen(false));
+
+      return () => window.cancelAnimationFrame(frameId);
     }
   }, [createState?.success]);
 
@@ -494,7 +496,10 @@ function InlineCatalogManager({
       return;
     }
 
-    setStatusToast(toggleState.success);
+    const successMessage = toggleState.success;
+    const frameId = window.requestAnimationFrame(() => setStatusToast(successMessage));
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [toggleState]);
 
   return (
@@ -953,13 +958,11 @@ function EquipmentTypeSelect() {
   }, [activeIndex, isOpen]);
 
   useEffect(() => {
-    if (!selectedType) {
-      setActiveIndex(0);
-      return;
-    }
+    const selectedIndex = selectedType ? options.findIndex(([value]) => value === selectedType) : -1;
+    const nextActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    const frameId = window.requestAnimationFrame(() => setActiveIndex(nextActiveIndex));
 
-    const selectedIndex = options.findIndex(([value]) => value === selectedType);
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    return () => window.cancelAnimationFrame(frameId);
   }, [options, selectedType]);
 
   const openMenu = () => {

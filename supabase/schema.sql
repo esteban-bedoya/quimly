@@ -247,10 +247,30 @@ create table if not exists public.supply_reception_records (
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   operator_name text not null,
   product_name text not null,
-  provider_name text not null,
-  expiration_date date not null,
+  provider_name text,
+  expiration_date date,
+  product_type text not null,
+  temperature_c numeric(5,1),
+  temperature_compliant boolean,
+  package_intact_date_valid boolean not null,
+  organoleptic_adequate boolean not null,
+  decision text not null,
+  observations text,
   constraint supply_reception_records_tipo_check check (tipo_formulario = 'supply_reception')
 );
+
+alter table public.supply_reception_records
+  alter column provider_name drop not null,
+  alter column expiration_date drop not null;
+
+alter table public.supply_reception_records
+  add column if not exists product_type text,
+  add column if not exists temperature_c numeric(5,1),
+  add column if not exists temperature_compliant boolean,
+  add column if not exists package_intact_date_valid boolean,
+  add column if not exists organoleptic_adequate boolean,
+  add column if not exists decision text,
+  add column if not exists observations text;
 
 create table if not exists public.water_quality_records (
   id uuid primary key default gen_random_uuid(),
@@ -771,6 +791,11 @@ create or replace function public.submit_public_operational_form(
   p_area_id uuid default null,
   p_is_compliant boolean default null,
   p_product_name text default null,
+  p_product_type text default null,
+  p_package_intact_date_valid boolean default null,
+  p_organoleptic_adequate boolean default null,
+  p_decision text default null,
+  p_observations text default null,
   p_provider_name text default null,
   p_expiration_date date default null,
   p_chlorine_ppm numeric default null
@@ -785,6 +810,7 @@ declare
   qr_record record;
   equipment_record record;
   area_record record;
+  temperature_compliant_value boolean;
 begin
   if nullif(trim(p_token), '') is null then
     raise exception 'Este formulario no tiene un QR válido.';
@@ -901,10 +927,43 @@ begin
   end if;
 
   if qr_record.form_type = 'supply_reception' then
-    if nullif(trim(p_product_name), '') is null
-      or nullif(trim(p_provider_name), '') is null
-      or p_expiration_date is null then
-      raise exception 'Completa producto, proveedor y fecha de vencimiento.';
+    if nullif(trim(p_product_name), '') is null then
+      raise exception 'Ingresa el producto y proveedor.';
+    end if;
+
+    if p_product_type is null or p_product_type not in ('Ambiente', 'Refrigerado', 'Congelado') then
+      raise exception 'Selecciona el tipo de producto.';
+    end if;
+
+    if p_product_type = 'Ambiente' then
+      temperature_compliant_value := null;
+      p_temperature_c := null;
+    elsif p_temperature_c is null then
+      raise exception 'Selecciona la temperatura recibida.';
+    elsif p_product_type = 'Refrigerado' and (p_temperature_c < -5 or p_temperature_c > 15) then
+      raise exception 'La temperatura recibida no está disponible para producto refrigerado.';
+    elsif p_product_type = 'Congelado' and (p_temperature_c < -30 or p_temperature_c > 2) then
+      raise exception 'La temperatura recibida no está disponible para producto congelado.';
+    elsif p_product_type = 'Refrigerado' then
+      temperature_compliant_value := p_temperature_c between 0 and 4;
+    else
+      temperature_compliant_value := p_temperature_c <= -18;
+    end if;
+
+    if p_package_intact_date_valid is null then
+      raise exception 'Selecciona si el empaque está íntegro y la fecha vigente.';
+    end if;
+
+    if p_organoleptic_adequate is null then
+      raise exception 'Selecciona si color, olor y textura son adecuados.';
+    end if;
+
+    if p_decision is null or p_decision not in ('Aceptar Producto', 'Rechazar Producto') then
+      raise exception 'Selecciona la decisión.';
+    end if;
+
+    if p_decision = 'Rechazar Producto' and nullif(trim(coalesce(p_observations, '')), '') is null then
+      raise exception 'Describe la acción tomada para rechazar el producto.';
     end if;
 
     insert into public.supply_reception_records (
@@ -916,7 +975,14 @@ begin
       operator_name,
       product_name,
       provider_name,
-      expiration_date
+      expiration_date,
+      product_type,
+      temperature_c,
+      temperature_compliant,
+      package_intact_date_valid,
+      organoleptic_adequate,
+      decision,
+      observations
     )
     values (
       qr_record.branch_id,
@@ -926,8 +992,15 @@ begin
       qr_record.id,
       trim(p_operator_name),
       trim(p_product_name),
-      trim(p_provider_name),
-      p_expiration_date
+      null,
+      null,
+      p_product_type,
+      p_temperature_c,
+      temperature_compliant_value,
+      p_package_intact_date_valid,
+      p_organoleptic_adequate,
+      p_decision,
+      nullif(trim(coalesce(p_observations, '')), '')
     );
 
     return jsonb_build_object('ok', true);
@@ -1418,6 +1491,11 @@ revoke all on function public.submit_public_operational_form(
   boolean,
   text,
   text,
+  boolean,
+  boolean,
+  text,
+  text,
+  text,
   date,
   numeric
 ) from public;
@@ -1430,6 +1508,11 @@ grant execute on function public.submit_public_operational_form(
   numeric,
   uuid,
   boolean,
+  text,
+  text,
+  boolean,
+  boolean,
+  text,
   text,
   text,
   date,

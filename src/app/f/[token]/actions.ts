@@ -81,8 +81,11 @@ export async function submitPublicOperationalForm(
     p_area_id: readUuidOrNull(formData, "areaId"),
     p_is_compliant: readBooleanOrNull(formData, "isCompliant"),
     p_product_name: readString(formData, "productName") || null,
-    p_provider_name: readString(formData, "providerName") || null,
-    p_expiration_date: readString(formData, "expirationDate") || null,
+    p_product_type: readString(formData, "productType") || null,
+    p_package_intact_date_valid: readBooleanOrNull(formData, "packageIntactDateValid"),
+    p_organoleptic_adequate: readBooleanOrNull(formData, "organolepticAdequate"),
+    p_decision: readString(formData, "decision") || null,
+    p_observations: readString(formData, "observations") || null,
     p_chlorine_ppm: readNumber(formData, "chlorinePpm"),
   });
 
