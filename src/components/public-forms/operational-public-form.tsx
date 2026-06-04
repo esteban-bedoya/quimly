@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import {
@@ -32,6 +32,11 @@ const supplyDecisions = ["Aceptar Producto", "Rechazar Producto"] as const;
 type SupplyDecision = (typeof supplyDecisions)[number];
 
 type YesNoValue = "true" | "false";
+type SupplyActionTakenItem = {
+  key: string;
+  icon: string;
+  text: string;
+};
 
 const supplyTemperatureSettings: Record<
   Exclude<SupplyProductType, "Ambiente">,
@@ -137,9 +142,11 @@ export function OperationalPublicForm({
   const [organolepticAdequate, setOrganolepticAdequate] = useState<YesNoValue | "">("");
   const [decision, setDecision] = useState<SupplyDecision | "">("");
   const [observations, setObservations] = useState("");
+  const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
+  const actionTakenTextareaRef = useRef<HTMLTextAreaElement>(null);
   const label = operationalFormLabels[formType];
   const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
   const missingAreaCatalog = formType === "area_sanitation" && sanitationAreas.length === 0;
@@ -149,6 +156,57 @@ export function OperationalPublicForm({
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
   const hasSelectedTemperature = temperatureC !== "";
   const supplyStorageKey = `quimly:supply-reception:${token}`;
+  const supplyActionTakenItems = useMemo<SupplyActionTakenItem[]>(() => {
+    const items: SupplyActionTakenItem[] = [];
+
+    if (showTemperaturePicker && hasSelectedTemperature && !temperatureCompliant) {
+      items.push({
+        key: "temperature",
+        icon: "❄️",
+        text: "Temperatura fuera de rango seguro.",
+      });
+    }
+
+    if (packageIntactDateValid === "false") {
+      items.push({
+        key: "package",
+        icon: "📦",
+        text: "Empaque roto o fecha no vigente.",
+      });
+    }
+
+    if (organolepticAdequate === "false") {
+      items.push({
+        key: "organoleptic",
+        icon: "👃",
+        text: "Aspecto u olor no adecuados.",
+      });
+    }
+
+    return items;
+  }, [
+    hasSelectedTemperature,
+    organolepticAdequate,
+    packageIntactDateValid,
+    showTemperaturePicker,
+    temperatureCompliant,
+  ]);
+  const showActionTakenBlock = supplyActionTakenItems.length > 0 || decision === "Rechazar Producto";
+  const supplyDecisionTakenItem: SupplyActionTakenItem | null =
+    decision === "Aceptar Producto"
+      ? {
+          key: "accepted",
+          icon: "✅",
+          text: "Producto aceptado.",
+        }
+      : decision === "Rechazar Producto"
+        ? {
+            key: "rejected",
+            icon: "❌",
+            text: "Producto rechazado.",
+          }
+        : null;
+  const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
 
   useEffect(() => {
     if (!isSupplyReception) {
@@ -270,6 +328,14 @@ export function OperationalPublicForm({
     window.location.reload();
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (showActionTakenBlock && !observations.trim()) {
+      event.preventDefault();
+      setActionTakenError("Registra la acción tomada antes de enviar.");
+      actionTakenTextareaRef.current?.focus();
+    }
+  }
+
   return (
     <OperationalFormLayout
       title={label.title}
@@ -277,7 +343,7 @@ export function OperationalPublicForm({
       companyName={companyName}
       branchName={branchName}
     >
-      <form action={action} className={operationalFormStyles.formBody}>
+      <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
 
         {!isSupplyReception ? (
@@ -597,20 +663,56 @@ export function OperationalPublicForm({
                 </div>
               </fieldset>
 
-              <label className={operationalFormStyles.field}>
-                <span className={operationalFormStyles.fieldLabel}>
-                  Observaciones / Justificación de decisión
-                </span>
-                <textarea
-                  name="observations"
-                  required={decision === "Rechazar Producto"}
-                  rows={3}
-                  placeholder="Ej. Empaque roto, temperatura fuera de rango, producto en mal estado..."
-                  value={observations}
-                  onChange={(event) => setObservations(event.target.value)}
-                  className={operationalFormStyles.textareaOnWhite}
-                />
-              </label>
+              {showActionTakenBlock ? (
+                <div className={operationalFormStyles.field}>
+                  <label className={operationalFormStyles.fieldLabel} htmlFor="supply-action-taken">
+                    ⚠ Acción tomada (Obligatorio)
+                  </label>
+                  <div className="grid gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold leading-6 text-amber-900">
+                    <p>Se requiere registrar la acción tomada frente a:</p>
+                    <ul className="grid gap-1">
+                      {supplyActionTakenItems.map((item) => (
+                        <li key={item.key} className="flex gap-2">
+                          <span aria-hidden="true">{item.icon}</span>
+                          <span>{item.text}</span>
+                        </li>
+                      ))}
+                      {supplyDecisionTakenItem ? (
+                        <li key={supplyDecisionTakenItem.key} className="flex gap-2">
+                          <span aria-hidden="true">{supplyDecisionTakenItem.icon}</span>
+                          <span>{supplyDecisionTakenItem.text}</span>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                  <textarea
+                    id="supply-action-taken"
+                    ref={actionTakenTextareaRef}
+                    name="observations"
+                    required
+                    rows={5}
+                    aria-invalid={showActionTakenError}
+                    aria-describedby={showActionTakenError ? "supply-action-taken-error" : undefined}
+                    placeholder={
+                      "Ej. Se acepta para uso inmediato.\nEj. Se devuelve al proveedor.\nEj. Se traslada inmediatamente a refrigeración.\nEj. Se informa al responsable de compras."
+                    }
+                    value={observations}
+                    onChange={(event) => {
+                      setObservations(event.target.value);
+
+                      if (event.target.value.trim()) {
+                        setActionTakenError("");
+                      }
+                    }}
+                    className={operationalFormStyles.textareaOnWhite}
+                  />
+                  {showActionTakenError ? (
+                    <p id="supply-action-taken-error" className={operationalFormStyles.statusError}>
+                      {actionTakenError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </OperationalFormSection>
           </>
         ) : null}
