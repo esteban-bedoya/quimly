@@ -268,8 +268,8 @@ export function OperationalPublicForm({
             {!isSupplyReception ? <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p> : null}
             <p className="mt-4 text-sm font-black tracking-[-0.01em] text-[#111816]">
               {companyName}
-              <span className="px-2 text-[#147060]">|</span>
-              {branchName}
+              <span className="px-2 text-[#7b8c87]">|</span>
+              <span className="text-[#7b8c87]">{branchName}</span>
             </p>
           </div>
 
@@ -366,7 +366,7 @@ export function OperationalPublicForm({
 
             {formType === "supply_reception" ? (
               <>
-                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4 shadow-[0_0_24px_rgba(17,24,22,0.10)]">
                   <div className="grid gap-2">
                     <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
                       DATOS DE RECEPCIÓN
@@ -386,7 +386,7 @@ export function OperationalPublicForm({
                     />
                   </label>
                   <label className="grid gap-2">
-                    <span className="text-sm font-black text-[#111816]">¿Qué producto y distribuidor?</span>
+                    <span className="text-sm font-black text-[#111816]">¿Qué producto y distribuidor ingresa?</span>
                     <input
                       name="productName"
                       required
@@ -398,7 +398,7 @@ export function OperationalPublicForm({
                   </label>
                 </div>
 
-                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4 shadow-[0_0_24px_rgba(17,24,22,0.10)]">
                   <div className="grid gap-2">
                     <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
                       CONTROL DE TEMPERATURA
@@ -430,7 +430,9 @@ export function OperationalPublicForm({
                   {showTemperaturePicker ? (
                     <>
                       <div ref={temperaturePickerRef} className="grid gap-2">
-                        <span className="text-sm font-black text-[#111816]">Temperatura</span>
+                        <span className="text-sm font-black text-[#111816]">
+                          ¿Con qué temperatura llega el producto?
+                        </span>
                         <input type="hidden" name="temperatureC" value={temperatureC} />
                         <button
                           type="button"
@@ -508,7 +510,7 @@ export function OperationalPublicForm({
                   ) : null}
                 </div>
 
-                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4 shadow-[0_0_24px_rgba(17,24,22,0.10)]">
                   <div className="grid gap-2">
                     <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">
                       INSPECCIÓN VISUAL
@@ -584,7 +586,7 @@ export function OperationalPublicForm({
                   </fieldset>
                 </div>
 
-                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4">
+                <div className="grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4 shadow-[0_0_24px_rgba(17,24,22,0.10)]">
                   <div className="grid gap-2">
                     <h2 className="text-xs font-black uppercase tracking-[0.18em] text-[#147060]">DECISIÓN</h2>
                     <div className="h-px bg-[#dbe7e3]" />
@@ -688,7 +690,7 @@ export function OperationalPublicForm({
               disabled={isDisabled}
               className="mt-1 min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white shadow-[0_14px_32px_rgba(17,24,22,0.25)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6] disabled:shadow-none"
             >
-              {isPending ? "Guardando..." : "Guardar registro"}
+              {isPending ? "Guardando..." : isSupplyReception ? "Firmar y registrar" : "Guardar registro"}
             </button>
           </form>
         </section>
