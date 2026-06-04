@@ -38,6 +38,18 @@ type SupplyActionTakenItem = {
   text: string;
 };
 
+const supplyAcceptedActionPlaceholder = [
+  "Ej. Se acepta para uso inmediato.",
+  "Ej. Se traslada inmediatamente a refrigeración.",
+  "Ej. Se informa al responsable de compras.",
+  "Ej. Se bota a la basura parte del lote",
+].join("\n");
+
+const supplyRejectedActionPlaceholder = [
+  "Ej. Se devuelve al proveedor.",
+  "Ej. Se rechaza el lote afectado.",
+].join("\n");
+
 const supplyTemperatureSettings: Record<
   Exclude<SupplyProductType, "Ambiente">,
   {
@@ -207,6 +219,8 @@ export function OperationalPublicForm({
           }
         : null;
   const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
+  const actionTakenPlaceholder =
+    decision === "Rechazar Producto" ? supplyRejectedActionPlaceholder : supplyAcceptedActionPlaceholder;
 
   useEffect(() => {
     if (!isSupplyReception) {
@@ -693,9 +707,7 @@ export function OperationalPublicForm({
                     rows={5}
                     aria-invalid={showActionTakenError}
                     aria-describedby={showActionTakenError ? "supply-action-taken-error" : undefined}
-                    placeholder={
-                      "Ej. Se acepta para uso inmediato.\nEj. Se devuelve al proveedor.\nEj. Se traslada inmediatamente a refrigeración.\nEj. Se informa al responsable de compras."
-                    }
+                    placeholder={actionTakenPlaceholder}
                     value={observations}
                     onChange={(event) => {
                       setObservations(event.target.value);
