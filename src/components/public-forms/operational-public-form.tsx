@@ -234,8 +234,8 @@ export function OperationalPublicForm({
             <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]">{label.title}</h1>
             <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p>
             <div className="mt-4 rounded-2xl border border-[#cfe0dc] bg-white/80 px-4 py-3">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#147060]">{companyName}</p>
-              <p className="mt-1 text-lg font-black tracking-[-0.03em] text-[#111816]">{branchName}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#51645f]">{branchName}</p>
+              <p className="mt-1 text-lg font-black tracking-[-0.03em] text-[#147060]">{companyName}</p>
             </div>
           </div>
 
