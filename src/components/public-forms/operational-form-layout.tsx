@@ -52,6 +52,12 @@ export const operationalFormStyles = {
   responsibleLabel: "text-sm font-bold text-[#51645f]",
   responsibleValue: "text-xl font-black text-[#111816]",
   responsibleValueEmpty: "text-xl font-black text-[#7b8c87]",
+  successDialogBackdrop:
+    "fixed inset-0 z-50 flex items-center justify-center bg-[#111816]/35 px-5 backdrop-blur-md",
+  successDialogCard: "w-full max-w-sm rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]",
+  successDialogMessage: "whitespace-pre-line text-xl font-black leading-8 text-[#111816]",
+  successDialogButton:
+    "mt-6 min-h-14 w-full rounded-2xl bg-[#111816] px-5 text-base font-black text-white transition active:scale-[0.98]",
 } as const;
 
 export function OperationalFormLayout({
@@ -161,6 +167,30 @@ export function OperationalFormResponsibleSummary({ responsibleName }: { respons
       <p className={displayName ? operationalFormStyles.responsibleValue : operationalFormStyles.responsibleValueEmpty}>
         {displayName || "Sin definir"}
       </p>
+    </div>
+  );
+}
+
+export function OperationalFormSuccessDialog({ open, onAccept }: { open: boolean; onAccept: () => void }) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className={operationalFormStyles.successDialogBackdrop} role="presentation">
+      <section
+        aria-modal="true"
+        className={operationalFormStyles.successDialogCard}
+        role="dialog"
+        aria-label="Registro guardado"
+      >
+        <p className={operationalFormStyles.successDialogMessage}>
+          {"Firma registrada.\nPuedes cerrar esta pantalla o registrar otro control."}
+        </p>
+        <button type="button" className={operationalFormStyles.successDialogButton} onClick={onAccept}>
+          Aceptar
+        </button>
+      </section>
     </div>
   );
 }

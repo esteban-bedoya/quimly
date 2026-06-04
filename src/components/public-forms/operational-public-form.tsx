@@ -8,6 +8,7 @@ import {
   OperationalFormResponsibleSummary,
   OperationalFormSection,
   OperationalFormSubmitButton,
+  OperationalFormSuccessDialog,
   operationalFormStyles,
 } from "@/components/public-forms/operational-form-layout";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
@@ -104,6 +105,10 @@ function formatTemperature(temperature: number | string) {
   return `${temperature}°C`;
 }
 
+function formatResponsibleName(value: string) {
+  return value.toLocaleUpperCase("es-CO");
+}
+
 export function OperationalPublicForm({
   token,
   formType,
@@ -163,7 +168,7 @@ export function OperationalPublicForm({
       const draft = JSON.parse(savedDraft) as SupplyDraft;
 
       frameId = window.requestAnimationFrame(() => {
-        setOperatorName(typeof draft.operatorName === "string" ? draft.operatorName : "");
+        setOperatorName(typeof draft.operatorName === "string" ? formatResponsibleName(draft.operatorName) : "");
         setProductName(typeof draft.productName === "string" ? draft.productName : "");
         setProductType(draft.productType && isSupplyProductType(draft.productType) ? draft.productType : "");
         setTemperatureC(typeof draft.temperatureC === "string" ? draft.temperatureC : "");
@@ -257,6 +262,14 @@ export function OperationalPublicForm({
     setTemperatureC("");
   }
 
+  function handleSuccessAccept() {
+    if (isSupplyReception) {
+      window.localStorage.removeItem(supplyStorageKey);
+    }
+
+    window.location.reload();
+  }
+
   return (
     <OperationalFormLayout
       title={label.title}
@@ -276,7 +289,7 @@ export function OperationalPublicForm({
               required
               placeholder="Ej. Ana Gomez"
               value={operatorName}
-              onChange={(event) => setOperatorName(event.target.value)}
+              onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
               className={operationalFormStyles.input}
             />
           </label>
@@ -364,7 +377,7 @@ export function OperationalPublicForm({
                   required
                   placeholder="Ej. Ana Gomez"
                   value={operatorName}
-                  onChange={(event) => setOperatorName(event.target.value)}
+                  onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
                   className={operationalFormStyles.inputOnWhite}
                 />
               </label>
@@ -634,14 +647,14 @@ export function OperationalPublicForm({
 
         {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
 
-        {state.success ? <p className={operationalFormStyles.statusSuccess}>{state.success}</p> : null}
-
         <OperationalFormResponsibleSummary responsibleName={operatorName} />
 
         <OperationalFormSubmitButton disabled={isDisabled}>
           {isPending ? "Guardando..." : isSupplyReception ? "Firmar y registrar" : "Guardar registro"}
         </OperationalFormSubmitButton>
       </form>
+
+      <OperationalFormSuccessDialog open={Boolean(state.success)} onAccept={handleSuccessAccept} />
     </OperationalFormLayout>
   );
 }
