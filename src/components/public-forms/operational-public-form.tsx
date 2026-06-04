@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
@@ -31,18 +31,15 @@ const supplyTemperatureSettings: Record<
   {
     min: number;
     max: number;
-    initial: number;
   }
 > = {
   Refrigerado: {
     min: -5,
     max: 15,
-    initial: 4,
   },
   Congelado: {
     min: -30,
     max: 2,
-    initial: -18,
   },
 };
 
@@ -97,6 +94,10 @@ function isTemperatureCompliant(productType: SupplyProductType | "", temperature
   return false;
 }
 
+function formatTemperature(temperature: number | string) {
+  return `${temperature}°C`;
+}
+
 export function OperationalPublicForm({
   token,
   formType,
@@ -126,6 +127,8 @@ export function OperationalPublicForm({
   const [decision, setDecision] = useState<SupplyDecision | "">("");
   const [observations, setObservations] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
+  const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
+  const temperaturePickerRef = useRef<HTMLDivElement>(null);
   const label = operationalFormLabels[formType];
   const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
   const missingAreaCatalog = formType === "area_sanitation" && sanitationAreas.length === 0;
@@ -133,6 +136,7 @@ export function OperationalPublicForm({
   const showTemperaturePicker = productType === "Refrigerado" || productType === "Congelado";
   const temperatureOptions = useMemo(() => getTemperatureOptions(productType), [productType]);
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
+  const hasSelectedTemperature = temperatureC !== "";
   const supplyStorageKey = `quimly:supply-reception:${token}`;
 
   useEffect(() => {
@@ -207,15 +211,44 @@ export function OperationalPublicForm({
     temperatureC,
   ]);
 
+  useEffect(() => {
+    if (!isTemperatureMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!temperaturePickerRef.current?.contains(target)) {
+        setIsTemperatureMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsTemperatureMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isTemperatureMenuOpen]);
+
   function selectProductType(nextProductType: SupplyProductType) {
     setProductType(nextProductType);
+    setIsTemperatureMenuOpen(false);
 
     if (nextProductType === "Ambiente") {
       setTemperatureC("");
       return;
     }
 
-    setTemperatureC(String(supplyTemperatureSettings[nextProductType].initial));
+    setTemperatureC("");
   }
 
   return (
@@ -243,7 +276,9 @@ export function OperationalPublicForm({
             <input type="hidden" name="token" value={token} />
 
             <label className="grid gap-2">
-              <span className="text-sm font-black text-[#111816]">Nombre del operador</span>
+              <span className="text-sm font-black text-[#111816]">
+                {isSupplyReception ? "¿Quién recibe el producto?" : "Nombre del operador"}
+              </span>
               <input
                 name="operatorName"
                 autoComplete="name"
@@ -333,11 +368,11 @@ export function OperationalPublicForm({
             {formType === "supply_reception" ? (
               <>
                 <label className="grid gap-2">
-                  <span className="text-sm font-black text-[#111816]">Producto / Proveedor</span>
+                  <span className="text-sm font-black text-[#111816]">¿Qué producto recibió y de quién?</span>
                   <input
                     name="productName"
                     required
-                    placeholder="Ej. Distriaves / Pechuga"
+                    placeholder="Ej. Pechuga de pollo - Distriaves"
                     value={productName}
                     onChange={(event) => setProductName(event.target.value)}
                     className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
@@ -345,7 +380,7 @@ export function OperationalPublicForm({
                 </label>
 
                 <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">Tipo de producto</legend>
+                  <legend className="text-sm font-black text-[#111816]">¿Cómo debe conservarse este producto?</legend>
                   <div className="grid grid-cols-3 gap-2">
                     {supplyProductTypes.map((option) => (
                       <label key={option} className="relative">
@@ -368,45 +403,84 @@ export function OperationalPublicForm({
 
                 {showTemperaturePicker ? (
                   <>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-black text-[#111816]">Temperatura recibida (°C)</span>
-                      <select
-                        name="temperatureC"
-                        required
-                        value={temperatureC}
-                        onChange={(event) => setTemperatureC(event.target.value)}
+                    <div ref={temperaturePickerRef} className="grid gap-2">
+                      <span className="text-sm font-black text-[#111816]">
+                        ¿Cuál es la temperatura al recibir producto?
+                      </span>
+                      <input type="hidden" name="temperatureC" value={temperatureC} />
+                      <button
+                        type="button"
+                        aria-expanded={isTemperatureMenuOpen}
+                        onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
                         className={[
-                          "min-h-14 appearance-none rounded-2xl border px-4 text-2xl font-black outline-none transition focus:border-[#147060]",
-                          temperatureCompliant
+                          "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border px-4 text-left text-lg font-black outline-none transition focus:border-[#147060]",
+                          hasSelectedTemperature && temperatureCompliant
                             ? "border-emerald-200 bg-emerald-50 text-emerald-950"
                             : "border-[#c7d8d4] bg-[#fbfffd] text-[#111816]",
                         ].join(" ")}
                       >
-                        {temperatureOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}°C
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        <span className={hasSelectedTemperature ? "" : "text-[#7b8c87]"}>
+                          {hasSelectedTemperature ? formatTemperature(temperatureC) : "Seleccione la temperatura"}
+                        </span>
+                        <span aria-hidden="true" className="text-xl leading-none text-[#147060]">
+                          ▾
+                        </span>
+                      </button>
 
-                    <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[#cfe0dc] bg-[#fbfffd] px-4 py-3">
-                      <span className="text-sm font-black text-[#111816]">Cumplimiento de temperatura</span>
-                      <span
-                        className={[
-                          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black",
-                          temperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
-                        ].join(" ")}
-                      >
-                        <span aria-hidden="true">{temperatureCompliant ? "✓" : "!"}</span>
-                        {temperatureCompliant ? "Cumple" : "No cumple"}
-                      </span>
+                      {isTemperatureMenuOpen ? (
+                        <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#cfe0dc] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.14)]">
+                          <div className="grid grid-cols-4 gap-2">
+                            {temperatureOptions.map((option) => {
+                              const optionCompliant = isTemperatureCompliant(productType, String(option));
+                              const isSelected = temperatureC === String(option);
+
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => {
+                                    setTemperatureC(String(option));
+                                    setIsTemperatureMenuOpen(false);
+                                  }}
+                                  className={[
+                                    "min-h-12 rounded-2xl border px-2 text-center text-base font-black transition",
+                                    optionCompliant
+                                      ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+                                      : "border-[#dbe7e3] bg-[#fbfffd] text-[#111816]",
+                                    isSelected ? "ring-2 ring-[#147060]" : "",
+                                  ].join(" ")}
+                                >
+                                  {formatTemperature(option)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
+
+                    {hasSelectedTemperature ? (
+                      <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[#cfe0dc] bg-[#fbfffd] px-4 py-3">
+                        <span className="text-sm font-black text-[#111816]">Resultado de temperatura</span>
+                        <span
+                          className={[
+                            "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black",
+                            temperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
+                          ].join(" ")}
+                        >
+                          <span aria-hidden="true">{temperatureCompliant ? "✓" : "!"}</span>
+                          {temperatureCompliant ? "Cumple" : "No cumple"}
+                        </span>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 
                 <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">¿Empaque íntegro y fecha vigente?</legend>
+                  <legend className="grid gap-1 text-sm font-black text-[#111816]">
+                    <span>Revise el empaque y la fecha</span>
+                    <span>¿Todo está correcto?</span>
+                  </legend>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="relative">
                       <input
@@ -440,7 +514,10 @@ export function OperationalPublicForm({
                 </fieldset>
 
                 <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">¿Color, olor y textura adecuados?</legend>
+                  <legend className="grid gap-1 text-sm font-black text-[#111816]">
+                    <span>Revise el producto</span>
+                    <span>¿Se ve y huele bien?</span>
+                  </legend>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="relative">
                       <input
@@ -474,7 +551,7 @@ export function OperationalPublicForm({
                 </fieldset>
 
                 <fieldset className="grid gap-2">
-                  <legend className="text-sm font-black text-[#111816]">Decisión</legend>
+                  <legend className="text-sm font-black text-[#111816]">Decisión de aceptación</legend>
                   <div className="grid grid-cols-2 gap-3">
                     {supplyDecisions.map((option) => {
                       const isAccept = option === "Aceptar Producto";
@@ -512,6 +589,7 @@ export function OperationalPublicForm({
                     name="observations"
                     required={decision === "Rechazar Producto"}
                     rows={3}
+                    placeholder="Ej. Empaque roto, temperatura fuera de rango, producto en mal estado..."
                     value={observations}
                     onChange={(event) => setObservations(event.target.value)}
                     className="min-h-24 resize-none rounded-2xl border border-[#c7d8d4] bg-[#fbfffd] px-4 py-3 text-base font-bold text-[#111816] outline-none transition focus:border-[#147060] focus:bg-white"
