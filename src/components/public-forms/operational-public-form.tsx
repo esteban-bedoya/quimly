@@ -429,7 +429,7 @@ export function OperationalPublicForm({
 
                       {isTemperatureMenuOpen ? (
                         <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#cfe0dc] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.14)]">
-                          <div className="grid grid-cols-4 gap-2">
+                          <div className="grid gap-1">
                             {temperatureOptions.map((option) => {
                               const optionCompliant = isTemperatureCompliant(productType, String(option));
                               const isSelected = temperatureC === String(option);
@@ -443,14 +443,17 @@ export function OperationalPublicForm({
                                     setIsTemperatureMenuOpen(false);
                                   }}
                                   className={[
-                                    "min-h-12 rounded-2xl border px-2 text-center text-base font-black transition",
+                                    "flex min-h-11 items-center justify-between rounded-xl border px-4 text-left text-base font-black transition",
                                     optionCompliant
                                       ? "border-emerald-100 bg-emerald-50 text-emerald-900"
                                       : "border-[#dbe7e3] bg-[#fbfffd] text-[#111816]",
                                     isSelected ? "ring-2 ring-[#147060]" : "",
                                   ].join(" ")}
                                 >
-                                  {formatTemperature(option)}
+                                  <span>{formatTemperature(option)}</span>
+                                  {optionCompliant ? (
+                                    <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-emerald-400" />
+                                  ) : null}
                                 </button>
                               );
                             })}
