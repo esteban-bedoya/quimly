@@ -7,6 +7,7 @@ import {
   OperationalFormLayout,
   OperationalFormResponsibleSummary,
   OperationalFormSection,
+  OperationalFormSubmitButton,
   operationalFormStyles,
 } from "@/components/public-forms/operational-form-layout";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
@@ -637,9 +638,9 @@ export function OperationalPublicForm({
 
         <OperationalFormResponsibleSummary responsibleName={operatorName} />
 
-        <button type="submit" disabled={isDisabled} className={operationalFormStyles.primaryButton}>
+        <OperationalFormSubmitButton disabled={isDisabled}>
           {isPending ? "Guardando..." : isSupplyReception ? "Firmar y registrar" : "Guardar registro"}
-        </button>
+        </OperationalFormSubmitButton>
       </form>
     </OperationalFormLayout>
   );

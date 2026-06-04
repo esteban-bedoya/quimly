@@ -4,22 +4,21 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 export const operationalFormStyles = {
-  page: "min-h-screen bg-[#f2f7f5] px-4 py-5 text-[#111816]",
-  shell: "mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-md flex-col justify-center",
-  panel:
-    "overflow-hidden rounded-[2rem] border border-[#cfe0dc] bg-[radial-gradient(circle_at_top_left,#d6fff4_0%,#f5fffb_34%,rgba(255,255,255,0.96)_64%,#ffffff_100%)] shadow-[0_24px_80px_rgba(17,24,22,0.12)]",
-  header: "px-5 pb-5 pt-6",
-  formBody: "grid gap-4 px-5 pb-5 pt-3",
+  page: "min-h-screen bg-[linear-gradient(180deg,#eafbf7_0%,#f2f7f5_300px,#f2f7f5_100%)] px-4 py-5 text-[#111816]",
+  shell: "mx-auto flex w-full max-w-lg flex-col",
+  layoutContent: "grid gap-0",
+  header: "pb-5 pt-4",
+  formBody: "grid gap-4 pb-5 pt-3",
   logo: "h-10 w-auto",
   title: "mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]",
   description: "mt-3 text-base leading-7 text-[#51645f]",
   location: "mt-4 text-sm font-black tracking-[-0.01em] text-[#111816]",
   locationMuted: "text-[#7b8c87]",
-  section:
-    "grid gap-4 rounded-2xl border border-[#dbe7e3] bg-[#fbfffd] p-4 shadow-[0_0_24px_rgba(17,24,22,0.10)]",
+  sectionContainer:
+    "grid gap-4 rounded-2xl border border-[#e1e8e5] bg-[#fbfffd] p-4 shadow-[0_12px_28px_rgba(17,24,22,0.08)]",
   sectionHeader: "grid gap-2",
-  sectionTitle: "text-xs font-black uppercase tracking-[0.18em] text-[#147060]",
-  sectionDivider: "h-px bg-[#dbe7e3]",
+  sectionTitle: "text-xs font-black uppercase tracking-[0.18em] text-[#2f3a37]",
+  sectionDivider: "h-px bg-[#e5ece9]",
   field: "grid gap-2",
   fieldLabel: "text-sm font-black text-[#111816]",
   input:
@@ -71,41 +70,85 @@ export function OperationalFormLayout({
   return (
     <main className={operationalFormStyles.page}>
       <div className={operationalFormStyles.shell}>
-        <section className={operationalFormStyles.panel}>
-          <div className={operationalFormStyles.header}>
-            <Image
-              src="/logos/quimly_logoo.png"
-              alt="Quimly"
-              width={146}
-              height={48}
-              priority
-              className={operationalFormStyles.logo}
-            />
-            <h1 className={operationalFormStyles.title}>{title}</h1>
-            {description ? <p className={operationalFormStyles.description}>{description}</p> : null}
-            <p className={operationalFormStyles.location}>
-              {companyName}
-              <span className={`px-2 ${operationalFormStyles.locationMuted}`}>|</span>
-              <span className={operationalFormStyles.locationMuted}>{branchName}</span>
-            </p>
-          </div>
-
+        <div className={operationalFormStyles.layoutContent}>
+          <OperationalFormHeader
+            title={title}
+            description={description}
+            companyName={companyName}
+            branchName={branchName}
+          />
           {children}
-        </section>
+        </div>
       </div>
     </main>
   );
 }
 
+export function OperationalFormHeader({
+  title,
+  description,
+  companyName,
+  branchName,
+}: {
+  title: string;
+  description?: string | null;
+  companyName: string;
+  branchName: string;
+}) {
+  return (
+    <header className={operationalFormStyles.header}>
+      <Image
+        src="/logos/quimly_logoo.png"
+        alt="Quimly"
+        width={146}
+        height={48}
+        priority
+        className={operationalFormStyles.logo}
+      />
+      <h1 className={operationalFormStyles.title}>{title}</h1>
+      {description ? <p className={operationalFormStyles.description}>{description}</p> : null}
+      <p className={operationalFormStyles.location}>
+        {companyName}
+        <span className={`px-2 ${operationalFormStyles.locationMuted}`}>|</span>
+        <span className={operationalFormStyles.locationMuted}>{branchName}</span>
+      </p>
+    </header>
+  );
+}
+
+export function OperationalFormSectionContainer({ children }: { children: ReactNode }) {
+  return <section className={operationalFormStyles.sectionContainer}>{children}</section>;
+}
+
+export function OperationalFormSectionTitle({ title }: { title: string }) {
+  return (
+    <div className={operationalFormStyles.sectionHeader}>
+      <h2 className={operationalFormStyles.sectionTitle}>{title}</h2>
+      <div className={operationalFormStyles.sectionDivider} />
+    </div>
+  );
+}
+
 export function OperationalFormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className={operationalFormStyles.section}>
-      <div className={operationalFormStyles.sectionHeader}>
-        <h2 className={operationalFormStyles.sectionTitle}>{title}</h2>
-        <div className={operationalFormStyles.sectionDivider} />
-      </div>
+    <OperationalFormSectionContainer>
+      <OperationalFormSectionTitle title={title} />
       {children}
-    </section>
+    </OperationalFormSectionContainer>
+  );
+}
+
+export function OperationalFormSubmitButton({
+  children,
+  disabled,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button type="submit" disabled={disabled} className={operationalFormStyles.primaryButton}>
+      {children}
+    </button>
   );
 }
 
