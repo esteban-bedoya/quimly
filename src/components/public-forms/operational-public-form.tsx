@@ -84,7 +84,7 @@ function isTemperatureCompliant(productType: SupplyProductType | "", temperature
   }
 
   if (productType === "Refrigerado") {
-    return temperature >= 0 && temperature <= 4;
+    return temperature >= -1 && temperature <= 4;
   }
 
   if (productType === "Congelado") {
@@ -266,10 +266,11 @@ export function OperationalPublicForm({
             />
             <h1 className="mt-3 text-3xl font-black tracking-[-0.05em] text-[#111816]">{label.title}</h1>
             {!isSupplyReception ? <p className="mt-3 text-base leading-7 text-[#51645f]">{label.description}</p> : null}
-            <div className="mt-4 rounded-2xl border border-[#cfe0dc] bg-white/80 px-4 py-3">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#147060]">{branchName}</p>
-              <p className="mt-1 text-lg font-black tracking-[-0.03em] text-[#111816]">{companyName}</p>
-            </div>
+            <p className="mt-4 text-sm font-black tracking-[-0.01em] text-[#111816]">
+              {companyName}
+              <span className="px-2 text-[#147060]">|</span>
+              {branchName}
+            </p>
           </div>
 
           <form action={action} className="grid gap-4 px-5 py-5">
@@ -381,18 +382,18 @@ export function OperationalPublicForm({
                       placeholder="Ej. Ana Gomez"
                       value={operatorName}
                       onChange={(event) => setOperatorName(event.target.value)}
-                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition placeholder:text-sm focus:border-[#147060]"
                     />
                   </label>
                   <label className="grid gap-2">
-                    <span className="text-sm font-black text-[#111816]">¿Qué producto recibió y de quién?</span>
+                    <span className="text-sm font-black text-[#111816]">¿Qué producto y distribuidor?</span>
                     <input
                       name="productName"
                       required
                       placeholder="Ej. Pechuga de pollo - Distriaves"
                       value={productName}
                       onChange={(event) => setProductName(event.target.value)}
-                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                      className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-lg font-bold text-[#111816] outline-none transition placeholder:text-sm focus:border-[#147060]"
                     />
                   </label>
                 </div>
@@ -442,7 +443,7 @@ export function OperationalPublicForm({
                               : "border-[#c7d8d4] bg-white text-[#111816]",
                           ].join(" ")}
                         >
-                          <span className={hasSelectedTemperature ? "" : "text-[#7b8c87]"}>
+                          <span className={hasSelectedTemperature ? "" : "text-base text-[#7b8c87]"}>
                             {hasSelectedTemperature ? formatTemperature(temperatureC) : "Seleccione la temperatura"}
                           </span>
                           <span aria-hidden="true" className="text-xl leading-none text-[#147060]">
@@ -515,7 +516,7 @@ export function OperationalPublicForm({
                     <div className="h-px bg-[#dbe7e3]" />
                   </div>
                   <fieldset className="grid gap-2">
-                    <legend className="text-sm font-black text-[#111816]">¿Todo está correcto?</legend>
+                    <legend className="text-sm font-black text-[#111816]">¿Empaque y fecha correcta?</legend>
                     <div className="grid grid-cols-2 gap-3">
                       <label className="relative">
                         <input
@@ -623,7 +624,9 @@ export function OperationalPublicForm({
                   </fieldset>
 
                   <label className="grid gap-2">
-                    <span className="text-sm font-black text-[#111816]">Observaciones / Acción tomada</span>
+                    <span className="text-sm font-black text-[#111816]">
+                      Observaciones / Justificación de decisión
+                    </span>
                     <textarea
                       name="observations"
                       required={decision === "Rechazar Producto"}
@@ -631,7 +634,7 @@ export function OperationalPublicForm({
                       placeholder="Ej. Empaque roto, temperatura fuera de rango, producto en mal estado..."
                       value={observations}
                       onChange={(event) => setObservations(event.target.value)}
-                      className="min-h-24 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-4 py-3 text-base font-bold text-[#111816] outline-none transition focus:border-[#147060]"
+                      className="min-h-24 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-4 py-3 text-base font-bold text-[#111816] outline-none transition placeholder:text-sm focus:border-[#147060]"
                     />
                   </label>
                 </div>

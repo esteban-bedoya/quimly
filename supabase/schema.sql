@@ -945,7 +945,7 @@ begin
     elsif p_product_type = 'Congelado' and (p_temperature_c < -30 or p_temperature_c > 2) then
       raise exception 'La temperatura recibida no está disponible para producto congelado.';
     elsif p_product_type = 'Refrigerado' then
-      temperature_compliant_value := p_temperature_c between 0 and 4;
+      temperature_compliant_value := p_temperature_c between -1 and 4;
     else
       temperature_compliant_value := p_temperature_c <= -18;
     end if;
