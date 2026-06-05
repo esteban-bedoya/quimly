@@ -74,27 +74,7 @@ const supplyTemperatureSettings: Record<
 
 type SupplyDraft = {
   operatorName?: string;
-  productName?: string;
-  providerName?: string;
-  productType?: SupplyProductType | "";
-  temperatureC?: string;
-  packageIntactDateValid?: YesNoValue | "";
-  organolepticAdequate?: YesNoValue | "";
-  decision?: SupplyDecision | "";
-  observations?: string;
 };
-
-function isSupplyProductType(value: string): value is SupplyProductType {
-  return supplyProductTypes.includes(value as SupplyProductType);
-}
-
-function isSupplyDecision(value: string): value is SupplyDecision {
-  return supplyDecisions.includes(value as SupplyDecision);
-}
-
-function isYesNoValue(value: string): value is YesNoValue {
-  return value === "true" || value === "false";
-}
 
 function getTemperatureOptions(productType: SupplyProductType | "") {
   if (productType === "Ambiente" || !productType) {
@@ -229,6 +209,10 @@ export function OperationalPublicForm({
         : currentStep >= 4
           ? String(currentStep - 1)
           : String(currentStep);
+  const temperatureStepTitle =
+    productType === "Congelado"
+      ? "¿Con qué temperatura llegó el producto congelado?"
+      : "¿Con qué temperatura llegó el producto refrigerado?";
 
   useEffect(() => {
     if (!isSupplyReception) {
@@ -249,20 +233,6 @@ export function OperationalPublicForm({
 
       frameId = window.requestAnimationFrame(() => {
         setOperatorName(typeof draft.operatorName === "string" ? formatResponsibleName(draft.operatorName) : "");
-        setProductName(typeof draft.productName === "string" ? draft.productName : "");
-        setProductType(draft.productType && isSupplyProductType(draft.productType) ? draft.productType : "");
-        setTemperatureC(typeof draft.temperatureC === "string" ? draft.temperatureC : "");
-        setPackageIntactDateValid(
-          draft.packageIntactDateValid && isYesNoValue(draft.packageIntactDateValid)
-            ? draft.packageIntactDateValid
-            : "",
-        );
-        setOrganolepticAdequate(
-          draft.organolepticAdequate && isYesNoValue(draft.organolepticAdequate) ? draft.organolepticAdequate : "",
-        );
-        setDecision(draft.decision && isSupplyDecision(draft.decision) ? draft.decision : "");
-        setObservations(typeof draft.observations === "string" ? draft.observations : "");
-        setProviderName(typeof draft.providerName === "string" ? draft.providerName : "");
         setHasLoadedSupplyDraft(true);
       });
     } catch {
@@ -279,30 +249,14 @@ export function OperationalPublicForm({
 
     const draft: SupplyDraft = {
       operatorName,
-      productName,
-      providerName,
-      productType,
-      temperatureC,
-      packageIntactDateValid,
-      organolepticAdequate,
-      decision,
-      observations,
     };
 
     window.localStorage.setItem(supplyStorageKey, JSON.stringify(draft));
   }, [
-    decision,
     hasLoadedSupplyDraft,
     isSupplyReception,
-    observations,
     operatorName,
-    organolepticAdequate,
-    packageIntactDateValid,
-    productName,
-    providerName,
-    productType,
     supplyStorageKey,
-    temperatureC,
   ]);
 
   useEffect(() => {
@@ -528,28 +482,28 @@ export function OperationalPublicForm({
         ) : null}
 
         {formType === "supply_reception" ? (
-          <section className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white/72 px-5 py-6 shadow-[0_24px_60px_rgba(17,24,22,0.08)]">
-            <div className="flex min-h-8 items-center justify-between gap-3">
-              {currentStep > 1 ? (
-                <button
-                  type="button"
-                  onClick={goBackSupplyStep}
-                  className="text-sm font-black text-[#66736f] transition hover:text-[#111816]"
-                >
-                  Volver
-                </button>
-              ) : (
-                <span />
-              )}
-              <span className="text-[0.68rem] font-bold uppercase tracking-widest text-[#7b8c87]">
-                Paso {supplyStepLabel} de 9
-              </span>
-            </div>
+          <section className="grid">
+            <div className="grid min-h-[560px] content-start gap-9 rounded-[1.75rem] bg-white px-5 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <div className="flex min-h-8 items-center justify-between gap-3">
+                {currentStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={goBackSupplyStep}
+                    className="text-sm font-black text-neutral-700 transition hover:text-neutral-950"
+                  >
+                    Volver
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <span className="text-[0.68rem] font-bold uppercase tracking-widest text-neutral-600">
+                  Paso {supplyStepLabel} de 9
+                </span>
+              </div>
 
-            {currentStep === 1 ? (
-              <div className="grid gap-7">
+              {currentStep === 1 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Responsable</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién recibe el producto?</h2>
                 </div>
                 <input
@@ -567,14 +521,13 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 2 ? (
-              <div className="grid gap-7">
+              {currentStep === 2 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Producto</p>
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Nombre del producto</h2>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Cuál es el producto?</h2>
                 </div>
                 <input
                   autoComplete="off"
@@ -591,13 +544,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 3 ? (
-              <div className="grid gap-7">
+              {currentStep === 3 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Proveedor</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Nombre del proveedor</h2>
                 </div>
                 <input
@@ -615,13 +567,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 4 ? (
-              <div className="grid gap-7">
+              {currentStep === 4 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Conservación</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Método de conservación</h2>
                 </div>
                 <div className="grid gap-3">
@@ -633,7 +584,7 @@ export function OperationalPublicForm({
                       className={[
                         "min-h-16 rounded-2xl border px-5 text-left text-xl font-black transition",
                         productType === option
-                          ? "border-[#111816] bg-[#111816] text-white"
+                          ? "border-neutral-900 bg-neutral-200 font-semibold text-neutral-900"
                           : "border-[#c7d8d4] bg-white text-neutral-950",
                       ].join(" ")}
                     >
@@ -649,16 +600,13 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 5 ? (
-              <div ref={temperaturePickerRef} className="grid gap-7">
+              {currentStep === 5 ? (
+                <div ref={temperaturePickerRef} className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Temperatura</p>
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
-                    ¿Con qué temperatura llega el producto?
-                  </h2>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">{temperatureStepTitle}</h2>
                 </div>
                 <div className="grid gap-2">
                   <button
@@ -723,7 +671,7 @@ export function OperationalPublicForm({
                     <span
                       className={[
                         "inline-flex items-center rounded-full px-3 py-1 text-sm font-black",
-                        temperatureCompliant ? "bg-emerald-950 text-white" : "bg-[#8f1d2c] text-white",
+                        temperatureCompliant ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800",
                       ].join(" ")}
                     >
                       {temperatureCompliant ? "Cumple" : "No cumple"}
@@ -738,13 +686,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 6 ? (
-              <div className="grid gap-7">
+              {currentStep === 6 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Empaque</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">
                     ¿El empaque está correcto e intacto?
                   </h2>
@@ -787,13 +734,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 7 ? (
-              <div className="grid gap-7">
+              {currentStep === 7 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Inspección</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">
                     ¿El producto se ve y huele como se espera?
                   </h2>
@@ -836,13 +782,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 8 ? (
-              <div className="grid gap-7">
+              {currentStep === 8 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Decisión final</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Decisión de aceptación</h2>
                 </div>
                 <div className="grid gap-3">
@@ -877,11 +822,11 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 9 ? (
-              <div className="grid gap-7">
+              {currentStep === 9 ? (
+                <div className="grid gap-7">
                 <div className="grid gap-3">
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">
                     ¿Qué acción se tomó con este producto?
@@ -934,13 +879,12 @@ export function OperationalPublicForm({
                 >
                   Continuar
                 </button>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
 
-            {currentStep === 10 ? (
-              <div className="grid gap-8">
+              {currentStep === 10 ? (
+                <div className="grid gap-8">
                 <div className="grid gap-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Cierre y firma</p>
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
                 </div>
                 <div className="grid gap-1 rounded-2xl bg-[#f4faf7] px-5 py-4">
@@ -950,8 +894,9 @@ export function OperationalPublicForm({
                 <OperationalFormSubmitButton disabled={isDisabled}>
                   {isPending ? "Guardando..." : "Firmar y registrar"}
                 </OperationalFormSubmitButton>
-              </div>
-            ) : null}
+                </div>
+              ) : null}
+            </div>
           </section>
         ) : null}
 

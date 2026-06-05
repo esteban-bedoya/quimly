@@ -3,15 +3,15 @@
 import type { ReactNode } from "react";
 
 export const operationalFormStyles = {
-  page: "min-h-screen bg-[linear-gradient(180deg,#eafbf7_0%,#f2f7f5_300px,#f2f7f5_100%)] px-4 pb-5 pt-10 text-[#111816]",
+  page: "min-h-screen bg-[#12110F] px-4 pb-5 pt-10 text-[#111816]",
   shell: "mx-auto flex w-full max-w-lg flex-col",
   layoutContent: "grid gap-0",
   header: "pb-5 pt-4",
   formBody: "grid gap-4 pb-5 pt-2",
-  title: "mt-3 text-2xl font-black tracking-[-0.03em] text-[#111816]",
-  description: "mt-3 text-base leading-7 text-[#51645f]",
-  location: "text-sm font-black tracking-[-0.01em] text-[#111816]",
-  locationMuted: "text-[#7b8c87]",
+  title: "mt-3 text-2xl font-black tracking-[-0.03em] text-[#48c7d2]",
+  description: "mt-3 text-base leading-7 text-white/70",
+  location: "text-sm font-black tracking-[-0.01em] text-white",
+  locationMuted: "text-white/55",
   sectionContainer:
     "grid gap-5 rounded-lg border border-black/[0.06] bg-white p-5 shadow-[0_14px_34px_rgba(17,24,22,0.06)]",
   sectionHeader: "grid",
@@ -49,7 +49,7 @@ export const operationalFormStyles = {
   responsibleLabel: "text-sm font-bold text-[#51645f]",
   responsibleValue: "text-xl font-black text-[#111816]",
   responsibleValueEmpty: "text-xl font-black text-[#7b8c87]",
-  poweredBy: "pb-6 text-right text-xs font-bold text-[#7b8c87]/70",
+  poweredBy: "pb-6 text-right text-xs font-bold text-white/35",
   successDialogBackdrop:
     "fixed inset-0 z-50 flex items-center justify-center bg-[#111816]/35 px-5 backdrop-blur-md",
   successDialogCard: "w-full max-w-sm rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]",
@@ -174,9 +174,10 @@ export function OperationalFormSuccessDialog({ open, onAccept }: { open: boolean
         role="dialog"
         aria-label="Registro guardado"
       >
-        <p className={operationalFormStyles.successDialogMessage}>
-          {"Firma registrada.\nPuedes cerrar esta pantalla o registrar otro control."}
-        </p>
+        <div className={operationalFormStyles.successDialogMessage}>
+          <p className="font-bold">Firma registrada.</p>
+          <p className="font-normal">Puedes cerrar esta pantalla o registrar otro control.</p>
+        </div>
         <button type="button" className={operationalFormStyles.successDialogButton} onClick={onAccept}>
           Aceptar
         </button>
