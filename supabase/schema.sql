@@ -783,6 +783,24 @@ begin
 end;
 $$;
 
+drop function if exists public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
+  text,
+  boolean,
+  boolean,
+  text,
+  text,
+  text,
+  date,
+  numeric
+);
+
 create or replace function public.submit_public_operational_form(
   p_token text,
   p_operator_name text,
@@ -798,7 +816,8 @@ create or replace function public.submit_public_operational_form(
   p_observations text default null,
   p_provider_name text default null,
   p_expiration_date date default null,
-  p_chlorine_ppm numeric default null
+  p_chlorine_ppm numeric default null,
+  p_recorded_at timestamptz default null
 )
 returns jsonb
 language plpgsql
@@ -811,6 +830,7 @@ declare
   equipment_record record;
   area_record record;
   temperature_compliant_value boolean;
+  recorded_at_value timestamptz;
 begin
   if nullif(trim(p_token), '') is null then
     raise exception 'Este formulario no tiene un QR válido.';
@@ -818,6 +838,12 @@ begin
 
   if nullif(trim(p_operator_name), '') is null then
     raise exception 'Ingresa el nombre del operador para guardar el registro.';
+  end if;
+
+  recorded_at_value := coalesce(p_recorded_at, now());
+
+  if recorded_at_value < now() - interval '5 days' or recorded_at_value > now() then
+    raise exception 'La fecha del registro debe estar entre ahora y máximo 5 días atrás.';
   end if;
 
   select
@@ -861,6 +887,7 @@ begin
       sede_id,
       company_id,
       tipo_formulario,
+      fecha_hora_servidor,
       token_qr_utilizado,
       qr_code_id,
       equipment_id,
@@ -872,6 +899,7 @@ begin
       qr_record.branch_id,
       qr_record.company_id,
       qr_record.form_type,
+      recorded_at_value,
       qr_record.token,
       qr_record.id,
       equipment_record.id,
@@ -904,6 +932,7 @@ begin
       sede_id,
       company_id,
       tipo_formulario,
+      fecha_hora_servidor,
       token_qr_utilizado,
       qr_code_id,
       area_id,
@@ -915,6 +944,7 @@ begin
       qr_record.branch_id,
       qr_record.company_id,
       qr_record.form_type,
+      recorded_at_value,
       qr_record.token,
       qr_record.id,
       area_record.id,
@@ -970,6 +1000,7 @@ begin
       sede_id,
       company_id,
       tipo_formulario,
+      fecha_hora_servidor,
       token_qr_utilizado,
       qr_code_id,
       operator_name,
@@ -988,6 +1019,7 @@ begin
       qr_record.branch_id,
       qr_record.company_id,
       qr_record.form_type,
+      recorded_at_value,
       qr_record.token,
       qr_record.id,
       trim(p_operator_name),
@@ -1019,6 +1051,7 @@ begin
       sede_id,
       company_id,
       tipo_formulario,
+      fecha_hora_servidor,
       token_qr_utilizado,
       qr_code_id,
       operator_name,
@@ -1028,6 +1061,7 @@ begin
       qr_record.branch_id,
       qr_record.company_id,
       qr_record.form_type,
+      recorded_at_value,
       qr_record.token,
       qr_record.id,
       trim(p_operator_name),
@@ -1497,7 +1531,8 @@ revoke all on function public.submit_public_operational_form(
   text,
   text,
   date,
-  numeric
+  numeric,
+  timestamptz
 ) from public;
 
 grant execute on function public.get_public_operational_form(text) to anon, authenticated;
@@ -1516,7 +1551,8 @@ grant execute on function public.submit_public_operational_form(
   text,
   text,
   date,
-  numeric
+  numeric,
+  timestamptz
 ) to anon, authenticated;
 
 comment on function public.bootstrap_owner(uuid, text, text) is

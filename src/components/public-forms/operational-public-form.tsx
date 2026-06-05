@@ -108,6 +108,89 @@ function formatResponsibleName(value: string) {
   return value.toLocaleUpperCase("es-CO");
 }
 
+function toDateTimeLocalValue(date: Date) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function getRecordDateLimits() {
+  const now = new Date();
+  const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+  return {
+    min: toDateTimeLocalValue(fiveDaysAgo),
+    max: toDateTimeLocalValue(now),
+  };
+}
+
+function formatRecordDateLabel(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--/---/---- --:--";
+  }
+
+  const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+function toIsoDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function PublicFormCardHeader({
+  canGoBack,
+  dateLabel,
+  onBack,
+  onOpenDatePicker,
+  stepLabel,
+  totalSteps,
+}: {
+  canGoBack: boolean;
+  dateLabel: string;
+  onBack?: () => void;
+  onOpenDatePicker: () => void;
+  stepLabel: string;
+  totalSteps: number;
+}) {
+  return (
+    <div className="grid gap-4">
+      <div className="flex w-full items-start justify-between gap-4 border-b border-neutral-100 pb-3">
+        <button
+          type="button"
+          disabled={!canGoBack}
+          onClick={onBack}
+          className="text-left text-sm font-medium text-neutral-500 transition hover:text-neutral-900 disabled:cursor-default disabled:text-neutral-300"
+        >
+          ← Volver
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenDatePicker}
+          className="flex items-center gap-1 pt-0.5 text-right font-mono text-xs font-semibold text-neutral-400 transition hover:text-neutral-900"
+        >
+          <span>{dateLabel}</span>
+          <span className="text-[10px]" aria-hidden="true">
+            ✎
+          </span>
+        </button>
+      </div>
+
+      <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+        Paso {stepLabel} de {totalSteps}
+      </p>
+    </div>
+  );
+}
+
 export function OperationalPublicForm({
   token,
   formType,
@@ -141,6 +224,11 @@ export function OperationalPublicForm({
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
+  const [recordedAtLocalValue, setRecordedAtLocalValue] = useState(() => toDateTimeLocalValue(new Date()));
+  const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits());
+  const [datePickerValue, setDatePickerValue] = useState(recordedAtLocalValue);
+  const [hasCustomRecordedAt, setHasCustomRecordedAt] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
   const actionTakenTextareaRef = useRef<HTMLTextAreaElement>(null);
   const label = operationalFormLabels[formType];
@@ -213,6 +301,20 @@ export function OperationalPublicForm({
     productType === "Congelado"
       ? "¿Con qué temperatura llegó el producto congelado?"
       : "¿Con qué temperatura llegó el producto refrigerado?";
+  const recordedAtDisplay = formatRecordDateLabel(recordedAtLocalValue);
+  const recordedAtIsoValue = hasCustomRecordedAt ? toIsoDateTime(recordedAtLocalValue) : "";
+
+  useEffect(() => {
+    if (hasCustomRecordedAt || showDatePicker) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRecordedAtLocalValue(toDateTimeLocalValue(new Date()));
+    }, 30_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasCustomRecordedAt, showDatePicker]);
 
   useEffect(() => {
     if (!isSupplyReception) {
@@ -299,6 +401,24 @@ export function OperationalPublicForm({
     setTemperatureC("");
   }
 
+  function openDatePicker() {
+    const nextLimits = getRecordDateLimits();
+    setRecordDateLimits(nextLimits);
+    setDatePickerValue(recordedAtLocalValue);
+    setShowDatePicker(true);
+  }
+
+  function saveDatePickerValue() {
+    const nextLimits = getRecordDateLimits();
+    const clampedValue =
+      datePickerValue < nextLimits.min ? nextLimits.min : datePickerValue > nextLimits.max ? nextLimits.max : datePickerValue;
+
+    setRecordDateLimits(nextLimits);
+    setRecordedAtLocalValue(clampedValue);
+    setHasCustomRecordedAt(true);
+    setShowDatePicker(false);
+  }
+
   function handleSuccessAccept() {
     if (isSupplyReception) {
       const rememberedDraft: SupplyDraft = {
@@ -382,6 +502,7 @@ export function OperationalPublicForm({
     >
       <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
+        <input type="hidden" name="recordedAt" value={recordedAtIsoValue} />
         {isSupplyReception ? (
           <>
             <input type="hidden" name="operatorName" value={operatorName} />
@@ -396,110 +517,150 @@ export function OperationalPublicForm({
         ) : null}
 
         {!isSupplyReception ? (
-          <label className={operationalFormStyles.field}>
-            <span className={operationalFormStyles.fieldLabel}>Nombre del operador</span>
-            <input
-              name="operatorName"
-              autoComplete="name"
-              required
-              placeholder="Ej. Ana Gomez"
-              value={operatorName}
-              onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-              className={operationalFormStyles.input}
+          <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+            <PublicFormCardHeader
+              canGoBack={false}
+              dateLabel={recordedAtDisplay}
+              onOpenDatePicker={openDatePicker}
+              stepLabel="1"
+              totalSteps={1}
             />
-          </label>
-        ) : null}
-
-        {formType === "thermal_control" ? (
-          <>
-            <label className={operationalFormStyles.field}>
-              <span className={operationalFormStyles.fieldLabel}>Equipo de refrigeracion</span>
-              <select
-                name="equipmentId"
-                required
-                disabled={missingThermalCatalog}
-                className={operationalFormStyles.select}
-              >
-                <option value="">Seleccionar equipo</option>
-                {equipment.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.equipment_type
-                      ? `${item.name} - ${refrigerationEquipmentTypeLabels[item.equipment_type]}`
-                      : item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
 
             <label className={operationalFormStyles.field}>
-              <span className={operationalFormStyles.fieldLabel}>Temperatura en °C</span>
+              <span className={operationalFormStyles.fieldLabel}>Nombre del operador</span>
               <input
-                name="temperatureC"
-                type="number"
-                inputMode="decimal"
-                step="0.1"
+                name="operatorName"
+                autoComplete="name"
                 required
-                placeholder="Ej. 4.2"
-                className={operationalFormStyles.temperatureInput}
+                placeholder="Ej. Ana Gomez"
+                value={operatorName}
+                onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
+                className={operationalFormStyles.inputOnWhite}
               />
             </label>
-          </>
-        ) : null}
 
-        {formType === "area_sanitation" ? (
-          <>
-            <label className={operationalFormStyles.field}>
-              <span className={operationalFormStyles.fieldLabel}>Area o zona</span>
-              <select
-                name="areaId"
-                required
-                disabled={missingAreaCatalog}
-                className={operationalFormStyles.select}
-              >
-                <option value="">Seleccionar area</option>
-                {sanitationAreas.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {formType === "thermal_control" ? (
+              <>
+                <label className={operationalFormStyles.field}>
+                  <span className={operationalFormStyles.fieldLabel}>Equipo de refrigeracion</span>
+                  <select
+                    name="equipmentId"
+                    required
+                    disabled={missingThermalCatalog}
+                    className={operationalFormStyles.select}
+                  >
+                    <option value="">Seleccionar equipo</option>
+                    {equipment.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.equipment_type
+                          ? `${item.name} - ${refrigerationEquipmentTypeLabels[item.equipment_type]}`
+                          : item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <fieldset className={operationalFormStyles.field}>
-              <legend className={operationalFormStyles.fieldLabel}>Estado de conformidad</legend>
-              <div className={operationalFormStyles.yesNoGrid}>
-                <label className={operationalFormStyles.radioLabel}>
-                  <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="true" required />
-                  <span className={operationalFormStyles.yesButtonLarge}>Si</span>
+                <label className={operationalFormStyles.field}>
+                  <span className={operationalFormStyles.fieldLabel}>Temperatura en °C</span>
+                  <input
+                    name="temperatureC"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    required
+                    placeholder="Ej. 4.2"
+                    className={operationalFormStyles.temperatureInput}
+                  />
                 </label>
-                <label className={operationalFormStyles.radioLabel}>
-                  <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="false" required />
-                  <span className={operationalFormStyles.noButtonLarge}>No</span>
+              </>
+            ) : null}
+
+            {formType === "area_sanitation" ? (
+              <>
+                <label className={operationalFormStyles.field}>
+                  <span className={operationalFormStyles.fieldLabel}>Area o zona</span>
+                  <select
+                    name="areaId"
+                    required
+                    disabled={missingAreaCatalog}
+                    className={operationalFormStyles.select}
+                  >
+                    <option value="">Seleccionar area</option>
+                    {sanitationAreas.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-              </div>
-            </fieldset>
-          </>
+
+                <fieldset className={operationalFormStyles.field}>
+                  <legend className={operationalFormStyles.fieldLabel}>Estado de conformidad</legend>
+                  <div className={operationalFormStyles.yesNoGrid}>
+                    <label className={operationalFormStyles.radioLabel}>
+                      <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="true" required />
+                      <span className={operationalFormStyles.yesButtonLarge}>Si</span>
+                    </label>
+                    <label className={operationalFormStyles.radioLabel}>
+                      <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="false" required />
+                      <span className={operationalFormStyles.noButtonLarge}>No</span>
+                    </label>
+                  </div>
+                </fieldset>
+              </>
+            ) : null}
+
+            {formType === "water_quality" ? (
+              <label className={operationalFormStyles.field}>
+                <span className={operationalFormStyles.fieldLabel}>Medicion de cloro en ppm</span>
+                <input
+                  name="chlorinePpm"
+                  type="number"
+                  inputMode="decimal"
+                  min="0.3"
+                  max="2.0"
+                  step="0.1"
+                  required
+                  placeholder="0.3 a 2.0"
+                  className={operationalFormStyles.temperatureInput}
+                />
+                <span className="text-sm font-bold text-[#51645f]">Solo se aceptan valores entre 0.3 y 2.0 ppm.</span>
+              </label>
+            ) : null}
+
+            {missingThermalCatalog ? (
+              <p className={operationalFormStyles.statusWarning}>
+                Esta sede aun no tiene equipos registrados para usar este QR.
+              </p>
+            ) : null}
+
+            {missingAreaCatalog ? (
+              <p className={operationalFormStyles.statusWarning}>
+                Esta sede aun no tiene areas registradas para usar este QR.
+              </p>
+            ) : null}
+
+            {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
+
+            <OperationalFormResponsibleSummary responsibleName={operatorName} />
+
+            <OperationalFormSubmitButton disabled={isDisabled}>
+              {isPending ? "Guardando..." : "Guardar registro"}
+            </OperationalFormSubmitButton>
+          </section>
         ) : null}
 
         {formType === "supply_reception" ? (
           <section className="grid">
-            <div className="grid min-h-[560px] content-start gap-9 rounded-[1.75rem] bg-white px-5 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
-              <div className="flex min-h-8 items-center justify-between gap-3">
-                {currentStep > 1 ? (
-                  <button
-                    type="button"
-                    onClick={goBackSupplyStep}
-                    className="text-sm font-black text-neutral-700 transition hover:text-neutral-950"
-                  >
-                    Volver
-                  </button>
-                ) : (
-                  <span />
-                )}
-                <span className="text-[0.68rem] font-bold uppercase tracking-widest text-neutral-600">
-                  Paso {supplyStepLabel} de 9
-                </span>
-              </div>
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <PublicFormCardHeader
+                canGoBack={currentStep > 1}
+                dateLabel={recordedAtDisplay}
+                onBack={goBackSupplyStep}
+                onOpenDatePicker={openDatePicker}
+                stepLabel={supplyStepLabel}
+                totalSteps={9}
+              />
 
               {currentStep === 1 ? (
                 <div className="grid gap-7">
@@ -900,48 +1061,53 @@ export function OperationalPublicForm({
           </section>
         ) : null}
 
-        {formType === "water_quality" ? (
-          <label className={operationalFormStyles.field}>
-            <span className={operationalFormStyles.fieldLabel}>Medicion de cloro en ppm</span>
-            <input
-              name="chlorinePpm"
-              type="number"
-              inputMode="decimal"
-              min="0.3"
-              max="2.0"
-              step="0.1"
-              required
-              placeholder="0.3 a 2.0"
-              className={operationalFormStyles.temperatureInput}
-            />
-            <span className="text-sm font-bold text-[#51645f]">Solo se aceptan valores entre 0.3 y 2.0 ppm.</span>
-          </label>
-        ) : null}
-
-        {missingThermalCatalog ? (
-          <p className={operationalFormStyles.statusWarning}>
-            Esta sede aun no tiene equipos registrados para usar este QR.
-          </p>
-        ) : null}
-
-        {missingAreaCatalog ? (
-          <p className={operationalFormStyles.statusWarning}>
-            Esta sede aun no tiene areas registradas para usar este QR.
-          </p>
-        ) : null}
-
-        {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
-
-        {!isSupplyReception ? (
-          <>
-            <OperationalFormResponsibleSummary responsibleName={operatorName} />
-
-            <OperationalFormSubmitButton disabled={isDisabled}>
-              {isPending ? "Guardando..." : "Guardar registro"}
-            </OperationalFormSubmitButton>
-          </>
-        ) : null}
+        {isSupplyReception && state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
       </form>
+
+      {showDatePicker ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#111816]/40 px-5 backdrop-blur-md" role="presentation">
+          <section
+            aria-modal="true"
+            aria-label="Modificar fecha y hora del registro"
+            className="grid w-full max-w-sm gap-5 rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]"
+            role="dialog"
+          >
+            <div className="grid gap-1">
+              <h2 className="text-xl font-black text-neutral-950">Fecha y hora del registro</h2>
+              <p className="text-sm font-semibold leading-5 text-neutral-500">Puedes ajustar máximo 5 días hacia atrás.</p>
+            </div>
+
+            <label className="grid gap-2">
+              <span className="text-sm font-bold text-neutral-700">Registro</span>
+              <input
+                type="datetime-local"
+                value={datePickerValue}
+                min={recordDateLimits.min}
+                max={recordDateLimits.max}
+                onChange={(event) => setDatePickerValue(event.target.value)}
+                className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-base font-bold text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(false)}
+                className="min-h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-700 transition active:scale-[0.98]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveDatePickerValue}
+                className="min-h-12 rounded-2xl bg-[#111816] px-4 text-sm font-black text-white transition active:scale-[0.98]"
+              >
+                Guardar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <OperationalFormSuccessDialog open={Boolean(state.success)} onAccept={handleSuccessAccept} />
     </OperationalFormLayout>

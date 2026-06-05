@@ -45,12 +45,36 @@ function readBooleanOrNull(formData: FormData, key: string) {
   return null;
 }
 
+function readRecordedAt(formData: FormData) {
+  const value = readString(formData, "recordedAt");
+
+  if (!value) {
+    return { recordedAt: null };
+  }
+
+  const recordedAt = new Date(value);
+
+  if (Number.isNaN(recordedAt.getTime())) {
+    return { error: "La fecha del registro no es válida." };
+  }
+
+  const now = new Date();
+  const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+  if (recordedAt < fiveDaysAgo || recordedAt > now) {
+    return { error: "La fecha del registro debe estar entre ahora y máximo 5 días atrás." };
+  }
+
+  return { recordedAt: recordedAt.toISOString() };
+}
+
 export async function submitPublicOperationalForm(
   _: PublicFormState,
   formData: FormData,
 ): Promise<PublicFormState> {
   const token = readString(formData, "token");
   const operatorName = readString(formData, "operatorName");
+  const recordedAtResult = readRecordedAt(formData);
 
   if (!token) {
     return { error: "Este formulario no tiene un QR válido." };
@@ -58,6 +82,10 @@ export async function submitPublicOperationalForm(
 
   if (!operatorName) {
     return { error: "Ingresa el nombre del operador para guardar el registro." };
+  }
+
+  if (recordedAtResult.error) {
+    return { error: recordedAtResult.error };
   }
 
   const supabase = getSupabasePublicClient();
@@ -73,7 +101,7 @@ export async function submitPublicOperationalForm(
     tokenLength: token.length,
   });
 
-  const { error } = await supabase.rpc("submit_public_operational_form", {
+  const payload: Record<string, boolean | number | string | null> = {
     p_token: token,
     p_operator_name: operatorName,
     p_equipment_id: readUuidOrNull(formData, "equipmentId"),
@@ -87,7 +115,13 @@ export async function submitPublicOperationalForm(
     p_decision: readString(formData, "decision") || null,
     p_observations: readString(formData, "observations") || null,
     p_chlorine_ppm: readNumber(formData, "chlorinePpm"),
-  });
+  };
+
+  if (recordedAtResult.recordedAt) {
+    payload.p_recorded_at = recordedAtResult.recordedAt;
+  }
+
+  const { error } = await supabase.rpc("submit_public_operational_form", payload);
 
   if (error) {
     logServerError("public_form.submit.failed", error, {
