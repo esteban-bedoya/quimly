@@ -6,7 +6,6 @@ import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[toke
 import {
   OperationalFormLayout,
   OperationalFormResponsibleSummary,
-  OperationalFormSection,
   OperationalFormSubmitButton,
   OperationalFormSuccessDialog,
   operationalFormStyles,
@@ -32,10 +31,16 @@ const supplyDecisions = ["Aceptar Producto", "Rechazar Producto"] as const;
 type SupplyDecision = (typeof supplyDecisions)[number];
 
 type YesNoValue = "true" | "false";
+type SupplyStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type SupplyActionTakenItem = {
   key: string;
-  icon: string;
   text: string;
+};
+
+const supplyProductTypeLabels: Record<SupplyProductType, string> = {
+  Ambiente: "Ambiente",
+  Refrigerado: "Refrigerado",
+  Congelado: "Congelado",
 };
 
 const supplyAcceptedActionPlaceholder = [
@@ -70,6 +75,7 @@ const supplyTemperatureSettings: Record<
 type SupplyDraft = {
   operatorName?: string;
   productName?: string;
+  providerName?: string;
   productType?: SupplyProductType | "";
   temperatureC?: string;
   packageIntactDateValid?: YesNoValue | "";
@@ -118,10 +124,6 @@ function isTemperatureCompliant(productType: SupplyProductType | "", temperature
   return false;
 }
 
-function formatTemperature(temperature: number | string) {
-  return `${temperature}°C`;
-}
-
 function formatResponsibleName(value: string) {
   return value.toLocaleUpperCase("es-CO");
 }
@@ -146,8 +148,10 @@ export function OperationalPublicForm({
     {},
   );
   const isSupplyReception = formType === "supply_reception";
+  const [currentStep, setCurrentStep] = useState<SupplyStep>(1);
   const [operatorName, setOperatorName] = useState("");
   const [productName, setProductName] = useState("");
+  const [providerName, setProviderName] = useState("");
   const [productType, setProductType] = useState<SupplyProductType | "">("");
   const [temperatureC, setTemperatureC] = useState("");
   const [packageIntactDateValid, setPackageIntactDateValid] = useState<YesNoValue | "">("");
@@ -167,6 +171,7 @@ export function OperationalPublicForm({
   const temperatureOptions = useMemo(() => getTemperatureOptions(productType), [productType]);
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
   const hasSelectedTemperature = temperatureC !== "";
+  const supplySubmittedProductName = [productName.trim(), providerName.trim()].filter(Boolean).join(" - ");
   const supplyStorageKey = `quimly:supply-reception:${token}`;
   const supplyActionTakenItems = useMemo<SupplyActionTakenItem[]>(() => {
     const items: SupplyActionTakenItem[] = [];
@@ -174,7 +179,6 @@ export function OperationalPublicForm({
     if (showTemperaturePicker && hasSelectedTemperature && !temperatureCompliant) {
       items.push({
         key: "temperature",
-        icon: "❄️",
         text: "Temperatura fuera de rango seguro.",
       });
     }
@@ -182,7 +186,6 @@ export function OperationalPublicForm({
     if (packageIntactDateValid === "false") {
       items.push({
         key: "package",
-        icon: "📦",
         text: "Empaque roto o fecha no vigente.",
       });
     }
@@ -190,7 +193,6 @@ export function OperationalPublicForm({
     if (organolepticAdequate === "false") {
       items.push({
         key: "organoleptic",
-        icon: "👃",
         text: "Aspecto u olor no adecuados.",
       });
     }
@@ -208,19 +210,25 @@ export function OperationalPublicForm({
     decision === "Aceptar Producto"
       ? {
           key: "accepted",
-          icon: "✅",
           text: "Producto aceptado.",
         }
       : decision === "Rechazar Producto"
         ? {
             key: "rejected",
-            icon: "❌",
             text: "Producto rechazado.",
           }
         : null;
   const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
   const actionTakenPlaceholder =
     decision === "Rechazar Producto" ? supplyRejectedActionPlaceholder : supplyAcceptedActionPlaceholder;
+  const supplyStepLabel =
+    currentStep === 2
+      ? "2A"
+      : currentStep === 3
+        ? "2B"
+        : currentStep >= 4
+          ? String(currentStep - 1)
+          : String(currentStep);
 
   useEffect(() => {
     if (!isSupplyReception) {
@@ -254,6 +262,7 @@ export function OperationalPublicForm({
         );
         setDecision(draft.decision && isSupplyDecision(draft.decision) ? draft.decision : "");
         setObservations(typeof draft.observations === "string" ? draft.observations : "");
+        setProviderName(typeof draft.providerName === "string" ? draft.providerName : "");
         setHasLoadedSupplyDraft(true);
       });
     } catch {
@@ -271,6 +280,7 @@ export function OperationalPublicForm({
     const draft: SupplyDraft = {
       operatorName,
       productName,
+      providerName,
       productType,
       temperatureC,
       packageIntactDateValid,
@@ -289,6 +299,7 @@ export function OperationalPublicForm({
     organolepticAdequate,
     packageIntactDateValid,
     productName,
+    providerName,
     productType,
     supplyStorageKey,
     temperatureC,
@@ -336,7 +347,11 @@ export function OperationalPublicForm({
 
   function handleSuccessAccept() {
     if (isSupplyReception) {
-      window.localStorage.removeItem(supplyStorageKey);
+      const rememberedDraft: SupplyDraft = {
+        operatorName,
+      };
+
+      window.localStorage.setItem(supplyStorageKey, JSON.stringify(rememberedDraft));
     }
 
     window.location.reload();
@@ -350,6 +365,60 @@ export function OperationalPublicForm({
     }
   }
 
+  function goBackSupplyStep() {
+    if (currentStep === 2) {
+      setCurrentStep(1);
+      return;
+    }
+
+    if (currentStep === 3) {
+      setCurrentStep(2);
+      return;
+    }
+
+    if (currentStep === 4) {
+      setCurrentStep(3);
+      return;
+    }
+
+    if (currentStep === 5) {
+      setCurrentStep(4);
+      return;
+    }
+
+    if (currentStep === 6) {
+      setCurrentStep(showTemperaturePicker ? 5 : 4);
+      return;
+    }
+
+    if (currentStep === 7) {
+      setCurrentStep(6);
+      return;
+    }
+
+    if (currentStep === 8) {
+      setCurrentStep(7);
+      return;
+    }
+
+    if (currentStep === 9) {
+      setCurrentStep(8);
+      return;
+    }
+
+    if (currentStep === 10) {
+      setCurrentStep(showActionTakenBlock ? 9 : 8);
+    }
+  }
+
+  function selectSupplyProductType(nextProductType: SupplyProductType) {
+    selectProductType(nextProductType);
+  }
+
+  function selectSupplyDecision(nextDecision: SupplyDecision) {
+    setDecision(nextDecision);
+  }
+
   return (
     <OperationalFormLayout
       title={label.title}
@@ -359,6 +428,18 @@ export function OperationalPublicForm({
     >
       <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
+        {isSupplyReception ? (
+          <>
+            <input type="hidden" name="operatorName" value={operatorName} />
+            <input type="hidden" name="productName" value={supplySubmittedProductName} />
+            <input type="hidden" name="productType" value={productType} />
+            <input type="hidden" name="temperatureC" value={temperatureC} />
+            <input type="hidden" name="packageIntactDateValid" value={packageIntactDateValid} />
+            <input type="hidden" name="organolepticAdequate" value={organolepticAdequate} />
+            <input type="hidden" name="decision" value={decision} />
+            <input type="hidden" name="observations" value={observations} />
+          </>
+        ) : null}
 
         {!isSupplyReception ? (
           <label className={operationalFormStyles.field}>
@@ -447,286 +528,431 @@ export function OperationalPublicForm({
         ) : null}
 
         {formType === "supply_reception" ? (
-          <>
-            <OperationalFormSection title="DATOS DE RECEPCIÓN">
-              <label className={operationalFormStyles.field}>
-                <span className={operationalFormStyles.fieldLabel}>¿Quién recibe el producto?</span>
+          <section className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white/72 px-5 py-6 shadow-[0_24px_60px_rgba(17,24,22,0.08)]">
+            <div className="flex min-h-8 items-center justify-between gap-3">
+              {currentStep > 1 ? (
+                <button
+                  type="button"
+                  onClick={goBackSupplyStep}
+                  className="text-sm font-black text-[#66736f] transition hover:text-[#111816]"
+                >
+                  Volver
+                </button>
+              ) : (
+                <span />
+              )}
+              <span className="text-[0.68rem] font-bold uppercase tracking-widest text-[#7b8c87]">
+                Paso {supplyStepLabel} de 9
+              </span>
+            </div>
+
+            {currentStep === 1 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Responsable</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién recibe el producto?</h2>
+                </div>
                 <input
-                  name="operatorName"
                   autoComplete="name"
-                  required
                   placeholder="Ej. Ana Gomez"
                   value={operatorName}
                   onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                  className={operationalFormStyles.inputOnWhite}
+                  className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
                 />
-              </label>
-              <label className={operationalFormStyles.field}>
-                <span className={operationalFormStyles.fieldLabel}>¿Qué producto y distribuidor ingresa?</span>
+                <button
+                  type="button"
+                  disabled={!operatorName.trim()}
+                  onClick={() => setCurrentStep(2)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
+
+            {currentStep === 2 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Producto</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Nombre del producto</h2>
+                </div>
                 <input
-                  name="productName"
-                  required
-                  placeholder="Ej. Pechuga de pollo - Distriaves"
+                  autoComplete="off"
+                  placeholder="Ej. Pechuga de pollo"
                   value={productName}
                   onChange={(event) => setProductName(event.target.value)}
-                  className={operationalFormStyles.inputOnWhite}
+                  className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
                 />
-              </label>
-            </OperationalFormSection>
+                <button
+                  type="button"
+                  disabled={!productName.trim()}
+                  onClick={() => setCurrentStep(3)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-            <OperationalFormSection title="CONTROL DE TEMPERATURA">
-              <fieldset className={operationalFormStyles.field}>
-                <legend className={operationalFormStyles.fieldLabel}>¿Cómo debe conservarse este producto?</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {supplyProductTypes.map((option) => (
-                    <label key={option} className={operationalFormStyles.radioLabel}>
-                      <input
-                        className={operationalFormStyles.radioInput}
-                        type="radio"
-                        name="productType"
-                        value={option}
-                        checked={productType === option}
-                        onChange={() => selectProductType(option)}
-                        required
-                      />
-                      <span className="flex min-h-14 items-center justify-center rounded-2xl border border-[#c7d8d4] bg-white px-2 text-center text-sm font-black text-[#111816] transition peer-checked:border-[#147060] peer-checked:bg-[#147060] peer-checked:text-white">
-                        {option}
-                      </span>
-                    </label>
-                  ))}
+            {currentStep === 3 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Proveedor</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Nombre del proveedor</h2>
                 </div>
-              </fieldset>
+                <input
+                  autoComplete="organization"
+                  placeholder="Ej. Distriaves"
+                  value={providerName}
+                  onChange={(event) => setProviderName(event.target.value)}
+                  className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                />
+                <button
+                  type="button"
+                  disabled={!providerName.trim()}
+                  onClick={() => setCurrentStep(4)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-              {showTemperaturePicker ? (
-                <>
-                  <div ref={temperaturePickerRef} className={operationalFormStyles.field}>
-                    <span className={operationalFormStyles.fieldLabel}>
-                      ¿Con qué temperatura llega el producto?
-                    </span>
-                    <input type="hidden" name="temperatureC" value={temperatureC} />
+            {currentStep === 4 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Conservación</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Método de conservación</h2>
+                </div>
+                <div className="grid gap-3">
+                  {supplyProductTypes.map((option) => (
                     <button
+                      key={option}
                       type="button"
-                      aria-expanded={isTemperatureMenuOpen}
-                      onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
+                      onClick={() => selectSupplyProductType(option)}
                       className={[
-                        "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border px-4 text-left text-lg font-black outline-none transition focus:border-[#147060]",
-                        hasSelectedTemperature && temperatureCompliant
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                          : "border-[#c7d8d4] bg-white text-[#111816]",
+                        "min-h-16 rounded-2xl border px-5 text-left text-xl font-black transition",
+                        productType === option
+                          ? "border-[#111816] bg-[#111816] text-white"
+                          : "border-[#c7d8d4] bg-white text-neutral-950",
                       ].join(" ")}
                     >
-                      <span className={hasSelectedTemperature ? "" : "text-base text-[#7b8c87]"}>
-                        {hasSelectedTemperature ? formatTemperature(temperatureC) : "Seleccione la temperatura"}
-                      </span>
-                      <span aria-hidden="true" className="text-xl leading-none text-[#147060]">
-                        ▾
-                      </span>
+                      {supplyProductTypeLabels[option]}
                     </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={!productType}
+                  onClick={() => setCurrentStep(productType === "Ambiente" ? 6 : 5)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-                    {isTemperatureMenuOpen ? (
-                      <div className="max-h-64 overflow-y-auto rounded-2xl border border-[#cfe0dc] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.14)]">
-                        <div className="grid gap-1">
-                          {temperatureOptions.map((option) => {
-                            const optionCompliant = isTemperatureCompliant(productType, String(option));
-                            const isSelected = temperatureC === String(option);
+            {currentStep === 5 ? (
+              <div ref={temperaturePickerRef} className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Temperatura</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
+                    ¿Con qué temperatura llega el producto?
+                  </h2>
+                </div>
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={isTemperatureMenuOpen}
+                    onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
+                    className={[
+                      "flex min-h-20 w-full items-center justify-between gap-3 rounded-2xl border px-5 text-left text-3xl font-black outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10",
+                      hasSelectedTemperature
+                        ? "border-[#147060]/20 bg-white text-neutral-950"
+                        : "border-[#c7d8d4] bg-white text-[#7b8c87]",
+                    ].join(" ")}
+                  >
+                    <span>{hasSelectedTemperature ? `${temperatureC}°C` : "Seleccione"}</span>
+                    <span aria-hidden="true" className="text-2xl leading-none text-[#147060]">
+                      ▾
+                    </span>
+                  </button>
 
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                onClick={() => {
-                                  setTemperatureC(String(option));
-                                  setIsTemperatureMenuOpen(false);
-                                }}
+                  {isTemperatureMenuOpen ? (
+                    <div className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]">
+                      <div className="grid gap-1">
+                        {temperatureOptions.map((option) => {
+                          const optionCompliant = isTemperatureCompliant(productType, String(option));
+                          const isSelected = temperatureC === String(option);
+
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => {
+                                setTemperatureC(String(option));
+                                setIsTemperatureMenuOpen(false);
+                              }}
+                              className={[
+                                "flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-lg font-black transition",
+                                isSelected
+                                  ? "border-[#111816] bg-[#111816] text-white"
+                                  : optionCompliant
+                                    ? "border-emerald-100 bg-emerald-50 text-emerald-950"
+                                    : "border-rose-100 bg-rose-50 text-[#7b1b28]",
+                              ].join(" ")}
+                            >
+                              <span>{option}°C</span>
+                              <span
+                                aria-hidden="true"
                                 className={[
-                                  "flex min-h-11 items-center justify-between rounded-xl border px-4 text-left text-base font-black transition",
-                                  optionCompliant
-                                    ? "border-emerald-100 bg-emerald-50 text-emerald-900"
-                                    : "border-rose-100 bg-rose-50 text-rose-900",
-                                  isSelected ? "ring-2 ring-[#147060]" : "",
+                                  "h-3 w-3 rounded-[3px]",
+                                  optionCompliant ? "bg-emerald-300" : "bg-[#8f1d2c]",
                                 ].join(" ")}
-                              >
-                                <span>{formatTemperature(option)}</span>
-                                <span
-                                  aria-hidden="true"
-                                  className={[
-                                    "h-3 w-3 rounded-[3px]",
-                                    optionCompliant ? "bg-emerald-400" : "bg-rose-400",
-                                  ].join(" ")}
-                                />
-                              </button>
-                            );
-                          })}
-                        </div>
+                              />
+                            </button>
+                          );
+                        })}
                       </div>
-                    ) : null}
-                  </div>
-
-                  {hasSelectedTemperature ? (
-                    <div className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[#cfe0dc] bg-white px-4 py-3">
-                      <span className={operationalFormStyles.fieldLabel}>Resultado</span>
-                      <span
-                        className={[
-                          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black",
-                          temperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
-                        ].join(" ")}
-                      >
-                        <span aria-hidden="true">{temperatureCompliant ? "✓" : "!"}</span>
-                        {temperatureCompliant ? "Cumple" : "No cumple"}
-                      </span>
                     </div>
                   ) : null}
-                </>
-              ) : null}
-            </OperationalFormSection>
-
-            <OperationalFormSection title="INSPECCIÓN VISUAL">
-              <fieldset className={operationalFormStyles.field}>
-                <legend className={operationalFormStyles.fieldLabel}>¿Empaque y fecha correcta?</legend>
-                <div className={operationalFormStyles.yesNoGrid}>
-                  <label className={operationalFormStyles.radioLabel}>
-                    <input
-                      className={operationalFormStyles.radioInput}
-                      type="radio"
-                      name="packageIntactDateValid"
-                      value="true"
-                      checked={packageIntactDateValid === "true"}
-                      onChange={() => setPackageIntactDateValid("true")}
-                      required
-                    />
-                    <span className={operationalFormStyles.yesButton}>Si</span>
-                  </label>
-                  <label className={operationalFormStyles.radioLabel}>
-                    <input
-                      className={operationalFormStyles.radioInput}
-                      type="radio"
-                      name="packageIntactDateValid"
-                      value="false"
-                      checked={packageIntactDateValid === "false"}
-                      onChange={() => setPackageIntactDateValid("false")}
-                      required
-                    />
-                    <span className={operationalFormStyles.noButton}>No</span>
-                  </label>
                 </div>
-              </fieldset>
+                {hasSelectedTemperature ? (
+                  <div className="flex min-h-14 items-center justify-between rounded-2xl bg-[#f4faf7] px-4 py-3">
+                    <span className="text-sm font-black text-neutral-950">Resultado</span>
+                    <span
+                      className={[
+                        "inline-flex items-center rounded-full px-3 py-1 text-sm font-black",
+                        temperatureCompliant ? "bg-emerald-950 text-white" : "bg-[#8f1d2c] text-white",
+                      ].join(" ")}
+                    >
+                      {temperatureCompliant ? "Cumple" : "No cumple"}
+                    </span>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!hasSelectedTemperature}
+                  onClick={() => setCurrentStep(6)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-              <fieldset className={operationalFormStyles.field}>
-                <legend className={operationalFormStyles.fieldLabel}>¿Se ve y huele bien?</legend>
-                <div className={operationalFormStyles.yesNoGrid}>
-                  <label className={operationalFormStyles.radioLabel}>
-                    <input
-                      className={operationalFormStyles.radioInput}
-                      type="radio"
-                      name="organolepticAdequate"
-                      value="true"
-                      checked={organolepticAdequate === "true"}
-                      onChange={() => setOrganolepticAdequate("true")}
-                      required
-                    />
-                    <span className={operationalFormStyles.yesButton}>Si</span>
-                  </label>
-                  <label className={operationalFormStyles.radioLabel}>
-                    <input
-                      className={operationalFormStyles.radioInput}
-                      type="radio"
-                      name="organolepticAdequate"
-                      value="false"
-                      checked={organolepticAdequate === "false"}
-                      onChange={() => setOrganolepticAdequate("false")}
-                      required
-                    />
-                    <span className={operationalFormStyles.noButton}>No</span>
-                  </label>
+            {currentStep === 6 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Empaque</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
+                    ¿El empaque está correcto e intacto?
+                  </h2>
                 </div>
-              </fieldset>
-            </OperationalFormSection>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPackageIntactDateValid("true");
+                    }}
+                    className={[
+                      "min-h-24 rounded-2xl border text-2xl font-black transition",
+                      packageIntactDateValid === "true"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                        : "border-[#c7d8d4] bg-white text-neutral-950",
+                    ].join(" ")}
+                  >
+                    Sí
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPackageIntactDateValid("false");
+                    }}
+                    className={[
+                      "min-h-24 rounded-2xl border text-2xl font-black transition",
+                      packageIntactDateValid === "false"
+                        ? "border-rose-200 bg-rose-50 text-[#7b1b28]"
+                        : "border-[#c7d8d4] bg-white text-neutral-950",
+                    ].join(" ")}
+                  >
+                    No
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  disabled={!packageIntactDateValid}
+                  onClick={() => setCurrentStep(7)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-            <OperationalFormSection title="DECISIÓN">
-              <fieldset className={operationalFormStyles.field}>
-                <legend className={operationalFormStyles.fieldLabel}>Decisión de aceptación</legend>
+            {currentStep === 7 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Inspección</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
+                    ¿El producto se ve y huele como se espera?
+                  </h2>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrganolepticAdequate("true");
+                    }}
+                    className={[
+                      "min-h-24 rounded-2xl border text-2xl font-black transition",
+                      organolepticAdequate === "true"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                        : "border-[#c7d8d4] bg-white text-neutral-950",
+                    ].join(" ")}
+                  >
+                    Sí
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrganolepticAdequate("false");
+                    }}
+                    className={[
+                      "min-h-24 rounded-2xl border text-2xl font-black transition",
+                      organolepticAdequate === "false"
+                        ? "border-rose-200 bg-rose-50 text-[#7b1b28]"
+                        : "border-[#c7d8d4] bg-white text-neutral-950",
+                    ].join(" ")}
+                  >
+                    No
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  disabled={!organolepticAdequate}
+                  onClick={() => setCurrentStep(8)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
+
+            {currentStep === 8 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Decisión final</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Decisión de aceptación</h2>
+                </div>
                 <div className="grid gap-3">
                   {supplyDecisions.map((option) => {
                     const isAccept = option === "Aceptar Producto";
                     const optionLabel = isAccept ? "Aceptar" : "Rechazar";
 
                     return (
-                      <label key={option} className={operationalFormStyles.radioLabel}>
-                        <input
-                          className={operationalFormStyles.radioInput}
-                          type="radio"
-                          name="decision"
-                          value={option}
-                          checked={decision === option}
-                          onChange={() => setDecision(option)}
-                          required
-                        />
-                        <span
-                          className={[
-                            "flex min-h-14 items-center justify-center rounded-2xl border px-3 text-center text-base font-black transition peer-checked:text-white",
-                            isAccept
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 peer-checked:border-emerald-700 peer-checked:bg-emerald-700"
-                              : "border-rose-200 bg-rose-50 text-rose-800 peer-checked:border-rose-700 peer-checked:bg-rose-700",
-                          ].join(" ")}
-                        >
-                          {optionLabel}
-                        </span>
-                      </label>
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => selectSupplyDecision(option)}
+                        className={[
+                          "min-h-16 rounded-2xl border px-5 text-left text-xl font-black transition",
+                          decision === option && isAccept
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                            : decision === option
+                              ? "border-rose-200 bg-rose-50 text-[#7b1b28]"
+                              : "border-[#c7d8d4] bg-white text-neutral-950",
+                        ].join(" ")}
+                      >
+                        {optionLabel}
+                      </button>
                     );
                   })}
                 </div>
-              </fieldset>
+                <button
+                  type="button"
+                  disabled={!decision}
+                  onClick={() => setCurrentStep(decision === "Rechazar Producto" || supplyActionTakenItems.length > 0 ? 9 : 10)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
 
-              {showActionTakenBlock ? (
-                <div className={operationalFormStyles.field}>
-                  <label className={operationalFormStyles.fieldLabel} htmlFor="supply-action-taken">
-                    ⚠ Acción tomada (Obligatorio)
-                  </label>
-                  <div className="grid gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold leading-6 text-amber-900">
-                    <p>Se requiere registrar la acción tomada frente a:</p>
-                    <ul className="grid gap-1">
-                      {supplyActionTakenItems.map((item) => (
-                        <li key={item.key} className="flex gap-2">
-                          <span aria-hidden="true">{item.icon}</span>
-                          <span>{item.text}</span>
-                        </li>
-                      ))}
-                      {supplyDecisionTakenItem ? (
-                        <li key={supplyDecisionTakenItem.key} className="flex gap-2">
-                          <span aria-hidden="true">{supplyDecisionTakenItem.icon}</span>
-                          <span>{supplyDecisionTakenItem.text}</span>
-                        </li>
-                      ) : null}
-                    </ul>
-                  </div>
-                  <textarea
-                    id="supply-action-taken"
-                    ref={actionTakenTextareaRef}
-                    name="observations"
-                    required
-                    rows={5}
-                    aria-invalid={showActionTakenError}
-                    aria-describedby={showActionTakenError ? "supply-action-taken-error" : undefined}
-                    placeholder={actionTakenPlaceholder}
-                    value={observations}
-                    onChange={(event) => {
-                      setObservations(event.target.value);
-
-                      if (event.target.value.trim()) {
-                        setActionTakenError("");
-                      }
-                    }}
-                    className={operationalFormStyles.textareaOnWhite}
-                  />
-                  {showActionTakenError ? (
-                    <p id="supply-action-taken-error" className={operationalFormStyles.statusError}>
-                      {actionTakenError}
-                    </p>
-                  ) : null}
+            {currentStep === 9 ? (
+              <div className="grid gap-7">
+                <div className="grid gap-3">
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
+                    ¿Qué acción se tomó con este producto?
+                  </h2>
                 </div>
-              ) : null}
-            </OperationalFormSection>
-          </>
+                <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
+                  <p className="text-[#7b1b28]">Se requiere registrar la acción tomada frente a:</p>
+                  <ul className="grid gap-1.5">
+                    {supplyActionTakenItems.map((item) => (
+                      <li key={item.key} className="flex gap-2.5">
+                        <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 rounded-full bg-[#8f1d2c]" />
+                        <span>{item.text}</span>
+                      </li>
+                    ))}
+                    {supplyDecisionTakenItem ? (
+                      <li key={supplyDecisionTakenItem.key} className="flex gap-2.5">
+                        <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 rounded-full bg-[#8f1d2c]" />
+                        <span>{supplyDecisionTakenItem.text}</span>
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
+                <textarea
+                  id="supply-action-taken"
+                  ref={actionTakenTextareaRef}
+                  rows={6}
+                  aria-invalid={showActionTakenError}
+                  aria-describedby={showActionTakenError ? "supply-action-taken-error" : undefined}
+                  placeholder={actionTakenPlaceholder}
+                  value={observations}
+                  onChange={(event) => {
+                    setObservations(event.target.value);
+
+                    if (event.target.value.trim()) {
+                      setActionTakenError("");
+                    }
+                  }}
+                  className="min-h-40 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-5 py-4 text-lg font-bold text-neutral-950 outline-none transition placeholder:text-sm placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                />
+                {showActionTakenError ? (
+                  <p id="supply-action-taken-error" className={operationalFormStyles.statusError}>
+                    {actionTakenError}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!observations.trim()}
+                  onClick={() => setCurrentStep(10)}
+                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                >
+                  Continuar
+                </button>
+              </div>
+            ) : null}
+
+            {currentStep === 10 ? (
+              <div className="grid gap-8">
+                <div className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#66736f]">Cierre y firma</p>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
+                </div>
+                <div className="grid gap-1 rounded-2xl bg-[#f4faf7] px-5 py-4">
+                  <p className="text-sm font-bold text-[#51645f]">Responsable del registro</p>
+                  <p className="text-2xl font-black text-neutral-950">{operatorName || "Sin definir"}</p>
+                </div>
+                <OperationalFormSubmitButton disabled={isDisabled}>
+                  {isPending ? "Guardando..." : "Firmar y registrar"}
+                </OperationalFormSubmitButton>
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         {formType === "water_quality" ? (
@@ -761,11 +987,15 @@ export function OperationalPublicForm({
 
         {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
 
-        <OperationalFormResponsibleSummary responsibleName={operatorName} />
+        {!isSupplyReception ? (
+          <>
+            <OperationalFormResponsibleSummary responsibleName={operatorName} />
 
-        <OperationalFormSubmitButton disabled={isDisabled}>
-          {isPending ? "Guardando..." : isSupplyReception ? "Firmar y registrar" : "Guardar registro"}
-        </OperationalFormSubmitButton>
+            <OperationalFormSubmitButton disabled={isDisabled}>
+              {isPending ? "Guardando..." : "Guardar registro"}
+            </OperationalFormSubmitButton>
+          </>
+        ) : null}
       </form>
 
       <OperationalFormSuccessDialog open={Boolean(state.success)} onAccept={handleSuccessAccept} />
