@@ -189,24 +189,29 @@ function PublicFormDateControl({
       <button
         type="button"
         onClick={onOpenDatePicker}
-        className="flex items-center gap-2 text-right font-mono text-xs font-semibold tracking-[0.08em] text-white/90 transition hover:text-white"
+        className="group grid justify-items-end gap-1 text-right text-white/90 transition hover:text-white"
       >
-        <span>{dateLabel}</span>
-        <svg
-          aria-hidden="true"
-          className="h-4 w-4 shrink-0"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          viewBox="0 0 24 24"
-        >
-          <path d="M8 2v4" />
-          <path d="M16 2v4" />
-          <path d="M3 10h18" />
-          <path d="M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-        </svg>
+        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/70 transition group-hover:text-white">
+          Cambiar fecha y hora:
+        </span>
+        <span className="flex items-center gap-2 font-mono text-xs font-semibold tracking-[0.08em]">
+          <span>{dateLabel}</span>
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M8 2v4" />
+            <path d="M16 2v4" />
+            <path d="M3 10h18" />
+            <path d="M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+          </svg>
+        </span>
       </button>
     </div>
   );
