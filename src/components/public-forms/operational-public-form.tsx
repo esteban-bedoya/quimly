@@ -147,46 +147,67 @@ function toIsoDateTime(value: string) {
 
 function PublicFormCardHeader({
   canGoBack,
-  dateLabel,
   onBack,
-  onOpenDatePicker,
   stepLabel,
   totalSteps,
 }: {
   canGoBack: boolean;
-  dateLabel: string;
   onBack?: () => void;
-  onOpenDatePicker: () => void;
   stepLabel: string;
   totalSteps: number;
 }) {
   return (
-    <div className="grid gap-4">
-      <div className="flex w-full items-start justify-between gap-4 border-b border-neutral-100 pb-3">
-        <button
-          type="button"
-          disabled={!canGoBack}
-          onClick={onBack}
-          className="text-left text-sm font-medium text-neutral-500 transition hover:text-neutral-900 disabled:cursor-default disabled:text-neutral-300"
-        >
-          ← Volver
-        </button>
+    <div className="border-b border-neutral-100 pb-3">
+      <div className="flex w-full items-center gap-4">
+        {canGoBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="shrink-0 text-left text-[11px] font-bold uppercase tracking-widest text-neutral-500 transition hover:text-neutral-800"
+          >
+            ← Volver
+          </button>
+        ) : null}
 
-        <button
-          type="button"
-          onClick={onOpenDatePicker}
-          className="flex items-center gap-1 pt-0.5 text-right font-mono text-xs font-semibold text-neutral-400 transition hover:text-neutral-900"
-        >
-          <span>{dateLabel}</span>
-          <span className="text-[10px]" aria-hidden="true">
-            ✎
-          </span>
-        </button>
+        <p className="ml-auto text-right text-[11px] font-bold uppercase tracking-widest text-neutral-500">
+          Paso {stepLabel} de {totalSteps}
+        </p>
       </div>
+    </div>
+  );
+}
 
-      <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-        Paso {stepLabel} de {totalSteps}
-      </p>
+function PublicFormDateControl({
+  dateLabel,
+  onOpenDatePicker,
+}: {
+  dateLabel: string;
+  onOpenDatePicker: () => void;
+}) {
+  return (
+    <div className="flex justify-end px-1">
+      <button
+        type="button"
+        onClick={onOpenDatePicker}
+        className="flex items-center gap-2 text-right font-mono text-xs font-semibold tracking-[0.08em] text-white/90 transition hover:text-white"
+      >
+        <span>{dateLabel}</span>
+        <svg
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <path d="M8 2v4" />
+          <path d="M16 2v4" />
+          <path d="M3 10h18" />
+          <path d="M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -517,14 +538,10 @@ export function OperationalPublicForm({
         ) : null}
 
         {!isSupplyReception ? (
-          <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
-            <PublicFormCardHeader
-              canGoBack={false}
-              dateLabel={recordedAtDisplay}
-              onOpenDatePicker={openDatePicker}
-              stepLabel="1"
-              totalSteps={1}
-            />
+          <div className="grid gap-2">
+            <PublicFormDateControl dateLabel={recordedAtDisplay} onOpenDatePicker={openDatePicker} />
+            <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <PublicFormCardHeader canGoBack={false} stepLabel="1" totalSteps={1} />
 
             <label className={operationalFormStyles.field}>
               <span className={operationalFormStyles.fieldLabel}>Nombre del operador</span>
@@ -647,17 +664,17 @@ export function OperationalPublicForm({
             <OperationalFormSubmitButton disabled={isDisabled}>
               {isPending ? "Guardando..." : "Guardar registro"}
             </OperationalFormSubmitButton>
-          </section>
+            </section>
+          </div>
         ) : null}
 
         {formType === "supply_reception" ? (
-          <section className="grid">
+          <section className="grid gap-2">
+            <PublicFormDateControl dateLabel={recordedAtDisplay} onOpenDatePicker={openDatePicker} />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
-                dateLabel={recordedAtDisplay}
                 onBack={goBackSupplyStep}
-                onOpenDatePicker={openDatePicker}
                 stepLabel={supplyStepLabel}
                 totalSteps={9}
               />
