@@ -10,6 +10,7 @@ import {
   OperationalFormSuccessDialog,
   operationalFormStyles,
 } from "@/components/public-forms/operational-form-layout";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
@@ -1084,17 +1085,12 @@ export function OperationalPublicForm({
               <p className="text-sm font-semibold leading-5 text-neutral-500">Puedes ajustar máximo 5 días hacia atrás.</p>
             </div>
 
-            <label className="grid gap-2">
-              <span className="text-sm font-bold text-neutral-700">Registro</span>
-              <input
-                type="datetime-local"
-                value={datePickerValue}
-                min={recordDateLimits.min}
-                max={recordDateLimits.max}
-                onChange={(event) => setDatePickerValue(event.target.value)}
-                className="min-h-14 rounded-2xl border border-[#c7d8d4] bg-white px-4 text-base font-bold text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
-              />
-            </label>
+            <DateTimePicker
+              value={datePickerValue}
+              min={recordDateLimits.min}
+              max={recordDateLimits.max}
+              onChange={setDatePickerValue}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <button
