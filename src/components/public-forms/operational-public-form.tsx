@@ -189,9 +189,9 @@ function PublicFormDateControl({
       <button
         type="button"
         onClick={onOpenDatePicker}
-        className="grid justify-items-end gap-1 text-right text-white"
+        className="group grid justify-items-end gap-1 text-right text-white"
       >
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white">
+        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white transition group-hover:text-white/80">
           Cambiar fecha y hora:
         </span>
         <span className="font-mono text-xs font-semibold tracking-[0.08em]">
