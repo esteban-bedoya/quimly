@@ -5,7 +5,6 @@ import { type FormEvent, useActionState, useEffect, useMemo, useRef, useState } 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import {
   OperationalFormLayout,
-  OperationalFormResponsibleSummary,
   OperationalFormSubmitButton,
   OperationalFormSuccessDialog,
   operationalFormStyles,
@@ -146,6 +145,18 @@ function toIsoDateTime(value: string) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+function getInitialTemperatureScrollTarget(productType: SupplyProductType | "") {
+  if (productType === "Refrigerado") {
+    return 1;
+  }
+
+  if (productType === "Congelado") {
+    return -24;
+  }
+
+  return null;
+}
+
 function PublicFormCardHeader({
   canGoBack,
   onBack,
@@ -180,9 +191,11 @@ function PublicFormCardHeader({
 
 function PublicFormDateControl({
   dateLabel,
+  isModified,
   onOpenDatePicker,
 }: {
   dateLabel: string;
+  isModified: boolean;
   onOpenDatePicker: () => void;
 }) {
   return (
@@ -195,9 +208,118 @@ function PublicFormDateControl({
         <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white transition group-hover:text-white/80">
           Cambiar fecha y hora:
         </span>
-        <span className="font-mono text-xs font-semibold tracking-[0.08em]">
+        <span
+          className={[
+            "font-mono text-xs font-semibold tracking-[0.08em] transition",
+            isModified ? "text-[#48c7d2]" : "text-white",
+          ].join(" ")}
+        >
           {dateLabel}
         </span>
+      </button>
+    </div>
+  );
+}
+
+function EditableResponsibleSummary({
+  responsibleName,
+  onResponsibleNameChange,
+}: {
+  responsibleName: string;
+  onResponsibleNameChange: (responsibleName: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftName, setDraftName] = useState(responsibleName);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const displayName = responsibleName.trim();
+  const canSave = Boolean(draftName.trim());
+
+  function startEditing() {
+    setDraftName(responsibleName);
+    setIsEditing(true);
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }
+
+  function saveResponsibleName() {
+    const nextName = draftName.trim();
+
+    if (!nextName) {
+      return;
+    }
+
+    onResponsibleNameChange(formatResponsibleName(nextName));
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="flex min-h-20 items-center justify-between gap-3 rounded-2xl bg-[#f4faf7] px-5 py-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-[#51645f]">Responsable del registro</p>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={draftName}
+            onChange={(event) => setDraftName(formatResponsibleName(event.target.value))}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                saveResponsibleName();
+              }
+
+              if (event.key === "Escape") {
+                setIsEditing(false);
+              }
+            }}
+            className="mt-1 min-h-10 w-full rounded-xl border border-[#147060]/30 bg-white px-3 text-xl font-black text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+          />
+        ) : (
+          <p className={displayName ? "truncate text-2xl font-black text-neutral-950" : "text-2xl font-black text-[#7b8c87]"}>
+            {displayName || "Sin definir"}
+          </p>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={isEditing ? saveResponsibleName : startEditing}
+        disabled={isEditing && !canSave}
+        className={[
+          "grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-45",
+          isEditing ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-[#d7e4e1] bg-white text-neutral-800",
+        ].join(" ")}
+        aria-label={isEditing ? "Guardar responsable del registro" : "Editar responsable del registro"}
+      >
+        {isEditing ? (
+          <svg
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2.6"
+            viewBox="0 0 24 24"
+          >
+            <path d="m20 6-11 11-5-5" />
+          </svg>
+        ) : (
+          <svg
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2.2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        )}
       </button>
     </div>
   );
@@ -242,6 +364,7 @@ export function OperationalPublicForm({
   const [hasCustomRecordedAt, setHasCustomRecordedAt] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
+  const temperatureMenuRef = useRef<HTMLDivElement>(null);
   const actionTakenTextareaRef = useRef<HTMLTextAreaElement>(null);
   const label = operationalFormLabels[formType];
   const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
@@ -401,6 +524,33 @@ export function OperationalPublicForm({
     };
   }, [isTemperatureMenuOpen]);
 
+  useEffect(() => {
+    if (!isTemperatureMenuOpen) {
+      return;
+    }
+
+    const targetTemperature = hasSelectedTemperature
+      ? Number(temperatureC)
+      : getInitialTemperatureScrollTarget(productType);
+
+    if (!Number.isFinite(targetTemperature)) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const menu = temperatureMenuRef.current;
+      const targetOption = menu?.querySelector<HTMLElement>(`[data-temperature-option="${targetTemperature}"]`);
+
+      if (!menu || !targetOption) {
+        return;
+      }
+
+      menu.scrollTop = Math.max(targetOption.offsetTop - menu.offsetTop - 8, 0);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [hasSelectedTemperature, isTemperatureMenuOpen, productType, temperatureC]);
+
   function selectProductType(nextProductType: SupplyProductType) {
     setProductType(nextProductType);
     setIsTemperatureMenuOpen(false);
@@ -530,7 +680,11 @@ export function OperationalPublicForm({
 
         {!isSupplyReception ? (
           <div className="grid gap-2">
-            <PublicFormDateControl dateLabel={recordedAtDisplay} onOpenDatePicker={openDatePicker} />
+            <PublicFormDateControl
+              dateLabel={recordedAtDisplay}
+              isModified={hasCustomRecordedAt}
+              onOpenDatePicker={openDatePicker}
+            />
             <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader canGoBack={false} stepLabel="1" totalSteps={1} />
 
@@ -650,7 +804,10 @@ export function OperationalPublicForm({
 
             {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
 
-            <OperationalFormResponsibleSummary responsibleName={operatorName} />
+            <EditableResponsibleSummary
+              responsibleName={operatorName}
+              onResponsibleNameChange={setOperatorName}
+            />
 
             <OperationalFormSubmitButton disabled={isDisabled}>
               {isPending ? "Guardando..." : "Guardar registro"}
@@ -661,7 +818,11 @@ export function OperationalPublicForm({
 
         {formType === "supply_reception" ? (
           <section className="grid gap-2">
-            <PublicFormDateControl dateLabel={recordedAtDisplay} onOpenDatePicker={openDatePicker} />
+            <PublicFormDateControl
+              dateLabel={recordedAtDisplay}
+              isModified={hasCustomRecordedAt}
+              onOpenDatePicker={openDatePicker}
+            />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
@@ -796,7 +957,10 @@ export function OperationalPublicForm({
                   </button>
 
                   {isTemperatureMenuOpen ? (
-                    <div className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]">
+                    <div
+                      ref={temperatureMenuRef}
+                      className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                    >
                       <div className="grid gap-1">
                         {temperatureOptions.map((option) => {
                           const optionCompliant = isTemperatureCompliant(productType, String(option));
@@ -806,6 +970,7 @@ export function OperationalPublicForm({
                             <button
                               key={option}
                               type="button"
+                              data-temperature-option={option}
                               onClick={() => {
                                 setTemperatureC(String(option));
                                 setIsTemperatureMenuOpen(false);
@@ -1056,10 +1221,10 @@ export function OperationalPublicForm({
                 <div className="grid gap-3">
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
                 </div>
-                <div className="grid gap-1 rounded-2xl bg-[#f4faf7] px-5 py-4">
-                  <p className="text-sm font-bold text-[#51645f]">Responsable del registro</p>
-                  <p className="text-2xl font-black text-neutral-950">{operatorName || "Sin definir"}</p>
-                </div>
+                <EditableResponsibleSummary
+                  responsibleName={operatorName}
+                  onResponsibleNameChange={setOperatorName}
+                />
                 <OperationalFormSubmitButton disabled={isDisabled}>
                   {isPending ? "Guardando..." : "Firmar y registrar"}
                 </OperationalFormSubmitButton>
