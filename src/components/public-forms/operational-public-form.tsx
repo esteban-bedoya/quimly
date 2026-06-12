@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import {
@@ -48,23 +48,22 @@ const supplyProductTypeLabels: Record<SupplyProductType, string> = {
   Congelado: "Congelado",
 };
 
-const supplyAcceptedActionPlaceholder = [
-  "Ej. Se acepta para uso inmediato.",
-  "Ej. Se traslada inmediatamente a refrigeración.",
-  "Ej. Se informa al responsable de compras.",
-  "Ej. Se bota a la basura parte del lote",
-].join("\n");
+const otherActionTakenValue = "__other__";
 
-const supplyRejectedActionPlaceholder = [
-  "Ej. Se devuelve al proveedor.",
-  "Ej. Se rechaza el lote afectado.",
-].join("\n");
+const supplyAcceptedActionOptions = [
+  "Se acepta para uso inmediato.",
+  "Se traslada inmediatamente a refrigeración.",
+  "Se informa al responsable de compras.",
+  "Se bota a la basura parte del lote",
+];
 
-const waterCorrectiveActionPlaceholder = [
-  "Ej. Se reportó al administrador",
-  "Ej. Se reportó a EPM",
-  "Ej. Se suspendió el uso de agua de red y se utilizó agua envasada temporalmente.",
-].join("\n");
+const supplyRejectedActionOptions = ["Se devuelve al proveedor.", "Se rechaza el lote afectado."];
+
+const waterCorrectiveActionOptions = [
+  "Se reportó al administrador",
+  "Se reportó a EPM",
+  "Se suspendió el uso de agua de red y se utilizó agua envasada temporalmente.",
+];
 
 const supplyTemperatureSettings: Record<
   Exclude<SupplyProductType, "Ambiente">,
@@ -365,6 +364,102 @@ function EditableResponsibleSummary({
   );
 }
 
+function EmergencyTriangleIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24">
+      <path d="M12 8.5v5" strokeLinecap="round" />
+      <path d="M12 17.25h.01" strokeLinecap="round" />
+      <path
+        d="M10.2 4.35 2.6 17.55A2.1 2.1 0 0 0 4.4 20.7h15.2a2.1 2.1 0 0 0 1.8-3.15L13.8 4.35a2.08 2.08 0 0 0-3.6 0Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ActionTakenChoiceGroup({
+  customValue,
+  errorId,
+  inputRef,
+  name,
+  onCustomChange,
+  onSelect,
+  options,
+  selectedValue,
+}: {
+  customValue: string;
+  errorId?: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  name: string;
+  onCustomChange: (value: string) => void;
+  onSelect: (value: string) => void;
+  options: string[];
+  selectedValue: string;
+}) {
+  const isOtherSelected = selectedValue === otherActionTakenValue;
+
+  return (
+    <div className="grid gap-2" role="radiogroup">
+      {options.map((option) => {
+        const isSelected = selectedValue === option;
+
+        return (
+          <label
+            key={option}
+            className={[
+              "flex min-h-14 items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-black leading-5 transition active:scale-[0.99]",
+              isSelected
+                ? "border-[#111816] bg-[#f4faf7] text-neutral-950"
+                : "border-[#c7d8d4] bg-white text-neutral-950",
+            ].join(" ")}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={option}
+              checked={isSelected}
+              onChange={() => onSelect(option)}
+              className="h-4 w-4 shrink-0 accent-[#111816]"
+            />
+            <span>{option}</span>
+          </label>
+        );
+      })}
+
+      <label
+        className={[
+          "grid gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-black leading-5 transition active:scale-[0.99]",
+          isOtherSelected ? "border-[#111816] bg-[#f4faf7] text-neutral-950" : "border-[#c7d8d4] bg-white text-neutral-950",
+        ].join(" ")}
+      >
+        <span className="flex min-h-7 items-center gap-3">
+          <input
+            type="radio"
+            name={name}
+            value={otherActionTakenValue}
+            checked={isOtherSelected}
+            onChange={() => onSelect(otherActionTakenValue)}
+            className="h-4 w-4 shrink-0 accent-[#111816]"
+          />
+          <span>Otra</span>
+        </span>
+        {isOtherSelected ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={customValue}
+            onChange={(event) => onCustomChange(event.target.value)}
+            aria-describedby={errorId}
+            placeholder="Escribe la medida tomada"
+            className="min-h-12 rounded-xl border border-[#c7d8d4] bg-white px-4 text-base font-bold text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+          />
+        ) : null}
+      </label>
+    </div>
+  );
+}
+
 function MeasurementWheelControls({
   label,
   value,
@@ -513,6 +608,8 @@ export function OperationalPublicForm({
   const [organolepticAdequate, setOrganolepticAdequate] = useState<YesNoValue | "">("");
   const [decision, setDecision] = useState<SupplyDecision | "">("");
   const [observations, setObservations] = useState("");
+  const [actionTakenChoice, setActionTakenChoice] = useState("");
+  const [customActionTaken, setCustomActionTaken] = useState("");
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
@@ -528,7 +625,7 @@ export function OperationalPublicForm({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
   const temperatureMenuRef = useRef<HTMLDivElement>(null);
-  const actionTakenTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const actionTakenCustomInputRef = useRef<HTMLInputElement>(null);
   const label = operationalFormLabels[formType];
   const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
   const missingAreaCatalog = formType === "area_sanitation" && sanitationAreas.length === 0;
@@ -612,9 +709,11 @@ export function OperationalPublicForm({
             text: "Producto rechazado.",
           }
         : null;
-  const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
-  const actionTakenPlaceholder =
-    decision === "Rechazar Producto" ? supplyRejectedActionPlaceholder : supplyAcceptedActionPlaceholder;
+  const supplyActionTakenOptions =
+    decision === "Rechazar Producto" ? supplyRejectedActionOptions : supplyAcceptedActionOptions;
+  const isCustomActionTaken = actionTakenChoice === otherActionTakenValue;
+  const hasCompletedActionTaken = Boolean(actionTakenChoice && (!isCustomActionTaken || customActionTaken.trim()));
+  const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !hasCompletedActionTaken);
   const temperatureStepTitle =
     productType === "Congelado"
       ? "¿Con qué temperatura llegó el producto congelado?"
@@ -746,6 +845,36 @@ export function OperationalPublicForm({
     setTemperatureC("");
   }
 
+  function resetActionTakenSelection() {
+    setActionTakenChoice("");
+    setCustomActionTaken("");
+    setObservations("");
+    setActionTakenError("");
+  }
+
+  function selectActionTakenChoice(value: string) {
+    setActionTakenChoice(value);
+    setActionTakenError("");
+
+    if (value === otherActionTakenValue) {
+      setObservations(customActionTaken.trim());
+      window.requestAnimationFrame(() => actionTakenCustomInputRef.current?.focus());
+      return;
+    }
+
+    setCustomActionTaken("");
+    setObservations(value);
+  }
+
+  function updateCustomActionTaken(value: string) {
+    setCustomActionTaken(value);
+    setObservations(value.trim());
+
+    if (value.trim()) {
+      setActionTakenError("");
+    }
+  }
+
   function openDatePicker() {
     const nextLimits = getRecordDateLimits();
     setRecordDateLimits(nextLimits);
@@ -793,17 +922,17 @@ export function OperationalPublicForm({
       return;
     }
 
-    if (isWaterQuality && showWaterCorrectiveStep && !observations.trim()) {
+    if (isWaterQuality && showWaterCorrectiveStep && !hasCompletedActionTaken) {
       event.preventDefault();
       setActionTakenError("Registra la acción tomada antes de enviar.");
-      actionTakenTextareaRef.current?.focus();
+      actionTakenCustomInputRef.current?.focus();
       return;
     }
 
-    if (showActionTakenBlock && !observations.trim()) {
+    if (showActionTakenBlock && !hasCompletedActionTaken) {
       event.preventDefault();
       setActionTakenError("Registra la acción tomada antes de enviar.");
-      actionTakenTextareaRef.current?.focus();
+      actionTakenCustomInputRef.current?.focus();
     }
   }
 
@@ -899,8 +1028,7 @@ export function OperationalPublicForm({
     }
 
     if (!showWaterCorrectiveStep) {
-      setObservations("");
-      setActionTakenError("");
+      resetActionTakenSelection();
     }
 
     setWaterStep(showWaterCorrectiveStep ? 3 : 4);
@@ -911,6 +1039,10 @@ export function OperationalPublicForm({
   }
 
   function selectSupplyDecision(nextDecision: SupplyDecision) {
+    if (nextDecision !== decision) {
+      resetActionTakenSelection();
+    }
+
     setDecision(nextDecision);
   }
 
@@ -1158,10 +1290,16 @@ export function OperationalPublicForm({
               {waterStep === 3 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué acción correctiva se tomó?</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué medidas se tomaron?</h2>
                   </div>
                   <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
-                    <p className="text-[#7b1b28]">Se requiere registrar la acción tomada frente a:</p>
+                    <span
+                      aria-label="Alerta"
+                      className="grid h-9 w-9 place-items-center rounded-xl bg-[#efd6d8] text-[#8f1d2c]"
+                      role="img"
+                    >
+                      <EmergencyTriangleIcon />
+                    </span>
                     <ul className="grid gap-1.5">
                       {waterNonComplianceItems.map((item) => (
                         <li key={item.key} className="flex gap-2.5">
@@ -1171,27 +1309,22 @@ export function OperationalPublicForm({
                       ))}
                     </ul>
                   </div>
-                  <textarea
-                    ref={actionTakenTextareaRef}
-                    rows={6}
-                    aria-invalid={Boolean(actionTakenError && !observations.trim())}
-                    placeholder={waterCorrectiveActionPlaceholder}
-                    value={observations}
-                    onChange={(event) => {
-                      setObservations(event.target.value);
-
-                      if (event.target.value.trim()) {
-                        setActionTakenError("");
-                      }
-                    }}
-                    className="min-h-40 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-5 py-4 text-lg font-bold text-neutral-950 outline-none transition placeholder:text-sm placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                  <ActionTakenChoiceGroup
+                    customValue={customActionTaken}
+                    errorId="water-action-taken-error"
+                    inputRef={actionTakenCustomInputRef}
+                    name="water-action-taken"
+                    onCustomChange={updateCustomActionTaken}
+                    onSelect={selectActionTakenChoice}
+                    options={waterCorrectiveActionOptions}
+                    selectedValue={actionTakenChoice}
                   />
-                  {actionTakenError && !observations.trim() ? (
+                  {actionTakenError && !hasCompletedActionTaken ? (
                     <p className={operationalFormStyles.statusError}>{actionTakenError}</p>
                   ) : null}
                   <button
                     type="button"
-                    disabled={!observations.trim()}
+                    disabled={!hasCompletedActionTaken}
                     onClick={() => setWaterStep(4)}
                     className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
                   >
@@ -1569,10 +1702,16 @@ export function OperationalPublicForm({
               {currentStep === 9 ? (
                 <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué acción correctiva se tomó?</h2>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué medidas se tomaron?</h2>
                 </div>
                 <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
-                  <p className="text-[#7b1b28]">Se requiere registrar la acción tomada frente a:</p>
+                  <span
+                    aria-label="Alerta"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-[#efd6d8] text-[#8f1d2c]"
+                    role="img"
+                  >
+                    <EmergencyTriangleIcon />
+                  </span>
                   <ul className="grid gap-1.5">
                     {supplyActionTakenItems.map((item) => (
                       <li key={item.key} className="flex gap-2.5">
@@ -1588,22 +1727,15 @@ export function OperationalPublicForm({
                     ) : null}
                   </ul>
                 </div>
-                <textarea
-                  id="supply-action-taken"
-                  ref={actionTakenTextareaRef}
-                  rows={6}
-                  aria-invalid={showActionTakenError}
-                  aria-describedby={showActionTakenError ? "supply-action-taken-error" : undefined}
-                  placeholder={actionTakenPlaceholder}
-                  value={observations}
-                  onChange={(event) => {
-                    setObservations(event.target.value);
-
-                    if (event.target.value.trim()) {
-                      setActionTakenError("");
-                    }
-                  }}
-                  className="min-h-40 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-5 py-4 text-lg font-bold text-neutral-950 outline-none transition placeholder:text-sm placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                <ActionTakenChoiceGroup
+                  customValue={customActionTaken}
+                  errorId={showActionTakenError ? "supply-action-taken-error" : undefined}
+                  inputRef={actionTakenCustomInputRef}
+                  name="supply-action-taken"
+                  onCustomChange={updateCustomActionTaken}
+                  onSelect={selectActionTakenChoice}
+                  options={supplyActionTakenOptions}
+                  selectedValue={actionTakenChoice}
                 />
                 {showActionTakenError ? (
                   <p id="supply-action-taken-error" className={operationalFormStyles.statusError}>
@@ -1612,7 +1744,7 @@ export function OperationalPublicForm({
                 ) : null}
                 <button
                   type="button"
-                  disabled={!observations.trim()}
+                  disabled={!hasCompletedActionTaken}
                   onClick={() => setCurrentStep(10)}
                   className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
                 >
