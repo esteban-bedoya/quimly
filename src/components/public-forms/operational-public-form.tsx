@@ -217,7 +217,7 @@ function PublicFormCardHeader({
           role="progressbar"
         >
           <div
-            className="h-full rounded-full bg-[#111816] transition-all duration-300 ease-in-out"
+            className="h-full rounded-full bg-[#7b8c87] transition-all duration-300 ease-in-out"
             style={{ width: `${progressPercentage}%` }}
           />
         </div>
@@ -615,14 +615,6 @@ export function OperationalPublicForm({
   const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
   const actionTakenPlaceholder =
     decision === "Rechazar Producto" ? supplyRejectedActionPlaceholder : supplyAcceptedActionPlaceholder;
-  const supplyProgressStep =
-    currentStep === 2
-      ? 2
-      : currentStep === 3
-        ? 2
-        : currentStep >= 4
-          ? currentStep - 1
-          : currentStep;
   const temperatureStepTitle =
     productType === "Congelado"
       ? "¿Con qué temperatura llegó el producto congelado?"
@@ -1241,9 +1233,9 @@ export function OperationalPublicForm({
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
-                currentStep={supplyProgressStep}
+                currentStep={currentStep}
                 onBack={goBackSupplyStep}
-                totalSteps={9}
+                totalSteps={10}
               />
 
               {currentStep === 1 ? (
