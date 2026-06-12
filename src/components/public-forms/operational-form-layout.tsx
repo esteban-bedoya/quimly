@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 
 export const operationalFormStyles = {
-  page: "min-h-screen bg-[#12110F] px-4 pb-5 pt-10 text-[#111816]",
+  page: "min-h-screen bg-[#12110F] px-0 pb-5 pt-10 text-[#111816]",
   shell: "mx-auto flex w-full max-w-lg flex-col",
   layoutContent: "grid gap-0",
-  header: "pb-5 pt-4",
+  header: "px-4 pb-5 pt-4",
   formBody: "grid gap-4 pb-5 pt-2",
   title: "mt-3 text-2xl font-black tracking-[-0.03em] text-[#48c7d2]",
   description: "mt-3 text-base leading-7 text-white/70",
@@ -49,7 +49,7 @@ export const operationalFormStyles = {
   responsibleLabel: "text-sm font-bold text-[#51645f]",
   responsibleValue: "text-xl font-black text-[#111816]",
   responsibleValueEmpty: "text-xl font-black text-[#7b8c87]",
-  poweredBy: "pb-6 text-right text-xs font-bold text-white/35",
+  poweredBy: "px-4 pb-6 text-right text-xs font-bold text-white/35",
   successDialogBackdrop:
     "fixed inset-0 z-50 flex items-center justify-center bg-[#111816]/35 px-5 backdrop-blur-md",
   successDialogCard: "w-full max-w-sm rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]",

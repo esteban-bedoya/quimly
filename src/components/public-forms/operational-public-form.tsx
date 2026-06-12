@@ -382,13 +382,13 @@ function MeasurementWheelControls({
   const canIncrease = value < max;
 
   return (
-    <div className="grid w-20 justify-items-center gap-1.5">
+    <div className="grid w-14 justify-items-center gap-1.5">
       <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#51645f]">{label}</p>
       <button
         type="button"
         disabled={!canIncrease}
         onClick={() => onChange(Math.min(value + 1, max))}
-        className="grid h-7 w-11 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
+        className="grid h-7 w-10 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
         aria-label={`Subir ${label}`}
       >
         +
@@ -397,7 +397,7 @@ function MeasurementWheelControls({
         type="button"
         disabled={!canDecrease}
         onClick={() => onChange(Math.max(value - 1, min))}
-        className="grid h-7 w-11 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
+        className="grid h-7 w-10 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
         aria-label={`Bajar ${label}`}
       >
         -
@@ -428,10 +428,10 @@ function MeasurementWheelPicker({
   helperText: string;
 }) {
   return (
-    <section className="grid gap-3 rounded-2xl border border-[#d7e4e1] bg-white px-4 py-3">
+    <section className="grid gap-3 rounded-2xl border border-[#d7e4e1] bg-white px-3 py-3">
       <h3 className="text-lg font-black leading-5 text-neutral-950">{title}</h3>
 
-      <div className="flex flex-row items-center justify-center gap-4">
+      <div className="flex flex-row items-center justify-center gap-2">
         <MeasurementWheelControls
           label="Entero"
           value={integerValue}
@@ -439,10 +439,10 @@ function MeasurementWheelPicker({
           max={integerMax}
           onChange={onIntegerChange}
         />
-        <div className="mt-5 flex h-16 min-w-32 items-center justify-center gap-3 rounded-full border border-[#d7e4e1] bg-gray-50 px-6 shadow-inner shadow-black/[0.03]">
-          <span className="font-mono text-4xl font-semibold text-neutral-950">{integerValue}</span>
+        <div className="mt-5 flex h-14 min-w-24 items-center justify-center gap-2 rounded-full border border-[#d7e4e1] bg-gray-50 px-4 shadow-inner shadow-black/[0.03]">
+          <span className="font-mono text-3xl font-semibold text-neutral-950">{integerValue}</span>
           <span className="h-2.5 w-2.5 rounded-full bg-neutral-950" aria-hidden="true" />
-          <span className="font-mono text-4xl font-semibold text-neutral-950">{decimalValue}</span>
+          <span className="font-mono text-3xl font-semibold text-neutral-950">{decimalValue}</span>
         </div>
         <MeasurementWheelControls
           label="Decimal"
@@ -919,7 +919,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+            <section className="grid gap-6 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader canGoBack={false} currentStep={1} totalSteps={1} />
 
             <label className={operationalFormStyles.field}>
@@ -1041,7 +1041,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader
                 canGoBack={waterStep > 1}
                 currentStep={waterStep}
@@ -1188,7 +1188,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
                 currentStep={supplyProgressStep}
