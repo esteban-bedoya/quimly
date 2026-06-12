@@ -919,7 +919,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <section className="grid gap-6 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <section className="grid gap-6 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader canGoBack={false} currentStep={1} totalSteps={1} />
 
             <label className={operationalFormStyles.field}>
@@ -1041,7 +1041,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader
                 canGoBack={waterStep > 1}
                 currentStep={waterStep}
@@ -1188,7 +1188,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-none bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
                 currentStep={supplyProgressStep}
