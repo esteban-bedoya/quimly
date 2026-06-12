@@ -32,7 +32,12 @@ type SupplyDecision = (typeof supplyDecisions)[number];
 
 type YesNoValue = "true" | "false";
 type SupplyStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+type WaterStep = 1 | 2 | 3 | 4;
 type SupplyActionTakenItem = {
+  key: string;
+  text: string;
+};
+type ComplianceItem = {
   key: string;
   text: string;
 };
@@ -53,6 +58,12 @@ const supplyAcceptedActionPlaceholder = [
 const supplyRejectedActionPlaceholder = [
   "Ej. Se devuelve al proveedor.",
   "Ej. Se rechaza el lote afectado.",
+].join("\n");
+
+const waterCorrectiveActionPlaceholder = [
+  "Ej. Se reportó al administrador",
+  "Ej. Se reportó a EPM",
+  "Ej. Se suspendió el uso de agua de red y se utilizó agua envasada temporalmente.",
 ].join("\n");
 
 const supplyTemperatureSettings: Record<
@@ -102,6 +113,18 @@ function isTemperatureCompliant(productType: SupplyProductType | "", temperature
   }
 
   return false;
+}
+
+function formatDecimalMeasurement(integerPart: number, decimalPart: number) {
+  return (integerPart + decimalPart / 10).toFixed(1);
+}
+
+function isChlorineCompliant(value: number) {
+  return value >= 0.3 && value <= 2.0;
+}
+
+function isPhCompliant(value: number) {
+  return value >= 6.5 && value <= 9.0;
 }
 
 function formatResponsibleName(value: string) {
@@ -159,31 +182,45 @@ function getInitialTemperatureScrollTarget(productType: SupplyProductType | "") 
 
 function PublicFormCardHeader({
   canGoBack,
+  currentStep,
   onBack,
-  stepLabel,
   totalSteps,
 }: {
   canGoBack: boolean;
+  currentStep: number;
   onBack?: () => void;
-  stepLabel: string;
   totalSteps: number;
 }) {
+  const safeTotalSteps = Math.max(totalSteps, 1);
+  const progressPercentage = Math.min(100, Math.max(0, (currentStep / safeTotalSteps) * 100));
+
   return (
     <div className="border-b border-neutral-100 pb-3">
-      <div className="flex w-full items-center gap-4">
-        {canGoBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="shrink-0 text-left text-[11px] font-bold uppercase tracking-widest text-neutral-500 transition hover:text-neutral-800"
-          >
-            ← Volver
-          </button>
-        ) : null}
+      <div className="flex h-8 w-full flex-row items-center justify-between">
+        <div className="w-24 shrink-0">
+          {canGoBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-left text-[11px] font-bold uppercase tracking-widest text-neutral-500 transition hover:text-neutral-800"
+            >
+              ← Volver
+            </button>
+          ) : null}
+        </div>
 
-        <p className="ml-auto text-right text-[11px] font-bold uppercase tracking-widest text-neutral-500">
-          Paso {stepLabel} de {totalSteps}
-        </p>
+        <div
+          aria-valuemax={safeTotalSteps}
+          aria-valuemin={0}
+          aria-valuenow={Math.min(currentStep, safeTotalSteps)}
+          className="h-1 w-32 overflow-hidden rounded-full bg-gray-100"
+          role="progressbar"
+        >
+          <div
+            className="h-full rounded-full bg-[#111816] transition-all duration-300 ease-in-out"
+            style={{ width: `${progressPercentage}%` }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -222,13 +259,16 @@ function PublicFormDateControl({
 }
 
 function EditableResponsibleSummary({
+  isEditing,
+  onEditingChange,
   responsibleName,
   onResponsibleNameChange,
 }: {
+  isEditing: boolean;
+  onEditingChange: (isEditing: boolean) => void;
   responsibleName: string;
   onResponsibleNameChange: (responsibleName: string) => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
   const [draftName, setDraftName] = useState(responsibleName);
   const inputRef = useRef<HTMLInputElement>(null);
   const displayName = responsibleName.trim();
@@ -236,7 +276,7 @@ function EditableResponsibleSummary({
 
   function startEditing() {
     setDraftName(responsibleName);
-    setIsEditing(true);
+    onEditingChange(true);
     window.requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -251,7 +291,7 @@ function EditableResponsibleSummary({
     }
 
     onResponsibleNameChange(formatResponsibleName(nextName));
-    setIsEditing(false);
+    onEditingChange(false);
   }
 
   return (
@@ -270,7 +310,7 @@ function EditableResponsibleSummary({
               }
 
               if (event.key === "Escape") {
-                setIsEditing(false);
+                onEditingChange(false);
               }
             }}
             className="mt-1 min-h-10 w-full rounded-xl border border-[#147060]/30 bg-white px-3 text-xl font-black text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
@@ -325,6 +365,114 @@ function EditableResponsibleSummary({
   );
 }
 
+function MeasurementWheelControls({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const canDecrease = value > min;
+  const canIncrease = value < max;
+
+  return (
+    <div className="grid w-20 justify-items-center gap-1.5">
+      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#51645f]">{label}</p>
+      <button
+        type="button"
+        disabled={!canIncrease}
+        onClick={() => onChange(Math.min(value + 1, max))}
+        className="grid h-7 w-11 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
+        aria-label={`Subir ${label}`}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        disabled={!canDecrease}
+        onClick={() => onChange(Math.max(value - 1, min))}
+        className="grid h-7 w-11 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
+        aria-label={`Bajar ${label}`}
+      >
+        -
+      </button>
+    </div>
+  );
+}
+
+function MeasurementWheelPicker({
+  title,
+  integerValue,
+  decimalValue,
+  integerMin,
+  integerMax,
+  onIntegerChange,
+  onDecimalChange,
+  isCompliant,
+  helperText,
+}: {
+  title: string;
+  integerValue: number;
+  decimalValue: number;
+  integerMin: number;
+  integerMax: number;
+  onIntegerChange: (value: number) => void;
+  onDecimalChange: (value: number) => void;
+  isCompliant: boolean;
+  helperText: string;
+}) {
+  return (
+    <section className="grid gap-3 rounded-2xl border border-[#d7e4e1] bg-white px-4 py-3">
+      <h3 className="text-lg font-black leading-5 text-neutral-950">{title}</h3>
+
+      <div className="flex flex-row items-center justify-center gap-4">
+        <MeasurementWheelControls
+          label="Entero"
+          value={integerValue}
+          min={integerMin}
+          max={integerMax}
+          onChange={onIntegerChange}
+        />
+        <div className="mt-5 flex h-16 min-w-32 items-center justify-center gap-3 rounded-full border border-[#d7e4e1] bg-gray-50 px-6 shadow-inner shadow-black/[0.03]">
+          <span className="font-mono text-4xl font-semibold text-neutral-950">{integerValue}</span>
+          <span className="h-2.5 w-2.5 rounded-full bg-neutral-950" aria-hidden="true" />
+          <span className="font-mono text-4xl font-semibold text-neutral-950">{decimalValue}</span>
+        </div>
+        <MeasurementWheelControls
+          label="Decimal"
+          value={decimalValue}
+          min={0}
+          max={9}
+          onChange={onDecimalChange}
+        />
+      </div>
+
+      <div
+        className={[
+          "flex items-center justify-between gap-3 rounded-full px-4 py-1.5 transition",
+          isCompliant ? "bg-emerald-50/70" : "bg-rose-50/70",
+        ].join(" ")}
+      >
+        <p className="text-left text-xs font-bold leading-4 text-[#51645f]">{helperText}</p>
+        <span
+          className={[
+            "inline-flex min-h-8 shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-black",
+            isCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
+          ].join(" ")}
+        >
+          {isCompliant ? "Cumple" : "No cumple"}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 export function OperationalPublicForm({
   token,
   formType,
@@ -345,7 +493,9 @@ export function OperationalPublicForm({
     {},
   );
   const isSupplyReception = formType === "supply_reception";
+  const isWaterQuality = formType === "water_quality";
   const [currentStep, setCurrentStep] = useState<SupplyStep>(1);
+  const [waterStep, setWaterStep] = useState<WaterStep>(1);
   const [operatorName, setOperatorName] = useState("");
   const [productName, setProductName] = useState("");
   const [providerName, setProviderName] = useState("");
@@ -358,6 +508,11 @@ export function OperationalPublicForm({
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
+  const [isResponsibleEditing, setIsResponsibleEditing] = useState(false);
+  const [chlorineInteger, setChlorineInteger] = useState(0);
+  const [chlorineDecimal, setChlorineDecimal] = useState(3);
+  const [phInteger, setPhInteger] = useState(6);
+  const [phDecimal, setPhDecimal] = useState(5);
   const [recordedAtLocalValue, setRecordedAtLocalValue] = useState(() => toDateTimeLocalValue(new Date()));
   const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits());
   const [datePickerValue, setDatePickerValue] = useState(recordedAtLocalValue);
@@ -370,12 +525,37 @@ export function OperationalPublicForm({
   const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
   const missingAreaCatalog = formType === "area_sanitation" && sanitationAreas.length === 0;
   const isDisabled = isPending || missingThermalCatalog || missingAreaCatalog;
+  const isSubmitDisabled = isDisabled || isResponsibleEditing;
   const showTemperaturePicker = productType === "Refrigerado" || productType === "Congelado";
   const temperatureOptions = useMemo(() => getTemperatureOptions(productType), [productType]);
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
   const hasSelectedTemperature = temperatureC !== "";
+  const chlorineValue = Number(formatDecimalMeasurement(chlorineInteger, chlorineDecimal));
+  const phValue = Number(formatDecimalMeasurement(phInteger, phDecimal));
+  const chlorineCompliant = isChlorineCompliant(chlorineValue);
+  const phCompliant = isPhCompliant(phValue);
   const supplySubmittedProductName = [productName.trim(), providerName.trim()].filter(Boolean).join(" - ");
   const supplyStorageKey = `quimly:supply-reception:${token}`;
+  const waterNonComplianceItems = useMemo<ComplianceItem[]>(() => {
+    const items: ComplianceItem[] = [];
+
+    if (!chlorineCompliant) {
+      items.push({
+        key: "chlorine",
+        text: "Nivel de Cloro Residual fuera de rango.",
+      });
+    }
+
+    if (!phCompliant) {
+      items.push({
+        key: "ph",
+        text: "Nivel de pH fuera de rango.",
+      });
+    }
+
+    return items;
+  }, [chlorineCompliant, phCompliant]);
+  const showWaterCorrectiveStep = waterNonComplianceItems.length > 0;
   const supplyActionTakenItems = useMemo<SupplyActionTakenItem[]>(() => {
     const items: SupplyActionTakenItem[] = [];
 
@@ -424,14 +604,14 @@ export function OperationalPublicForm({
   const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !observations.trim());
   const actionTakenPlaceholder =
     decision === "Rechazar Producto" ? supplyRejectedActionPlaceholder : supplyAcceptedActionPlaceholder;
-  const supplyStepLabel =
+  const supplyProgressStep =
     currentStep === 2
-      ? "2A"
+      ? 2
       : currentStep === 3
-        ? "2B"
+        ? 2
         : currentStep >= 4
-          ? String(currentStep - 1)
-          : String(currentStep);
+          ? currentStep - 1
+          : currentStep;
   const temperatureStepTitle =
     productType === "Congelado"
       ? "¿Con qué temperatura llegó el producto congelado?"
@@ -594,6 +774,23 @@ export function OperationalPublicForm({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if ((isSupplyReception && currentStep !== 10) || (isWaterQuality && waterStep !== 4)) {
+      event.preventDefault();
+      return;
+    }
+
+    if (isResponsibleEditing) {
+      event.preventDefault();
+      return;
+    }
+
+    if (isWaterQuality && showWaterCorrectiveStep && !observations.trim()) {
+      event.preventDefault();
+      setActionTakenError("Registra la acción tomada antes de enviar.");
+      actionTakenTextareaRef.current?.focus();
+      return;
+    }
+
     if (showActionTakenBlock && !observations.trim()) {
       event.preventDefault();
       setActionTakenError("Registra la acción tomada antes de enviar.");
@@ -602,6 +799,8 @@ export function OperationalPublicForm({
   }
 
   function goBackSupplyStep() {
+    setIsResponsibleEditing(false);
+
     if (currentStep === 2) {
       setCurrentStep(1);
       return;
@@ -647,6 +846,33 @@ export function OperationalPublicForm({
     }
   }
 
+  function goBackWaterStep() {
+    setIsResponsibleEditing(false);
+
+    if (waterStep === 2) {
+      setWaterStep(1);
+      return;
+    }
+
+    if (waterStep === 3) {
+      setWaterStep(2);
+      return;
+    }
+
+    if (waterStep === 4) {
+      setWaterStep(showWaterCorrectiveStep ? 3 : 2);
+    }
+  }
+
+  function continueFromWaterMeasurements() {
+    if (!showWaterCorrectiveStep) {
+      setObservations("");
+      setActionTakenError("");
+    }
+
+    setWaterStep(showWaterCorrectiveStep ? 3 : 4);
+  }
+
   function selectSupplyProductType(nextProductType: SupplyProductType) {
     selectProductType(nextProductType);
   }
@@ -658,13 +884,21 @@ export function OperationalPublicForm({
   return (
     <OperationalFormLayout
       title={label.title}
-      description={isSupplyReception ? null : label.description}
+      description={isSupplyReception || isWaterQuality ? null : label.description}
       companyName={companyName}
       branchName={branchName}
     >
       <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
         <input type="hidden" name="recordedAt" value={recordedAtIsoValue} />
+        {isWaterQuality ? (
+          <>
+            <input type="hidden" name="operatorName" value={operatorName} />
+            <input type="hidden" name="chlorinePpm" value={formatDecimalMeasurement(chlorineInteger, chlorineDecimal)} />
+            <input type="hidden" name="phLevel" value={formatDecimalMeasurement(phInteger, phDecimal)} />
+            <input type="hidden" name="observations" value={observations} />
+          </>
+        ) : null}
         {isSupplyReception ? (
           <>
             <input type="hidden" name="operatorName" value={operatorName} />
@@ -678,7 +912,7 @@ export function OperationalPublicForm({
           </>
         ) : null}
 
-        {!isSupplyReception ? (
+        {!isSupplyReception && !isWaterQuality ? (
           <div className="grid gap-2">
             <PublicFormDateControl
               dateLabel={recordedAtDisplay}
@@ -686,7 +920,7 @@ export function OperationalPublicForm({
               onOpenDatePicker={openDatePicker}
             />
             <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
-              <PublicFormCardHeader canGoBack={false} stepLabel="1" totalSteps={1} />
+              <PublicFormCardHeader canGoBack={false} currentStep={1} totalSteps={1} />
 
             <label className={operationalFormStyles.field}>
               <span className={operationalFormStyles.fieldLabel}>Nombre del operador</span>
@@ -772,24 +1006,6 @@ export function OperationalPublicForm({
               </>
             ) : null}
 
-            {formType === "water_quality" ? (
-              <label className={operationalFormStyles.field}>
-                <span className={operationalFormStyles.fieldLabel}>Medicion de cloro en ppm</span>
-                <input
-                  name="chlorinePpm"
-                  type="number"
-                  inputMode="decimal"
-                  min="0.3"
-                  max="2.0"
-                  step="0.1"
-                  required
-                  placeholder="0.3 a 2.0"
-                  className={operationalFormStyles.temperatureInput}
-                />
-                <span className="text-sm font-bold text-[#51645f]">Solo se aceptan valores entre 0.3 y 2.0 ppm.</span>
-              </label>
-            ) : null}
-
             {missingThermalCatalog ? (
               <p className={operationalFormStyles.statusWarning}>
                 Esta sede aun no tiene equipos registrados para usar este QR.
@@ -805,15 +1021,164 @@ export function OperationalPublicForm({
             {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
 
             <EditableResponsibleSummary
+              isEditing={isResponsibleEditing}
+              onEditingChange={setIsResponsibleEditing}
               responsibleName={operatorName}
               onResponsibleNameChange={setOperatorName}
             />
 
-            <OperationalFormSubmitButton disabled={isDisabled}>
+            <OperationalFormSubmitButton disabled={isSubmitDisabled}>
               {isPending ? "Guardando..." : "Guardar registro"}
             </OperationalFormSubmitButton>
             </section>
           </div>
+        ) : null}
+
+        {isWaterQuality ? (
+          <section className="grid gap-2">
+            <PublicFormDateControl
+              dateLabel={recordedAtDisplay}
+              isModified={hasCustomRecordedAt}
+              onOpenDatePicker={openDatePicker}
+            />
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <PublicFormCardHeader
+                canGoBack={waterStep > 1}
+                currentStep={waterStep}
+                onBack={goBackWaterStep}
+                totalSteps={4}
+              />
+
+              {waterStep === 1 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la medición?</h2>
+                  </div>
+                  <input
+                    autoComplete="name"
+                    placeholder="Ej. Ana Gomez"
+                    value={operatorName}
+                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
+                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                  />
+                  <button
+                    type="button"
+                    disabled={!operatorName.trim()}
+                    onClick={() => setWaterStep(2)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {waterStep === 2 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Mediciones técnicas</h2>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <MeasurementWheelPicker
+                      title="Nivel de Cloro Residual"
+                      integerValue={chlorineInteger}
+                      decimalValue={chlorineDecimal}
+                      integerMin={0}
+                      integerMax={9}
+                      onIntegerChange={setChlorineInteger}
+                      onDecimalChange={setChlorineDecimal}
+                      isCompliant={chlorineCompliant}
+                      helperText="Rango aceptable: 0.3 a 2.0 mg/L"
+                    />
+                    <MeasurementWheelPicker
+                      title="Nivel de pH"
+                      integerValue={phInteger}
+                      decimalValue={phDecimal}
+                      integerMin={0}
+                      integerMax={9}
+                      onIntegerChange={setPhInteger}
+                      onDecimalChange={setPhDecimal}
+                      isCompliant={phCompliant}
+                      helperText="Rango aceptable: 6.5 a 9.0"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={continueFromWaterMeasurements}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {waterStep === 3 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué acción correctiva se tomó?</h2>
+                  </div>
+                  <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
+                    <p className="text-[#7b1b28]">Se requiere registrar la acción tomada frente a:</p>
+                    <ul className="grid gap-1.5">
+                      {waterNonComplianceItems.map((item) => (
+                        <li key={item.key} className="flex gap-2.5">
+                          <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 rounded-full bg-[#8f1d2c]" />
+                          <span>{item.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <textarea
+                    ref={actionTakenTextareaRef}
+                    rows={6}
+                    aria-invalid={Boolean(actionTakenError && !observations.trim())}
+                    placeholder={waterCorrectiveActionPlaceholder}
+                    value={observations}
+                    onChange={(event) => {
+                      setObservations(event.target.value);
+
+                      if (event.target.value.trim()) {
+                        setActionTakenError("");
+                      }
+                    }}
+                    className="min-h-40 resize-none rounded-2xl border border-[#c7d8d4] bg-white px-5 py-4 text-lg font-bold text-neutral-950 outline-none transition placeholder:text-sm placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                  />
+                  {actionTakenError && !observations.trim() ? (
+                    <p className={operationalFormStyles.statusError}>{actionTakenError}</p>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!observations.trim()}
+                    onClick={() => setWaterStep(4)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {waterStep === 4 ? (
+                <div className="grid gap-8">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
+                  </div>
+                  <EditableResponsibleSummary
+                    isEditing={isResponsibleEditing}
+                    onEditingChange={setIsResponsibleEditing}
+                    responsibleName={operatorName}
+                    onResponsibleNameChange={setOperatorName}
+                  />
+
+                  {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
+
+                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
+                    {isPending ? "Guardando..." : "Firmar y registrar"}
+                  </OperationalFormSubmitButton>
+                </div>
+              ) : null}
+            </div>
+          </section>
         ) : null}
 
         {formType === "supply_reception" ? (
@@ -826,8 +1191,8 @@ export function OperationalPublicForm({
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
+                currentStep={supplyProgressStep}
                 onBack={goBackSupplyStep}
-                stepLabel={supplyStepLabel}
                 totalSteps={9}
               />
 
@@ -1162,9 +1527,7 @@ export function OperationalPublicForm({
               {currentStep === 9 ? (
                 <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">
-                    ¿Qué acción se tomó con este producto?
-                  </h2>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué acción correctiva se tomó?</h2>
                 </div>
                 <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
                   <p className="text-[#7b1b28]">Se requiere registrar la acción tomada frente a:</p>
@@ -1222,10 +1585,12 @@ export function OperationalPublicForm({
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
                 </div>
                 <EditableResponsibleSummary
+                  isEditing={isResponsibleEditing}
+                  onEditingChange={setIsResponsibleEditing}
                   responsibleName={operatorName}
                   onResponsibleNameChange={setOperatorName}
                 />
-                <OperationalFormSubmitButton disabled={isDisabled}>
+                <OperationalFormSubmitButton disabled={isSubmitDisabled}>
                   {isPending ? "Guardando..." : "Firmar y registrar"}
                 </OperationalFormSubmitButton>
                 </div>

@@ -115,6 +115,7 @@ export async function submitPublicOperationalForm(
     p_decision: readString(formData, "decision") || null,
     p_observations: readString(formData, "observations") || null,
     p_chlorine_ppm: readNumber(formData, "chlorinePpm"),
+    p_ph_level: readNumber(formData, "phLevel"),
   };
 
   if (recordedAtResult.recordedAt) {

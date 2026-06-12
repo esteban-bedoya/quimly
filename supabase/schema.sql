@@ -283,9 +283,21 @@ create table if not exists public.water_quality_records (
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   operator_name text not null,
   chlorine_ppm numeric(4,2) not null,
+  chlorine_compliant boolean not null,
+  ph_level numeric(3,1) not null,
+  ph_compliant boolean not null,
+  observations text,
   constraint water_quality_records_tipo_check check (tipo_formulario = 'water_quality'),
-  constraint water_quality_records_chlorine_range check (chlorine_ppm between 0.3 and 2.0)
+  constraint water_quality_records_chlorine_picker_range check (chlorine_ppm between 0 and 9.9),
+  constraint water_quality_records_ph_picker_range check (ph_level between 0 and 9.9)
 );
+
+alter table public.water_quality_records
+  drop constraint if exists water_quality_records_chlorine_range,
+  add column if not exists chlorine_compliant boolean,
+  add column if not exists ph_level numeric(3,1),
+  add column if not exists ph_compliant boolean,
+  add column if not exists observations text;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 select
@@ -798,7 +810,27 @@ drop function if exists public.submit_public_operational_form(
   text,
   text,
   date,
+  numeric,
   numeric
+);
+
+drop function if exists public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
+  text,
+  boolean,
+  boolean,
+  text,
+  text,
+  text,
+  date,
+  numeric,
+  timestamptz
 );
 
 create or replace function public.submit_public_operational_form(
@@ -817,6 +849,7 @@ create or replace function public.submit_public_operational_form(
   p_provider_name text default null,
   p_expiration_date date default null,
   p_chlorine_ppm numeric default null,
+  p_ph_level numeric default null,
   p_recorded_at timestamptz default null
 )
 returns jsonb
@@ -830,6 +863,8 @@ declare
   equipment_record record;
   area_record record;
   temperature_compliant_value boolean;
+  chlorine_compliant_value boolean;
+  ph_compliant_value boolean;
   recorded_at_value timestamptz;
 begin
   if nullif(trim(p_token), '') is null then
@@ -1043,8 +1078,23 @@ begin
       raise exception 'Ingresa la medición de cloro en ppm.';
     end if;
 
-    if p_chlorine_ppm < 0.3 or p_chlorine_ppm > 2.0 then
-      raise exception 'La medición de cloro debe estar entre 0.3 y 2.0 ppm.';
+    if p_ph_level is null then
+      raise exception 'Ingresa la medición de pH.';
+    end if;
+
+    if p_chlorine_ppm < 0 or p_chlorine_ppm > 9.9 then
+      raise exception 'La medición de cloro debe estar entre 0.0 y 9.9 mg/L.';
+    end if;
+
+    if p_ph_level < 0 or p_ph_level > 9.9 then
+      raise exception 'La medición de pH debe estar entre 0.0 y 9.9.';
+    end if;
+
+    chlorine_compliant_value := p_chlorine_ppm >= 0.3 and p_chlorine_ppm <= 2.0;
+    ph_compliant_value := p_ph_level >= 6.5 and p_ph_level <= 9.0;
+
+    if (not chlorine_compliant_value or not ph_compliant_value) and nullif(trim(coalesce(p_observations, '')), '') is null then
+      raise exception 'Registra la acción tomada frente a la medición no conforme.';
     end if;
 
     insert into public.water_quality_records (
@@ -1055,7 +1105,11 @@ begin
       token_qr_utilizado,
       qr_code_id,
       operator_name,
-      chlorine_ppm
+      chlorine_ppm,
+      chlorine_compliant,
+      ph_level,
+      ph_compliant,
+      observations
     )
     values (
       qr_record.branch_id,
@@ -1065,7 +1119,11 @@ begin
       qr_record.token,
       qr_record.id,
       trim(p_operator_name),
-      p_chlorine_ppm
+      p_chlorine_ppm,
+      chlorine_compliant_value,
+      p_ph_level,
+      ph_compliant_value,
+      nullif(trim(coalesce(p_observations, '')), '')
     );
 
     return jsonb_build_object('ok', true);
@@ -1532,6 +1590,7 @@ revoke all on function public.submit_public_operational_form(
   text,
   date,
   numeric,
+  numeric,
   timestamptz
 ) from public;
 
@@ -1551,6 +1610,7 @@ grant execute on function public.submit_public_operational_form(
   text,
   text,
   date,
+  numeric,
   numeric,
   timestamptz
 ) to anon, authenticated;
