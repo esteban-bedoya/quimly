@@ -236,7 +236,7 @@ function PublicFormDateControl({
   onOpenDatePicker: () => void;
 }) {
   return (
-    <div className="flex justify-end px-1">
+    <div className="flex justify-end px-4 sm:px-1">
       <button
         type="button"
         onClick={onOpenDatePicker}
@@ -373,13 +373,14 @@ function MeasurementWheelControls({
   onChange,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   min: number;
   max: number;
   onChange: (value: number) => void;
 }) {
-  const canDecrease = value > min;
-  const canIncrease = value < max;
+  const displayValue = value ?? min;
+  const canDecrease = value === null || displayValue > min;
+  const canIncrease = value === null || displayValue < max;
 
   return (
     <div className="grid w-14 justify-items-center gap-1.5">
@@ -387,7 +388,7 @@ function MeasurementWheelControls({
       <button
         type="button"
         disabled={!canIncrease}
-        onClick={() => onChange(Math.min(value + 1, max))}
+        onClick={() => onChange(value === null ? Math.min(min + 1, max) : Math.min(displayValue + 1, max))}
         className="grid h-7 w-10 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
         aria-label={`Subir ${label}`}
       >
@@ -396,7 +397,7 @@ function MeasurementWheelControls({
       <button
         type="button"
         disabled={!canDecrease}
-        onClick={() => onChange(Math.max(value - 1, min))}
+        onClick={() => onChange(value === null ? min : Math.max(displayValue - 1, min))}
         className="grid h-7 w-10 place-items-center rounded-xl border border-[#d7e4e1] bg-white text-sm font-black leading-none text-neutral-700 transition active:scale-[0.94] active:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-300"
         aria-label={`Bajar ${label}`}
       >
@@ -418,15 +419,18 @@ function MeasurementWheelPicker({
   helperText,
 }: {
   title: string;
-  integerValue: number;
-  decimalValue: number;
+  integerValue: number | null;
+  decimalValue: number | null;
   integerMin: number;
   integerMax: number;
   onIntegerChange: (value: number) => void;
   onDecimalChange: (value: number) => void;
-  isCompliant: boolean;
+  isCompliant: boolean | null;
   helperText: string;
 }) {
+  const hasMeasurement = integerValue !== null && decimalValue !== null;
+  const formattedValue = hasMeasurement ? `${integerValue}.${decimalValue}` : "-.-";
+
   return (
     <section className="grid gap-3 rounded-2xl border border-[#d7e4e1] bg-white px-3 py-3">
       <h3 className="text-lg font-black leading-5 text-neutral-950">{title}</h3>
@@ -439,10 +443,10 @@ function MeasurementWheelPicker({
           max={integerMax}
           onChange={onIntegerChange}
         />
-        <div className="mt-5 flex h-14 min-w-24 items-center justify-center gap-2 rounded-full border border-[#d7e4e1] bg-gray-50 px-4 shadow-inner shadow-black/[0.03]">
-          <span className="font-mono text-3xl font-semibold text-neutral-950">{integerValue}</span>
-          <span className="h-2.5 w-2.5 rounded-full bg-neutral-950" aria-hidden="true" />
-          <span className="font-mono text-3xl font-semibold text-neutral-950">{decimalValue}</span>
+        <div className="mt-5 flex h-14 min-w-24 items-center justify-center rounded-full border border-[#d7e4e1] bg-gray-50 px-4 shadow-inner shadow-black/[0.03]">
+          <span className={["font-mono text-3xl font-semibold", hasMeasurement ? "text-neutral-950" : "text-[#7b8c87]"].join(" ")}>
+            {formattedValue}
+          </span>
         </div>
         <MeasurementWheelControls
           label="Decimal"
@@ -456,17 +460,21 @@ function MeasurementWheelPicker({
       <div
         className={[
           "flex items-center justify-between gap-3 rounded-full px-4 py-1.5 transition",
-          isCompliant ? "bg-emerald-50/70" : "bg-rose-50/70",
+          isCompliant === null ? "bg-[#f4faf7]" : isCompliant ? "bg-emerald-50/70" : "bg-rose-50/70",
         ].join(" ")}
       >
         <p className="text-left text-xs font-bold leading-4 text-[#51645f]">{helperText}</p>
         <span
           className={[
             "inline-flex min-h-8 shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-black",
-            isCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
+            isCompliant === null
+              ? "bg-white text-[#51645f]"
+              : isCompliant
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-rose-100 text-rose-800",
           ].join(" ")}
         >
-          {isCompliant ? "Cumple" : "No cumple"}
+          {isCompliant === null ? "Ingrese la medición..." : isCompliant ? "Cumple" : "No cumple"}
         </span>
       </div>
     </section>
@@ -509,10 +517,10 @@ export function OperationalPublicForm({
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
   const [isResponsibleEditing, setIsResponsibleEditing] = useState(false);
-  const [chlorineInteger, setChlorineInteger] = useState(0);
-  const [chlorineDecimal, setChlorineDecimal] = useState(3);
-  const [phInteger, setPhInteger] = useState(6);
-  const [phDecimal, setPhDecimal] = useState(5);
+  const [chlorineInteger, setChlorineInteger] = useState<number | null>(null);
+  const [chlorineDecimal, setChlorineDecimal] = useState<number | null>(null);
+  const [phInteger, setPhInteger] = useState<number | null>(null);
+  const [phDecimal, setPhDecimal] = useState<number | null>(null);
   const [recordedAtLocalValue, setRecordedAtLocalValue] = useState(() => toDateTimeLocalValue(new Date()));
   const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits());
   const [datePickerValue, setDatePickerValue] = useState(recordedAtLocalValue);
@@ -530,23 +538,26 @@ export function OperationalPublicForm({
   const temperatureOptions = useMemo(() => getTemperatureOptions(productType), [productType]);
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
   const hasSelectedTemperature = temperatureC !== "";
-  const chlorineValue = Number(formatDecimalMeasurement(chlorineInteger, chlorineDecimal));
-  const phValue = Number(formatDecimalMeasurement(phInteger, phDecimal));
-  const chlorineCompliant = isChlorineCompliant(chlorineValue);
-  const phCompliant = isPhCompliant(phValue);
+  const hasChlorineMeasurement = chlorineInteger !== null && chlorineDecimal !== null;
+  const hasPhMeasurement = phInteger !== null && phDecimal !== null;
+  const hasWaterMeasurements = hasChlorineMeasurement && hasPhMeasurement;
+  const chlorineValue = hasChlorineMeasurement ? Number(formatDecimalMeasurement(chlorineInteger, chlorineDecimal)) : null;
+  const phValue = hasPhMeasurement ? Number(formatDecimalMeasurement(phInteger, phDecimal)) : null;
+  const chlorineCompliant = chlorineValue === null ? null : isChlorineCompliant(chlorineValue);
+  const phCompliant = phValue === null ? null : isPhCompliant(phValue);
   const supplySubmittedProductName = [productName.trim(), providerName.trim()].filter(Boolean).join(" - ");
   const supplyStorageKey = `quimly:supply-reception:${token}`;
   const waterNonComplianceItems = useMemo<ComplianceItem[]>(() => {
     const items: ComplianceItem[] = [];
 
-    if (!chlorineCompliant) {
+    if (chlorineCompliant === false) {
       items.push({
         key: "chlorine",
         text: "Nivel de Cloro Residual fuera de rango.",
       });
     }
 
-    if (!phCompliant) {
+    if (phCompliant === false) {
       items.push({
         key: "ph",
         text: "Nivel de pH fuera de rango.",
@@ -784,6 +795,12 @@ export function OperationalPublicForm({
       return;
     }
 
+    if (isWaterQuality && !hasWaterMeasurements) {
+      event.preventDefault();
+      setWaterStep(2);
+      return;
+    }
+
     if (isWaterQuality && showWaterCorrectiveStep && !observations.trim()) {
       event.preventDefault();
       setActionTakenError("Registra la acción tomada antes de enviar.");
@@ -864,7 +881,31 @@ export function OperationalPublicForm({
     }
   }
 
+  function updateChlorineInteger(value: number) {
+    setChlorineInteger(value);
+    setChlorineDecimal((currentValue) => currentValue ?? 0);
+  }
+
+  function updateChlorineDecimal(value: number) {
+    setChlorineDecimal(value);
+    setChlorineInteger((currentValue) => currentValue ?? 0);
+  }
+
+  function updatePhInteger(value: number) {
+    setPhInteger(value);
+    setPhDecimal((currentValue) => currentValue ?? 0);
+  }
+
+  function updatePhDecimal(value: number) {
+    setPhDecimal(value);
+    setPhInteger((currentValue) => currentValue ?? 0);
+  }
+
   function continueFromWaterMeasurements() {
+    if (!hasWaterMeasurements) {
+      return;
+    }
+
     if (!showWaterCorrectiveStep) {
       setObservations("");
       setActionTakenError("");
@@ -894,8 +935,16 @@ export function OperationalPublicForm({
         {isWaterQuality ? (
           <>
             <input type="hidden" name="operatorName" value={operatorName} />
-            <input type="hidden" name="chlorinePpm" value={formatDecimalMeasurement(chlorineInteger, chlorineDecimal)} />
-            <input type="hidden" name="phLevel" value={formatDecimalMeasurement(phInteger, phDecimal)} />
+            <input
+              type="hidden"
+              name="chlorinePpm"
+              value={hasChlorineMeasurement ? formatDecimalMeasurement(chlorineInteger, chlorineDecimal) : ""}
+            />
+            <input
+              type="hidden"
+              name="phLevel"
+              value={hasPhMeasurement ? formatDecimalMeasurement(phInteger, phDecimal) : ""}
+            />
             <input type="hidden" name="observations" value={observations} />
           </>
         ) : null}
@@ -919,7 +968,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <section className="grid gap-6 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader canGoBack={false} currentStep={1} totalSteps={1} />
 
             <label className={operationalFormStyles.field}>
@@ -1041,7 +1090,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={waterStep > 1}
                 currentStep={waterStep}
@@ -1085,8 +1134,8 @@ export function OperationalPublicForm({
                       decimalValue={chlorineDecimal}
                       integerMin={0}
                       integerMax={9}
-                      onIntegerChange={setChlorineInteger}
-                      onDecimalChange={setChlorineDecimal}
+                      onIntegerChange={updateChlorineInteger}
+                      onDecimalChange={updateChlorineDecimal}
                       isCompliant={chlorineCompliant}
                       helperText="Rango aceptable: 0.3 a 2.0 mg/L"
                     />
@@ -1096,8 +1145,8 @@ export function OperationalPublicForm({
                       decimalValue={phDecimal}
                       integerMin={0}
                       integerMax={9}
-                      onIntegerChange={setPhInteger}
-                      onDecimalChange={setPhDecimal}
+                      onIntegerChange={updatePhInteger}
+                      onDecimalChange={updatePhDecimal}
                       isCompliant={phCompliant}
                       helperText="Rango aceptable: 6.5 a 9.0"
                     />
@@ -1105,8 +1154,9 @@ export function OperationalPublicForm({
 
                   <button
                     type="button"
+                    disabled={!hasWaterMeasurements}
                     onClick={continueFromWaterMeasurements}
-                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98]"
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
                   >
                     Continuar
                   </button>
@@ -1188,7 +1238,7 @@ export function OperationalPublicForm({
               isModified={hasCustomRecordedAt}
               onOpenDatePicker={openDatePicker}
             />
-            <div className="grid min-h-[560px] content-start gap-8 rounded-t-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.75rem]">
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
                 currentStep={supplyProgressStep}
