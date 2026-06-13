@@ -56,6 +56,7 @@
   --type-button-line-height: 1.25rem;
   --type-status-size: 0.875rem;
   --type-status-line-height: 1.25rem;
+  color-scheme: only light;
 }
 
 @theme inline {
@@ -68,10 +69,12 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  color-scheme: only light;
   font-family: var(--app-font-sans);
 }
 
 html {
+  color-scheme: only light;
   scroll-behavior: smooth;
 }
 
