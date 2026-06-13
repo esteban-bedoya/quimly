@@ -16,6 +16,7 @@ import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 type CatalogItem = {
   id: string;
   name: string;
+  equipmentType?: BranchRefrigerationEquipmentType | null;
   equipment_type?: BranchRefrigerationEquipmentType | null;
 };
 
@@ -33,6 +34,9 @@ type SupplyDecision = (typeof supplyDecisions)[number];
 type YesNoValue = "true" | "false";
 type SupplyStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 type WaterStep = 1 | 2 | 3 | 4;
+type ThermalStep = 1 | 2 | 3 | 4 | 5;
+type SanitationStep = 1 | 2 | 3 | 4;
+type SanitationCleaningType = "Superficial" | "Profunda";
 type SupplyActionTakenItem = {
   key: string;
   text: string;
@@ -51,19 +55,33 @@ const supplyProductTypeLabels: Record<SupplyProductType, string> = {
 const otherActionTakenValue = "__other__";
 
 const supplyAcceptedActionOptions = [
+  "Se informa al administrador/responsable.",
   "Se acepta para uso inmediato.",
-  "Se traslada inmediatamente a refrigeración.",
-  "Se informa al responsable de compras.",
-  "Se bota a la basura parte del lote",
+  "Se traslada urgente a refrigeración/congelación.",
+  "Se separa para revisión.",
 ];
 
-const supplyRejectedActionOptions = ["Se devuelve al proveedor.", "Se rechaza el lote afectado."];
+const supplyRejectedActionOptions = [
+  "Se informa al administrador/responsable.",
+  "Se devuelve al proveedor.",
+  "Se desecha el lote.",
+  "Se aísla producto no conforme.",
+];
 
 const waterCorrectiveActionOptions = [
-  "Se reportó al administrador",
-  "Se reportó a EPM",
-  "Se suspendió el uso de agua de red y se utilizó agua envasada temporalmente.",
+  "Se informa al administrador/responsable.",
+  "Se revisa sistema de filtración.",
+  "Se usa suministro alterno.",
+  "Se realiza contramuestra en otro punto de la red.",
 ];
+
+const thermalCorrectiveActionOptions = [
+  "Se informa al administrador/responsable.",
+  "Se ajusta el termostato del equipo.",
+  "Se trasladan los alimentos urgentes a otro equipo de frío operativo.",
+];
+
+const sanitationCleaningTypes = ["Superficial", "Profunda"] as const;
 
 const supplyTemperatureSettings: Record<
   Exclude<SupplyProductType, "Ambiente">,
@@ -104,7 +122,7 @@ function isTemperatureCompliant(productType: SupplyProductType | "", temperature
   }
 
   if (productType === "Refrigerado") {
-    return temperature >= -1 && temperature <= 4;
+    return temperature >= 0 && temperature <= 4;
   }
 
   if (productType === "Congelado") {
@@ -124,6 +142,28 @@ function isChlorineCompliant(value: number) {
 
 function isPhCompliant(value: number) {
   return value >= 6.5 && value <= 9.0;
+}
+
+function isThermalTemperatureCompliant(equipmentType: BranchRefrigerationEquipmentType | null | undefined, temperature: number) {
+  if (equipmentType === "refrigerator") {
+    return temperature >= 0 && temperature <= 4;
+  }
+
+  if (equipmentType === "freezer") {
+    return temperature <= -18;
+  }
+
+  return null;
+}
+
+function getCatalogEquipmentType(item: CatalogItem | null) {
+  return item?.equipment_type ?? item?.equipmentType ?? null;
+}
+
+function getCatalogEquipmentTypeLabel(item: CatalogItem | null) {
+  const equipmentType = getCatalogEquipmentType(item);
+
+  return equipmentType ? refrigerationEquipmentTypeLabels[equipmentType] : null;
 }
 
 function formatResponsibleName(value: string) {
@@ -442,7 +482,7 @@ function ActionTakenChoiceGroup({
             onChange={() => onSelect(otherActionTakenValue)}
             className="h-4 w-4 shrink-0 accent-[#111816]"
           />
-          <span>Otra</span>
+          <span>Otra.</span>
         </span>
         {isOtherSelected ? (
           <input
@@ -597,9 +637,18 @@ export function OperationalPublicForm({
   );
   const isSupplyReception = formType === "supply_reception";
   const isWaterQuality = formType === "water_quality";
+  const isThermalControl = formType === "thermal_control";
+  const isAreaSanitation = formType === "area_sanitation";
   const [currentStep, setCurrentStep] = useState<SupplyStep>(1);
   const [waterStep, setWaterStep] = useState<WaterStep>(1);
+  const [thermalStep, setThermalStep] = useState<ThermalStep>(1);
+  const [sanitationStep, setSanitationStep] = useState<SanitationStep>(1);
   const [operatorName, setOperatorName] = useState("");
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState("");
+  const [selectedSanitationAreaId, setSelectedSanitationAreaId] = useState("");
+  const [sanitationCleaningType, setSanitationCleaningType] = useState<SanitationCleaningType | "">("");
+  const [sanitationImplementsConfirmed, setSanitationImplementsConfirmed] = useState(false);
+  const [sanitationChemicalsConfirmed, setSanitationChemicalsConfirmed] = useState(false);
   const [productName, setProductName] = useState("");
   const [providerName, setProviderName] = useState("");
   const [productType, setProductType] = useState<SupplyProductType | "">("");
@@ -613,6 +662,7 @@ export function OperationalPublicForm({
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
+  const [isSanitationAreaMenuOpen, setIsSanitationAreaMenuOpen] = useState(false);
   const [isResponsibleEditing, setIsResponsibleEditing] = useState(false);
   const [chlorineInteger, setChlorineInteger] = useState<number | null>(null);
   const [chlorineDecimal, setChlorineDecimal] = useState<number | null>(null);
@@ -625,16 +675,41 @@ export function OperationalPublicForm({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
   const temperatureMenuRef = useRef<HTMLDivElement>(null);
+  const sanitationAreaPickerRef = useRef<HTMLDivElement>(null);
   const actionTakenCustomInputRef = useRef<HTMLInputElement>(null);
   const label = operationalFormLabels[formType];
-  const missingThermalCatalog = formType === "thermal_control" && equipment.length === 0;
-  const missingAreaCatalog = formType === "area_sanitation" && sanitationAreas.length === 0;
+  const missingThermalCatalog = isThermalControl && equipment.length === 0;
+  const missingAreaCatalog = isAreaSanitation && sanitationAreas.length === 0;
   const isDisabled = isPending || missingThermalCatalog || missingAreaCatalog;
   const isSubmitDisabled = isDisabled || isResponsibleEditing;
+  const selectedSanitationArea = useMemo(
+    () => sanitationAreas.find((item) => item.id === selectedSanitationAreaId) ?? null,
+    [sanitationAreas, selectedSanitationAreaId],
+  );
+  const hasSanitationAreaAndType = Boolean(selectedSanitationAreaId && sanitationCleaningType);
+  const hasSanitationProtocol = sanitationImplementsConfirmed && sanitationChemicalsConfirmed;
   const showTemperaturePicker = productType === "Refrigerado" || productType === "Congelado";
-  const temperatureOptions = useMemo(() => getTemperatureOptions(productType), [productType]);
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
   const hasSelectedTemperature = temperatureC !== "";
+  const selectedThermalEquipment = useMemo(
+    () => equipment.find((item) => item.id === selectedEquipmentId) ?? null,
+    [equipment, selectedEquipmentId],
+  );
+  const selectedThermalEquipmentType = getCatalogEquipmentType(selectedThermalEquipment);
+  const thermalTemperatureProductType: SupplyProductType | "" =
+    selectedThermalEquipmentType === "freezer" ? "Congelado" : selectedThermalEquipmentType === "refrigerator" ? "Refrigerado" : "";
+  const activeTemperatureProductType = isThermalControl ? thermalTemperatureProductType : productType;
+  const temperatureOptions = useMemo(() => getTemperatureOptions(activeTemperatureProductType), [activeTemperatureProductType]);
+  const thermalTemperatureValue = temperatureC.trim() ? Number(temperatureC) : null;
+  const hasThermalTemperature =
+    thermalTemperatureValue !== null && Number.isFinite(thermalTemperatureValue);
+  const thermalTemperatureCompliant =
+    hasThermalTemperature && selectedThermalEquipmentType
+      ? isThermalTemperatureCompliant(selectedThermalEquipmentType, thermalTemperatureValue)
+      : null;
+  const showThermalCorrectiveStep = thermalTemperatureCompliant === false;
+  const thermalTotalSteps = showThermalCorrectiveStep ? 5 : 4;
+  const thermalProgressStep = thermalStep === 5 && !showThermalCorrectiveStep ? 4 : thermalStep;
   const hasChlorineMeasurement = chlorineInteger !== null && chlorineDecimal !== null;
   const hasPhMeasurement = phInteger !== null && phDecimal !== null;
   const hasWaterMeasurements = hasChlorineMeasurement && hasPhMeasurement;
@@ -650,7 +725,7 @@ export function OperationalPublicForm({
     if (chlorineCompliant === false) {
       items.push({
         key: "chlorine",
-        text: "Nivel de Cloro Residual fuera de rango.",
+        text: "Nivel de cloro residual fuera de rango.",
       });
     }
 
@@ -701,12 +776,12 @@ export function OperationalPublicForm({
     decision === "Aceptar Producto"
       ? {
           key: "accepted",
-          text: "Producto aceptado.",
+          text: "Producto ACEPTADO.",
         }
       : decision === "Rechazar Producto"
         ? {
             key: "rejected",
-            text: "Producto rechazado.",
+            text: "Producto RECHAZADO.",
           }
         : null;
   const supplyActionTakenOptions =
@@ -718,6 +793,14 @@ export function OperationalPublicForm({
     productType === "Congelado"
       ? "¿Con qué temperatura llegó el producto congelado?"
       : "¿Con qué temperatura llegó el producto refrigerado?";
+  const thermalTemperatureStepTitle =
+    selectedThermalEquipmentType === "freezer"
+      ? "¿Qué temperatura tiene el congelador?"
+      : "¿Qué temperatura tiene el refrigerador?";
+  const thermalTemperatureAlertText =
+    selectedThermalEquipmentType === "freezer"
+      ? "Temperatura del congelador fuera de rango seguro."
+      : "Temperatura del refrigerador fuera de rango seguro.";
   const recordedAtDisplay = formatRecordDateLabel(recordedAtLocalValue);
   const recordedAtIsoValue = hasCustomRecordedAt ? toIsoDateTime(recordedAtLocalValue) : "";
 
@@ -807,13 +890,41 @@ export function OperationalPublicForm({
   }, [isTemperatureMenuOpen]);
 
   useEffect(() => {
+    if (!isSanitationAreaMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!sanitationAreaPickerRef.current?.contains(target)) {
+        setIsSanitationAreaMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSanitationAreaMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSanitationAreaMenuOpen]);
+
+  useEffect(() => {
     if (!isTemperatureMenuOpen) {
       return;
     }
 
     const targetTemperature = hasSelectedTemperature
       ? Number(temperatureC)
-      : getInitialTemperatureScrollTarget(productType);
+      : getInitialTemperatureScrollTarget(activeTemperatureProductType);
 
     if (!Number.isFinite(targetTemperature)) {
       return;
@@ -831,7 +942,7 @@ export function OperationalPublicForm({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [hasSelectedTemperature, isTemperatureMenuOpen, productType, temperatureC]);
+  }, [activeTemperatureProductType, hasSelectedTemperature, isTemperatureMenuOpen, temperatureC]);
 
   function selectProductType(nextProductType: SupplyProductType) {
     setProductType(nextProductType);
@@ -906,7 +1017,12 @@ export function OperationalPublicForm({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if ((isSupplyReception && currentStep !== 10) || (isWaterQuality && waterStep !== 4)) {
+    if (
+      (isSupplyReception && currentStep !== 10) ||
+      (isWaterQuality && waterStep !== 4) ||
+      (isThermalControl && thermalStep !== 5) ||
+      (isAreaSanitation && sanitationStep !== 4)
+    ) {
       event.preventDefault();
       return;
     }
@@ -922,7 +1038,26 @@ export function OperationalPublicForm({
       return;
     }
 
+    if (isThermalControl && (!selectedEquipmentId || !hasThermalTemperature)) {
+      event.preventDefault();
+      setThermalStep(selectedEquipmentId ? 3 : 2);
+      return;
+    }
+
+    if (isAreaSanitation && (!hasSanitationAreaAndType || !hasSanitationProtocol)) {
+      event.preventDefault();
+      setSanitationStep(hasSanitationAreaAndType ? 3 : 2);
+      return;
+    }
+
     if (isWaterQuality && showWaterCorrectiveStep && !hasCompletedActionTaken) {
+      event.preventDefault();
+      setActionTakenError("Registra la acción tomada antes de enviar.");
+      actionTakenCustomInputRef.current?.focus();
+      return;
+    }
+
+    if (isThermalControl && showThermalCorrectiveStep && !hasCompletedActionTaken) {
       event.preventDefault();
       setActionTakenError("Registra la acción tomada antes de enviar.");
       actionTakenCustomInputRef.current?.focus();
@@ -1002,6 +1137,47 @@ export function OperationalPublicForm({
     }
   }
 
+  function goBackThermalStep() {
+    setIsResponsibleEditing(false);
+
+    if (thermalStep === 2) {
+      setThermalStep(1);
+      return;
+    }
+
+    if (thermalStep === 3) {
+      setThermalStep(2);
+      return;
+    }
+
+    if (thermalStep === 4) {
+      setThermalStep(3);
+      return;
+    }
+
+    if (thermalStep === 5) {
+      setThermalStep(showThermalCorrectiveStep ? 4 : 3);
+    }
+  }
+
+  function goBackSanitationStep() {
+    setIsResponsibleEditing(false);
+
+    if (sanitationStep === 2) {
+      setSanitationStep(1);
+      return;
+    }
+
+    if (sanitationStep === 3) {
+      setSanitationStep(2);
+      return;
+    }
+
+    if (sanitationStep === 4) {
+      setSanitationStep(3);
+    }
+  }
+
   function updateChlorineInteger(value: number) {
     setChlorineInteger(value);
     setChlorineDecimal((currentValue) => currentValue ?? 0);
@@ -1034,6 +1210,30 @@ export function OperationalPublicForm({
     setWaterStep(showWaterCorrectiveStep ? 3 : 4);
   }
 
+  function selectThermalEquipment(equipmentId: string) {
+    setSelectedEquipmentId(equipmentId);
+    setTemperatureC("");
+    setIsTemperatureMenuOpen(false);
+    resetActionTakenSelection();
+  }
+
+  function updateThermalTemperature(value: string) {
+    setTemperatureC(value);
+    resetActionTakenSelection();
+  }
+
+  function continueFromThermalTemperature() {
+    if (!hasThermalTemperature || !selectedThermalEquipment || thermalTemperatureCompliant === null) {
+      return;
+    }
+
+    if (!showThermalCorrectiveStep) {
+      resetActionTakenSelection();
+    }
+
+    setThermalStep(showThermalCorrectiveStep ? 4 : 5);
+  }
+
   function selectSupplyProductType(nextProductType: SupplyProductType) {
     selectProductType(nextProductType);
   }
@@ -1049,13 +1249,31 @@ export function OperationalPublicForm({
   return (
     <OperationalFormLayout
       title={label.title}
-      description={isSupplyReception || isWaterQuality ? null : label.description}
+      description={isSupplyReception || isWaterQuality || isThermalControl || isAreaSanitation ? null : label.description}
       companyName={companyName}
       branchName={branchName}
     >
       <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
         <input type="hidden" name="recordedAt" value={recordedAtIsoValue} />
+        {isAreaSanitation ? (
+          <>
+            <input type="hidden" name="operatorName" value={operatorName} />
+            <input type="hidden" name="areaId" value={selectedSanitationAreaId} />
+            <input type="hidden" name="cleaningType" value={sanitationCleaningType} />
+            <input type="hidden" name="isCompliant" value={hasSanitationProtocol ? "true" : ""} />
+            <input type="hidden" name="usedExclusiveImplements" value={sanitationImplementsConfirmed ? "true" : ""} />
+            <input type="hidden" name="usedAuthorizedChemicals" value={sanitationChemicalsConfirmed ? "true" : ""} />
+          </>
+        ) : null}
+        {isThermalControl ? (
+          <>
+            <input type="hidden" name="operatorName" value={operatorName} />
+            <input type="hidden" name="equipmentId" value={selectedEquipmentId} />
+            <input type="hidden" name="temperatureC" value={hasThermalTemperature ? temperatureC : ""} />
+            <input type="hidden" name="observations" value={observations} />
+          </>
+        ) : null}
         {isWaterQuality ? (
           <>
             <input type="hidden" name="operatorName" value={operatorName} />
@@ -1085,7 +1303,468 @@ export function OperationalPublicForm({
           </>
         ) : null}
 
-        {!isSupplyReception && !isWaterQuality ? (
+        {isThermalControl ? (
+          <section className="grid gap-2">
+            <PublicFormDateControl
+              dateLabel={recordedAtDisplay}
+              isModified={hasCustomRecordedAt}
+              onOpenDatePicker={openDatePicker}
+            />
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <PublicFormCardHeader
+                canGoBack={thermalStep > 1}
+                currentStep={thermalProgressStep}
+                onBack={goBackThermalStep}
+                totalSteps={thermalTotalSteps}
+              />
+
+              {thermalStep === 1 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la medición?</h2>
+                  </div>
+                  <input
+                    autoComplete="name"
+                    placeholder="Ej. Ana Gomez"
+                    value={operatorName}
+                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
+                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                  />
+                  <button
+                    type="button"
+                    disabled={!operatorName.trim()}
+                    onClick={() => setThermalStep(2)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {thermalStep === 2 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Selección del equipo</h2>
+                  </div>
+                  {missingThermalCatalog ? (
+                    <p className={operationalFormStyles.statusWarning}>
+                      No hay equipos de frío activos para esta sede. Configúralos desde el administrador.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3">
+                      {equipment.map((item) => {
+                        const isSelected = selectedEquipmentId === item.id;
+                        const equipmentTypeLabel = getCatalogEquipmentTypeLabel(item);
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            disabled={!equipmentTypeLabel}
+                            onClick={() => selectThermalEquipment(item.id)}
+                            className={[
+                              "min-h-16 rounded-2xl border px-5 text-left transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
+                              isSelected ? "border-neutral-900 bg-neutral-200" : "border-[#c7d8d4] bg-white",
+                            ].join(" ")}
+                          >
+                              <span className="block text-xl font-black text-neutral-950">{item.name}</span>
+                              {equipmentTypeLabel ? (
+                                <span className="mt-1 block text-sm font-bold text-[#51645f]">{equipmentTypeLabel}</span>
+                              ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!selectedEquipmentId || !selectedThermalEquipmentType}
+                    onClick={() => setThermalStep(3)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {thermalStep === 3 ? (
+                <div ref={temperaturePickerRef} className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">{thermalTemperatureStepTitle}</h2>
+                  </div>
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={isTemperatureMenuOpen}
+                      onClick={() => setIsTemperatureMenuOpen((currentValue) => !currentValue)}
+                      className={[
+                        "flex min-h-20 w-full items-center justify-between gap-3 rounded-2xl border px-5 text-left text-3xl font-black outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10",
+                        hasSelectedTemperature
+                          ? "border-[#147060]/20 bg-white text-neutral-950"
+                          : "border-[#c7d8d4] bg-white text-[#7b8c87]",
+                      ].join(" ")}
+                    >
+                      <span>{hasSelectedTemperature ? `${temperatureC}°C` : "Seleccione"}</span>
+                      <span aria-hidden="true" className="text-2xl leading-none text-[#147060]">
+                        ▾
+                      </span>
+                    </button>
+
+                    {isTemperatureMenuOpen ? (
+                      <div
+                        ref={temperatureMenuRef}
+                        className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                      >
+                        <div className="grid gap-1">
+                          {temperatureOptions.map((option) => {
+                            const optionCompliant =
+                              selectedThermalEquipmentType !== null
+                                ? isThermalTemperatureCompliant(selectedThermalEquipmentType, option) === true
+                                : false;
+                            const isSelected = temperatureC === String(option);
+
+                            return (
+                              <button
+                                key={option}
+                                type="button"
+                                data-temperature-option={option}
+                                onClick={() => {
+                                  updateThermalTemperature(String(option));
+                                  setIsTemperatureMenuOpen(false);
+                                }}
+                                className={[
+                                  "flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-lg font-black transition",
+                                  isSelected
+                                    ? "border-[#111816] bg-[#111816] text-white"
+                                    : optionCompliant
+                                      ? "border-emerald-100 bg-emerald-50 text-emerald-950"
+                                      : "border-rose-100 bg-rose-50 text-[#7b1b28]",
+                                ].join(" ")}
+                              >
+                                <span>{option}°C</span>
+                                <span
+                                  aria-hidden="true"
+                                  className={[
+                                    "h-3 w-3 rounded-[3px]",
+                                    optionCompliant ? "bg-emerald-300" : "bg-[#8f1d2c]",
+                                  ].join(" ")}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {thermalTemperatureCompliant !== null ? (
+                    <div
+                      className={[
+                        "flex min-h-14 items-center justify-between rounded-2xl px-4 py-3",
+                        thermalTemperatureCompliant ? "bg-emerald-50" : "bg-rose-50",
+                      ].join(" ")}
+                    >
+                      <span className="text-sm font-black text-neutral-950">Resultado</span>
+                      <span
+                        className={[
+                          "inline-flex items-center rounded-full px-3 py-1 text-sm font-black",
+                          thermalTemperatureCompliant ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800",
+                        ].join(" ")}
+                      >
+                        {thermalTemperatureCompliant ? "Cumple" : "No cumple"}
+                      </span>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!hasThermalTemperature || thermalTemperatureCompliant === null}
+                    onClick={continueFromThermalTemperature}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {thermalStep === 4 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Qué medidas se tomaron?</h2>
+                  </div>
+                  <div className="grid gap-2 rounded-2xl border-l-4 border-[#8f1d2c] bg-[#f8eeee] px-4 py-3 text-sm font-bold leading-6 text-neutral-950">
+                    <span
+                      aria-label="Alerta"
+                      className="grid h-9 w-9 place-items-center rounded-xl bg-[#efd6d8] text-[#8f1d2c]"
+                      role="img"
+                    >
+                      <EmergencyTriangleIcon />
+                    </span>
+                    <ul className="grid gap-1.5">
+                      <li className="flex gap-2.5">
+                        <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 rounded-full bg-[#8f1d2c]" />
+                        <span>{thermalTemperatureAlertText}</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <ActionTakenChoiceGroup
+                    customValue={customActionTaken}
+                    errorId="thermal-action-taken-error"
+                    inputRef={actionTakenCustomInputRef}
+                    name="thermal-action-taken"
+                    onCustomChange={updateCustomActionTaken}
+                    onSelect={selectActionTakenChoice}
+                    options={thermalCorrectiveActionOptions}
+                    selectedValue={actionTakenChoice}
+                  />
+                  {actionTakenError && !hasCompletedActionTaken ? (
+                    <p id="thermal-action-taken-error" className={operationalFormStyles.statusError}>
+                      {actionTakenError}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!hasCompletedActionTaken}
+                    onClick={() => setThermalStep(5)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {thermalStep === 5 ? (
+                <div className="grid gap-8">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
+                  </div>
+                  <EditableResponsibleSummary
+                    isEditing={isResponsibleEditing}
+                    onEditingChange={setIsResponsibleEditing}
+                    responsibleName={operatorName}
+                    onResponsibleNameChange={setOperatorName}
+                  />
+                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
+                    {isPending ? "Guardando..." : "Firmar y registrar"}
+                  </OperationalFormSubmitButton>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {isAreaSanitation ? (
+          <section className="grid gap-2">
+            <PublicFormDateControl
+              dateLabel={recordedAtDisplay}
+              isModified={hasCustomRecordedAt}
+              onOpenDatePicker={openDatePicker}
+            />
+            <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+              <PublicFormCardHeader
+                canGoBack={sanitationStep > 1}
+                currentStep={sanitationStep}
+                onBack={goBackSanitationStep}
+                totalSteps={4}
+              />
+
+              {sanitationStep === 1 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la limpieza?</h2>
+                  </div>
+                  <input
+                    autoComplete="name"
+                    placeholder="Ej. Ana Gomez"
+                    value={operatorName}
+                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
+                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                  />
+                  <button
+                    type="button"
+                    disabled={!operatorName.trim()}
+                    onClick={() => setSanitationStep(2)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {sanitationStep === 2 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Selección del área / elemento</h2>
+                  </div>
+                  {missingAreaCatalog ? (
+                    <p className={operationalFormStyles.statusWarning}>
+                      Esta sede aun no tiene areas registradas para usar este QR.
+                    </p>
+                  ) : (
+                    <div ref={sanitationAreaPickerRef} className="grid gap-2">
+                      <p className="text-sm font-black text-neutral-950">Área o elemento</p>
+                      <button
+                        type="button"
+                        aria-expanded={isSanitationAreaMenuOpen}
+                        onClick={() => setIsSanitationAreaMenuOpen((currentValue) => !currentValue)}
+                        className={[
+                          "flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border px-5 text-left text-lg font-black outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10",
+                          selectedSanitationArea
+                            ? "border-[#147060]/20 bg-white text-neutral-950"
+                            : "border-[#c7d8d4] bg-white text-[#7b8c87]",
+                        ].join(" ")}
+                      >
+                        <span>{selectedSanitationArea?.name ?? "Seleccionar área o elemento"}</span>
+                        <span aria-hidden="true" className="text-2xl leading-none text-[#147060]">
+                          ▾
+                        </span>
+                      </button>
+
+                      {isSanitationAreaMenuOpen ? (
+                        <div className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]">
+                          <div className="grid gap-1">
+                            {sanitationAreas.map((item) => {
+                              const isSelected = selectedSanitationAreaId === item.id;
+
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSanitationAreaId(item.id);
+                                    setIsSanitationAreaMenuOpen(false);
+                                  }}
+                                  className={[
+                                    "flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-lg font-black transition active:scale-[0.99]",
+                                    isSelected
+                                      ? "border-[#111816] bg-[#111816] text-white"
+                                      : "border-[#d7e4e1] bg-[#f8fbfa] text-neutral-950",
+                                  ].join(" ")}
+                                >
+                                  <span>{item.name}</span>
+                                  {isSelected ? (
+                                    <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-[#48c7d2]" />
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <fieldset className="grid gap-3">
+                    <legend className="text-sm font-black text-neutral-950">Tipo de limpieza ejecutada</legend>
+                    <div className="grid grid-cols-2 gap-3">
+                      {sanitationCleaningTypes.map((option) => (
+                        <label
+                          key={option}
+                          className={[
+                            "flex min-h-16 items-center justify-center rounded-2xl border px-4 text-lg font-black transition active:scale-[0.98]",
+                            sanitationCleaningType === option
+                              ? "border-neutral-900 bg-neutral-200 font-semibold text-neutral-900"
+                              : "border-[#c7d8d4] bg-white text-neutral-950",
+                          ].join(" ")}
+                        >
+                          <input
+                            type="radio"
+                            name="sanitation-cleaning-type"
+                            value={option}
+                            checked={sanitationCleaningType === option}
+                            onChange={() => setSanitationCleaningType(option)}
+                            className="sr-only"
+                          />
+                          {option}.
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <button
+                    type="button"
+                    disabled={!hasSanitationAreaAndType}
+                    onClick={() => setSanitationStep(3)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {sanitationStep === 3 ? (
+                <div className="grid gap-7">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Protocolo de saneamiento</h2>
+                  </div>
+                  <div className="grid gap-3">
+                    <label
+                      className={[
+                        "flex min-h-20 items-start gap-3 rounded-2xl border px-4 py-4 text-base font-black leading-6 transition active:scale-[0.99]",
+                        sanitationImplementsConfirmed
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                          : "border-[#c7d8d4] bg-white text-neutral-950",
+                      ].join(" ")}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sanitationImplementsConfirmed}
+                        onChange={(event) => setSanitationImplementsConfirmed(event.target.checked)}
+                        className="mt-1 h-5 w-5 shrink-0 accent-[#0f5f48]"
+                      />
+                      <span>Se utilizaron implementos exclusivos para este fin evitando contaminación cruzada.</span>
+                    </label>
+
+                    <label
+                      className={[
+                        "flex min-h-20 items-start gap-3 rounded-2xl border px-4 py-4 text-base font-black leading-6 transition active:scale-[0.99]",
+                        sanitationChemicalsConfirmed
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                          : "border-[#c7d8d4] bg-white text-neutral-950",
+                      ].join(" ")}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sanitationChemicalsConfirmed}
+                        onChange={(event) => setSanitationChemicalsConfirmed(event.target.checked)}
+                        className="mt-1 h-5 w-5 shrink-0 accent-[#0f5f48]"
+                      />
+                      <span>
+                        Se utilizaron los productos químicos y en las dosis autorizadas en el Plan de Saneamiento Básico.
+                      </span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!hasSanitationProtocol}
+                    onClick={() => setSanitationStep(4)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {sanitationStep === 4 ? (
+                <div className="grid gap-8">
+                  <div className="grid gap-3">
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
+                  </div>
+                  <EditableResponsibleSummary
+                    isEditing={isResponsibleEditing}
+                    onEditingChange={setIsResponsibleEditing}
+                    responsibleName={operatorName}
+                    onResponsibleNameChange={setOperatorName}
+                  />
+                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
+                    {isPending ? "Guardando..." : "Firmar y registrar"}
+                  </OperationalFormSubmitButton>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {!isSupplyReception && !isWaterQuality && !isThermalControl && !isAreaSanitation ? (
           <div className="grid gap-2">
             <PublicFormDateControl
               dateLabel={recordedAtDisplay}
@@ -1108,86 +1787,9 @@ export function OperationalPublicForm({
               />
             </label>
 
-            {formType === "thermal_control" ? (
-              <>
-                <label className={operationalFormStyles.field}>
-                  <span className={operationalFormStyles.fieldLabel}>Equipo de refrigeracion</span>
-                  <select
-                    name="equipmentId"
-                    required
-                    disabled={missingThermalCatalog}
-                    className={operationalFormStyles.select}
-                  >
-                    <option value="">Seleccionar equipo</option>
-                    {equipment.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.equipment_type
-                          ? `${item.name} - ${refrigerationEquipmentTypeLabels[item.equipment_type]}`
-                          : item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={operationalFormStyles.field}>
-                  <span className={operationalFormStyles.fieldLabel}>Temperatura en °C</span>
-                  <input
-                    name="temperatureC"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    required
-                    placeholder="Ej. 4.2"
-                    className={operationalFormStyles.temperatureInput}
-                  />
-                </label>
-              </>
-            ) : null}
-
-            {formType === "area_sanitation" ? (
-              <>
-                <label className={operationalFormStyles.field}>
-                  <span className={operationalFormStyles.fieldLabel}>Area o zona</span>
-                  <select
-                    name="areaId"
-                    required
-                    disabled={missingAreaCatalog}
-                    className={operationalFormStyles.select}
-                  >
-                    <option value="">Seleccionar area</option>
-                    {sanitationAreas.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <fieldset className={operationalFormStyles.field}>
-                  <legend className={operationalFormStyles.fieldLabel}>Estado de conformidad</legend>
-                  <div className={operationalFormStyles.yesNoGrid}>
-                    <label className={operationalFormStyles.radioLabel}>
-                      <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="true" required />
-                      <span className={operationalFormStyles.yesButtonLarge}>Si</span>
-                    </label>
-                    <label className={operationalFormStyles.radioLabel}>
-                      <input className={operationalFormStyles.radioInput} type="radio" name="isCompliant" value="false" required />
-                      <span className={operationalFormStyles.noButtonLarge}>No</span>
-                    </label>
-                  </div>
-                </fieldset>
-              </>
-            ) : null}
-
             {missingThermalCatalog ? (
               <p className={operationalFormStyles.statusWarning}>
                 Esta sede aun no tiene equipos registrados para usar este QR.
-              </p>
-            ) : null}
-
-            {missingAreaCatalog ? (
-              <p className={operationalFormStyles.statusWarning}>
-                Esta sede aun no tiene areas registradas para usar este QR.
               </p>
             ) : null}
 
@@ -1253,7 +1855,7 @@ export function OperationalPublicForm({
 
                   <div className="grid gap-4">
                     <MeasurementWheelPicker
-                      title="Nivel de Cloro Residual"
+                      title="Nivel de cloro residual"
                       integerValue={chlorineInteger}
                       decimalValue={chlorineDecimal}
                       integerMin={0}
@@ -1773,7 +2375,7 @@ export function OperationalPublicForm({
           </section>
         ) : null}
 
-        {isSupplyReception && state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
+        {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
       </form>
 
       {showDatePicker ? (

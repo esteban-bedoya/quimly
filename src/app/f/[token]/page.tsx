@@ -4,6 +4,7 @@ import { OperationalPublicForm } from "@/components/public-forms/operational-pub
 import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +20,68 @@ type PublicOperationalFormPayload = {
 type CatalogRow = {
   id: string;
   name: string;
+  equipmentType?: BranchRefrigerationEquipmentType | null;
   equipment_type?: BranchRefrigerationEquipmentType | null;
 };
+
+type PublicQrBranchRow = {
+  branch_id: string;
+};
+
+type RefrigerationEquipmentRow = {
+  id: string;
+  name: string;
+  equipment_type: BranchRefrigerationEquipmentType;
+};
+
+async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: CatalogRow[]) {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return fallbackEquipment;
+  }
+
+  const { data: qrRow, error: qrError } = await supabase
+    .from("branch_form_qr_codes")
+    .select("branch_id")
+    .eq("token", token)
+    .eq("is_active", true)
+    .maybeSingle<PublicQrBranchRow>();
+
+  if (qrError) {
+    logServerError("public_form.page.qr_branch_lookup_failed", qrError, { tokenLength: token.length });
+    return fallbackEquipment;
+  }
+
+  if (!qrRow?.branch_id) {
+    return fallbackEquipment;
+  }
+
+  const { data, error } = await supabase
+    .from("branch_refrigeration_equipment")
+    .select("id, name, equipment_type")
+    .eq("branch_id", qrRow.branch_id)
+    .eq("status", "active")
+    .order("name", { ascending: true })
+    .returns<RefrigerationEquipmentRow[]>();
+
+  if (error) {
+    logServerError("public_form.page.thermal_equipment_lookup_failed", error, {
+      branchId: qrRow.branch_id,
+      tokenLength: token.length,
+    });
+    return fallbackEquipment;
+  }
+
+  return (
+    data?.map((item) => ({
+      id: item.id,
+      name: item.name,
+      equipment_type: item.equipment_type,
+      equipmentType: item.equipment_type,
+    })) ?? fallbackEquipment
+  );
+}
 
 export async function generateMetadata({
   params,
@@ -86,13 +147,18 @@ export default async function PublicOperationalFormPage({
     notFound();
   }
 
+  const equipment =
+    payload.form_type === "thermal_control"
+      ? await loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
+      : payload.equipment ?? [];
+
   return (
     <OperationalPublicForm
       token={token}
       formType={payload.form_type}
       branchName={payload.branch_name}
       companyName={payload.company_name}
-      equipment={payload.equipment ?? []}
+      equipment={equipment}
       sanitationAreas={payload.sanitation_areas ?? []}
     />
   );

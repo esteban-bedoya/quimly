@@ -215,10 +215,18 @@ create table if not exists public.thermal_control_records (
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   equipment_id uuid references public.branch_refrigeration_equipment (id) on delete set null,
   equipment_name text not null,
+  equipment_type public.refrigeration_equipment_type,
   operator_name text not null,
   temperature_c numeric(5,2) not null,
+  temperature_compliant boolean,
+  observations text,
   constraint thermal_control_records_tipo_check check (tipo_formulario = 'thermal_control')
 );
+
+alter table public.thermal_control_records
+  add column if not exists equipment_type public.refrigeration_equipment_type,
+  add column if not exists temperature_compliant boolean,
+  add column if not exists observations text;
 
 create table if not exists public.area_sanitation_records (
   id uuid primary key default gen_random_uuid(),
@@ -232,9 +240,34 @@ create table if not exists public.area_sanitation_records (
   area_id uuid references public.branch_sanitation_areas (id) on delete set null,
   area_name text not null,
   operator_name text not null,
+  cleaning_type text,
+  used_exclusive_implements boolean,
+  used_authorized_chemicals boolean,
   is_compliant boolean not null,
+  constraint area_sanitation_records_cleaning_type_check check (
+    cleaning_type is null or cleaning_type in ('Superficial', 'Profunda')
+  ),
   constraint area_sanitation_records_tipo_check check (tipo_formulario = 'area_sanitation')
 );
+
+alter table public.area_sanitation_records
+  add column if not exists cleaning_type text,
+  add column if not exists used_exclusive_implements boolean,
+  add column if not exists used_authorized_chemicals boolean;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'area_sanitation_records_cleaning_type_check'
+      and conrelid = 'public.area_sanitation_records'::regclass
+  ) then
+    alter table public.area_sanitation_records
+      add constraint area_sanitation_records_cleaning_type_check
+      check (cleaning_type is null or cleaning_type in ('Superficial', 'Profunda'));
+  end if;
+end $$;
 
 create table if not exists public.supply_reception_records (
   id uuid primary key default gen_random_uuid(),
@@ -755,7 +788,8 @@ begin
           jsonb_build_object(
             'id', equipment.id,
             'name', equipment.name,
-            'equipment_type', equipment.equipment_type
+            'equipment_type', equipment.equipment_type,
+            'equipmentType', equipment.equipment_type
           )
           order by equipment.name
         )
@@ -803,6 +837,29 @@ drop function if exists public.submit_public_operational_form(
   uuid,
   boolean,
   text,
+  boolean,
+  boolean,
+  text,
+  text,
+  boolean,
+  boolean,
+  text,
+  text,
+  text,
+  date,
+  numeric,
+  numeric,
+  timestamptz
+);
+
+drop function if exists public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
   text,
   boolean,
   boolean,
@@ -840,6 +897,9 @@ create or replace function public.submit_public_operational_form(
   p_temperature_c numeric default null,
   p_area_id uuid default null,
   p_is_compliant boolean default null,
+  p_cleaning_type text default null,
+  p_used_exclusive_implements boolean default null,
+  p_used_authorized_chemicals boolean default null,
   p_product_name text default null,
   p_product_type text default null,
   p_package_intact_date_valid boolean default null,
@@ -906,7 +966,7 @@ begin
       raise exception 'Selecciona el equipo e ingresa una temperatura válida.';
     end if;
 
-    select equipment.id, equipment.name
+    select equipment.id, equipment.name, equipment.equipment_type
     into equipment_record
     from public.branch_refrigeration_equipment equipment
     where equipment.id = p_equipment_id
@@ -918,6 +978,18 @@ begin
       raise exception 'El equipo seleccionado no pertenece a esta sede o no está activo.';
     end if;
 
+    if equipment_record.equipment_type = 'refrigerator' then
+      temperature_compliant_value := p_temperature_c between 0 and 4;
+    elsif equipment_record.equipment_type = 'freezer' then
+      temperature_compliant_value := p_temperature_c <= -18;
+    else
+      raise exception 'El tipo de equipo seleccionado no es válido.';
+    end if;
+
+    if not temperature_compliant_value and nullif(trim(coalesce(p_observations, '')), '') is null then
+      raise exception 'Registra la medida tomada para una temperatura fuera de rango seguro.';
+    end if;
+
     insert into public.thermal_control_records (
       sede_id,
       company_id,
@@ -927,8 +999,11 @@ begin
       qr_code_id,
       equipment_id,
       equipment_name,
+      equipment_type,
       operator_name,
-      temperature_c
+      temperature_c,
+      temperature_compliant,
+      observations
     )
     values (
       qr_record.branch_id,
@@ -939,8 +1014,11 @@ begin
       qr_record.id,
       equipment_record.id,
       equipment_record.name,
+      equipment_record.equipment_type,
       trim(p_operator_name),
-      p_temperature_c
+      p_temperature_c,
+      temperature_compliant_value,
+      nullif(trim(coalesce(p_observations, '')), '')
     );
 
     return jsonb_build_object('ok', true);
@@ -948,7 +1026,15 @@ begin
 
   if qr_record.form_type = 'area_sanitation' then
     if p_area_id is null or p_is_compliant is null then
-      raise exception 'Selecciona el área y el estado de conformidad.';
+      raise exception 'Selecciona el área y confirma el protocolo de saneamiento.';
+    end if;
+
+    if p_cleaning_type is null or p_cleaning_type not in ('Superficial', 'Profunda') then
+      raise exception 'Selecciona el tipo de limpieza ejecutada.';
+    end if;
+
+    if p_used_exclusive_implements is distinct from true or p_used_authorized_chemicals is distinct from true then
+      raise exception 'Confirma el protocolo de saneamiento antes de registrar.';
     end if;
 
     select area.id, area.name
@@ -973,6 +1059,9 @@ begin
       area_id,
       area_name,
       operator_name,
+      cleaning_type,
+      used_exclusive_implements,
+      used_authorized_chemicals,
       is_compliant
     )
     values (
@@ -985,6 +1074,9 @@ begin
       area_record.id,
       area_record.name,
       trim(p_operator_name),
+      p_cleaning_type,
+      p_used_exclusive_implements,
+      p_used_authorized_chemicals,
       p_is_compliant
     );
 
@@ -1010,7 +1102,7 @@ begin
     elsif p_product_type = 'Congelado' and (p_temperature_c < -30 or p_temperature_c > 2) then
       raise exception 'La temperatura recibida no está disponible para producto congelado.';
     elsif p_product_type = 'Refrigerado' then
-      temperature_compliant_value := p_temperature_c between -1 and 4;
+      temperature_compliant_value := p_temperature_c between 0 and 4;
     else
       temperature_compliant_value := p_temperature_c <= -18;
     end if;
@@ -1582,6 +1674,9 @@ revoke all on function public.submit_public_operational_form(
   uuid,
   boolean,
   text,
+  boolean,
+  boolean,
+  text,
   text,
   boolean,
   boolean,
@@ -1601,6 +1696,9 @@ grant execute on function public.submit_public_operational_form(
   uuid,
   numeric,
   uuid,
+  boolean,
+  text,
+  boolean,
   boolean,
   text,
   text,
