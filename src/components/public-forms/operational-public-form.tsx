@@ -16,6 +16,7 @@ import {
 import { FinalRegistrationConfirmation } from "@/components/public-forms/final-registration-confirmation";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
+import { hasPendingRecordDates } from "@/lib/operational-record-dates";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 type CatalogItem = {
@@ -58,6 +59,7 @@ const supplyProductTypeLabels: Record<SupplyProductType, string> = {
 };
 
 const otherActionTakenValue = "__other__";
+const emptyCompletedRecordDateKeys: string[] = [];
 
 const supplyAcceptedActionOptions = [
   "Se informó al administrador/responsable.",
@@ -180,13 +182,39 @@ function toDateTimeLocalValue(date: Date) {
   return offsetDate.toISOString().slice(0, 16);
 }
 
+function floorToHour(date: Date) {
+  const nextDate = new Date(date);
+  nextDate.setMinutes(0, 0, 0);
+  return nextDate;
+}
+
+function ceilToHour(date: Date) {
+  const nextDate = floorToHour(date);
+
+  if (date.getMinutes() > 0 || date.getSeconds() > 0 || date.getMilliseconds() > 0) {
+    nextDate.setHours(nextDate.getHours() + 1);
+  }
+
+  return nextDate;
+}
+
+function normalizeDateTimeLocalToHour(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return toDateTimeLocalValue(floorToHour(date));
+}
+
 function getRecordDateLimits(maxPastDays = 5) {
   const now = new Date();
   const minDate = new Date(now.getTime() - maxPastDays * 24 * 60 * 60 * 1000);
 
   return {
-    min: toDateTimeLocalValue(minDate),
-    max: toDateTimeLocalValue(now),
+    min: toDateTimeLocalValue(ceilToHour(minDate)),
+    max: toDateTimeLocalValue(floorToHour(now)),
   };
 }
 
@@ -194,20 +222,19 @@ function formatRecordDateLabel(value: string) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "--/---/---- --:--";
+    return "-- --- ---- - -- --";
   }
 
-  const months = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+  const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
   const day = String(date.getDate()).padStart(2, "0");
   const month = months[date.getMonth()];
   const year = date.getFullYear();
   const hours24 = date.getHours();
   const hours12 = hours24 % 12 || 12;
   const hours = String(hours12).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
   const meridiem = hours24 >= 12 ? "PM" : "AM";
 
-  return `${day} ${month} ${year} · ${hours}:${minutes} ${meridiem}`;
+  return `${day} ${month} ${year} - ${hours} ${meridiem}`;
 }
 
 function toIsoDateTime(value: string) {
@@ -269,6 +296,7 @@ function PublicFormCardHeader({
           />
         </div>
       </div>
+
     </div>
   );
 }
@@ -492,6 +520,7 @@ export function OperationalPublicForm({
   companyName,
   equipment,
   sanitationAreas,
+  completedRecordDateKeys,
   adminContext,
 }: {
   token: string;
@@ -500,6 +529,7 @@ export function OperationalPublicForm({
   companyName: string;
   equipment: CatalogItem[];
   sanitationAreas: CatalogItem[];
+  completedRecordDateKeys?: string[];
   adminContext?: AdminExecutorContext | null;
 }) {
   const [state, action, isPending] = useActionState<PublicFormState, FormData>(
@@ -534,7 +564,6 @@ export function OperationalPublicForm({
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
-  const [isResponsibleEditing, setIsResponsibleEditing] = useState(false);
   const [chlorineInteger, setChlorineInteger] = useState<number | null>(null);
   const [chlorineDecimal, setChlorineDecimal] = useState<number | null>(null);
   const [phInteger, setPhInteger] = useState<number | null>(null);
@@ -554,7 +583,7 @@ export function OperationalPublicForm({
   const missingThermalCatalog = isThermalControl && equipment.length === 0;
   const missingAreaCatalog = isAreaSanitation && sanitationAreas.length === 0;
   const isDisabled = isPending || missingThermalCatalog || missingAreaCatalog;
-  const isSubmitDisabled = isDisabled || isResponsibleEditing;
+  const isSubmitDisabled = isDisabled;
   const hasSanitationArea = Boolean(selectedSanitationAreaId);
   const hasSanitationProtocol = sanitationImplementsConfirmed && sanitationChemicalsConfirmed;
   const showTemperaturePicker = productType === "Refrigerado" || productType === "Congelado";
@@ -677,6 +706,16 @@ export function OperationalPublicForm({
       : "Temperatura del refrigerador fuera de rango seguro.";
   const recordedAtDisplay = formatRecordDateLabel(recordedAtLocalValue);
   const recordedAtIsoValue = hasCustomRecordedAt ? toIsoDateTime(recordedAtLocalValue) : "";
+  const completedDateKeys = completedRecordDateKeys ?? emptyCompletedRecordDateKeys;
+  const tieneDiasPendientes = useMemo(
+    () =>
+      hasPendingRecordDates({
+        completedDateKeys,
+        min: recordDateLimits.min,
+        max: recordDateLimits.max,
+      }),
+    [completedDateKeys, recordDateLimits.max, recordDateLimits.min],
+  );
 
   useEffect(() => {
     if (hasCustomRecordedAt || showDatePicker) {
@@ -685,10 +724,11 @@ export function OperationalPublicForm({
 
     const intervalId = window.setInterval(() => {
       setRecordedAtLocalValue(toDateTimeLocalValue(new Date()));
+      setRecordDateLimits(getRecordDateLimits(recordBackdateDays));
     }, 30_000);
 
     return () => window.clearInterval(intervalId);
-  }, [hasCustomRecordedAt, showDatePicker]);
+  }, [hasCustomRecordedAt, recordBackdateDays, showDatePicker]);
 
   useEffect(() => {
     if (!isSupplyReception || isAdminFlow) {
@@ -839,7 +879,6 @@ export function OperationalPublicForm({
 
   function updateExecutorSelection(selection: ExecutorSelection) {
     setExecutorSelection(selection);
-    setIsResponsibleEditing(false);
 
     if (selection === "self") {
       setOperatorName(administratorName);
@@ -852,14 +891,15 @@ export function OperationalPublicForm({
   function openDatePicker() {
     const nextLimits = getRecordDateLimits(recordBackdateDays);
     setRecordDateLimits(nextLimits);
-    setDatePickerValue(recordedAtLocalValue);
+    setDatePickerValue(normalizeDateTimeLocalToHour(recordedAtLocalValue));
     setShowDatePicker(true);
   }
 
   function saveDatePickerValue() {
     const nextLimits = getRecordDateLimits(recordBackdateDays);
+    const hourValue = normalizeDateTimeLocalToHour(datePickerValue);
     const clampedValue =
-      datePickerValue < nextLimits.min ? nextLimits.min : datePickerValue > nextLimits.max ? nextLimits.max : datePickerValue;
+      hourValue < nextLimits.min ? nextLimits.min : hourValue > nextLimits.max ? nextLimits.max : hourValue;
 
     setRecordDateLimits(nextLimits);
     setRecordedAtLocalValue(clampedValue);
@@ -886,11 +926,6 @@ export function OperationalPublicForm({
       (isThermalControl && thermalStep !== 5) ||
       (isAreaSanitation && sanitationStep !== 4)
     ) {
-      event.preventDefault();
-      return;
-    }
-
-    if (isResponsibleEditing) {
       event.preventDefault();
       return;
     }
@@ -941,8 +976,6 @@ export function OperationalPublicForm({
   }
 
   function goBackSupplyStep() {
-    setIsResponsibleEditing(false);
-
     if (currentStep === 2) {
       setCurrentStep(1);
       return;
@@ -989,8 +1022,6 @@ export function OperationalPublicForm({
   }
 
   function goBackWaterStep() {
-    setIsResponsibleEditing(false);
-
     if (waterStep === 2) {
       setWaterStep(1);
       return;
@@ -1007,8 +1038,6 @@ export function OperationalPublicForm({
   }
 
   function goBackThermalStep() {
-    setIsResponsibleEditing(false);
-
     if (thermalStep === 2) {
       setThermalStep(1);
       return;
@@ -1030,8 +1059,6 @@ export function OperationalPublicForm({
   }
 
   function goBackSanitationStep() {
-    setIsResponsibleEditing(false);
-
     if (sanitationStep === 2) {
       setSanitationStep(1);
       return;
@@ -1116,16 +1143,16 @@ export function OperationalPublicForm({
   }
 
   const finalRegistrationStepProps = {
-    dateLabel: recordedAtDisplay,
     errorMessage: state.error,
-    executionResponsibleEditable: !isAdminFlow || executorSelection === "operator",
+    executionResponsibleMarker: isAdminFlow
+      ? executorSelection === "self"
+        ? "Admin" as const
+        : executorSelection === "operator"
+          ? "Operario" as const
+          : undefined
+      : undefined,
     executionResponsibleName: operatorName,
-    isDateModified: hasCustomRecordedAt,
-    isExecutionResponsibleEditing: isResponsibleEditing,
     isPending,
-    onDateEdit: openDatePicker,
-    onExecutionResponsibleEditingChange: setIsResponsibleEditing,
-    onExecutionResponsibleNameChange: updateOperatorName,
     registrationResponsibleName: isAdminFlow ? administratorName : undefined,
     submitDisabled: isSubmitDisabled,
   };
@@ -1136,9 +1163,14 @@ export function OperationalPublicForm({
       description={isSupplyReception || isWaterQuality || isThermalControl || isAreaSanitation ? null : label.description}
       companyName={companyName}
       branchName={branchName}
+      dateLabel={recordedAtDisplay}
+      hasPendingDates={tieneDiasPendientes}
+      isDateModified={hasCustomRecordedAt}
+      onDateEdit={openDatePicker}
     >
       <form action={action} className={operationalFormStyles.formBody} onSubmit={handleSubmit}>
         <input type="hidden" name="token" value={token} />
+        <input type="hidden" name="adminMode" value={isAdminFlow ? "true" : ""} />
         <input type="hidden" name="recordedAt" value={recordedAtIsoValue} />
         {isAreaSanitation ? (
           <>
@@ -2084,6 +2116,7 @@ export function OperationalPublicForm({
             </div>
 
             <DateTimePicker
+              completedDateKeys={completedDateKeys}
               value={datePickerValue}
               min={recordDateLimits.min}
               max={recordDateLimits.max}

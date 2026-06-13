@@ -5,7 +5,6 @@ import { readSessionTokens } from "@/lib/auth/session";
 import { getCurrentUserContext } from "@/lib/auth/user-context";
 import { getSupabaseAuthClient } from "@/lib/supabase/auth";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type PublicFormState = {
   error?: string;
@@ -49,12 +48,8 @@ function readBooleanOrNull(formData: FormData, key: string) {
   return null;
 }
 
-type PublicQrCompanyRow = {
-  company_id: string;
-};
-
-type CompanyAdminRow = {
-  company_admin_user_id: string | null;
+type AdminAccessibleQrRow = {
+  id: string;
 };
 
 type AdminSubmissionContext = {
@@ -85,14 +80,18 @@ function readRecordedAt(formData: FormData, maxPastDays: number) {
   return { recordedAt: recordedAt.toISOString() };
 }
 
-async function loadAdminSubmissionContext(token: string): Promise<AdminSubmissionContext | null> {
+async function loadAdminSubmissionContext(token: string, requestedAdminMode: boolean): Promise<AdminSubmissionContext | null> {
+  if (!requestedAdminMode) {
+    return null;
+  }
+
   const [session, userContext] = await Promise.all([readSessionTokens(), getCurrentUserContext()]);
 
   if (!session || userContext?.profile.globalRole !== "company_admin") {
     return null;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAuthClient(session.accessToken);
 
   if (!supabase) {
     return null;
@@ -100,36 +99,17 @@ async function loadAdminSubmissionContext(token: string): Promise<AdminSubmissio
 
   const { data: qrRow, error: qrError } = await supabase
     .from("branch_form_qr_codes")
-    .select("company_id")
+    .select("id")
     .eq("token", token)
     .eq("is_active", true)
-    .maybeSingle<PublicQrCompanyRow>();
+    .maybeSingle<AdminAccessibleQrRow>();
 
   if (qrError) {
     logServerError("public_form.submit.admin_qr_lookup_failed", qrError, { tokenLength: token.length });
     return null;
   }
 
-  if (!qrRow?.company_id) {
-    return null;
-  }
-
-  const { data: companyRow, error: companyError } = await supabase
-    .from("companies")
-    .select("company_admin_user_id")
-    .eq("id", qrRow.company_id)
-    .eq("is_active", true)
-    .maybeSingle<CompanyAdminRow>();
-
-  if (companyError) {
-    logServerError("public_form.submit.admin_company_lookup_failed", companyError, {
-      companyId: qrRow.company_id,
-      tokenLength: token.length,
-    });
-    return null;
-  }
-
-  if (companyRow?.company_admin_user_id !== userContext.profile.userId) {
+  if (!qrRow?.id) {
     return null;
   }
 
@@ -145,12 +125,13 @@ export async function submitPublicOperationalForm(
 ): Promise<PublicFormState> {
   const token = readString(formData, "token");
   const operatorName = readString(formData, "operatorName");
+  const requestedAdminMode = readString(formData, "adminMode") === "true";
 
   if (!token) {
     return { error: "Este formulario no tiene un QR válido." };
   }
 
-  const adminSubmissionContext = await loadAdminSubmissionContext(token);
+  const adminSubmissionContext = await loadAdminSubmissionContext(token, requestedAdminMode);
   const maxPastDays = adminSubmissionContext?.maxPastDays ?? 5;
   const recordedAtResult = readRecordedAt(formData, maxPastDays);
 

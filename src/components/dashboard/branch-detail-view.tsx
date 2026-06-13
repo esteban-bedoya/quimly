@@ -406,6 +406,9 @@ function OperationalActionsBlock({ formPath }: { formPath?: string }) {
   return (
     <Link
       href={formPath}
+      target="_blank"
+      rel="noopener noreferrer"
+      prefetch={false}
       className={mutedActionCompact}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
@@ -1660,7 +1663,7 @@ export function BranchOperationalView({
   const operationalCards = operationalFormTypes.map((formType) => {
     let configuration: ReactNode | undefined;
     const activeQrCode = activeOperationalQrCodes.find((qrCode) => qrCode.formType === formType);
-    const formPath = activeQrCode ? `${createPublicFormPath(activeQrCode.token)}?source=dashboard` : undefined;
+    const formPath = activeQrCode ? `${createPublicFormPath(activeQrCode.token)}?source=dashboard&admin=1` : undefined;
 
     if (formType === "thermal_control") {
       configuration = (

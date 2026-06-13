@@ -63,12 +63,20 @@ export function OperationalFormLayout({
   description,
   companyName,
   branchName,
+  dateLabel,
+  hasPendingDates,
+  isDateModified,
+  onDateEdit,
   children,
 }: {
   title: string;
   description?: string | null;
   companyName: string;
   branchName: string;
+  dateLabel?: string;
+  hasPendingDates?: boolean;
+  isDateModified?: boolean;
+  onDateEdit?: () => void;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -90,6 +98,10 @@ export function OperationalFormLayout({
             description={description}
             companyName={companyName}
             branchName={branchName}
+            dateLabel={dateLabel}
+            hasPendingDates={hasPendingDates}
+            isDateModified={isDateModified}
+            onDateEdit={onDateEdit}
           />
           {children}
           <p className={operationalFormStyles.poweredBy}>Powered by Quimly</p>
@@ -104,11 +116,19 @@ export function OperationalFormHeader({
   description,
   companyName,
   branchName,
+  dateLabel,
+  hasPendingDates,
+  isDateModified,
+  onDateEdit,
 }: {
   title: string;
   description?: string | null;
   companyName: string;
   branchName: string;
+  dateLabel?: string;
+  hasPendingDates?: boolean;
+  isDateModified?: boolean;
+  onDateEdit?: () => void;
 }) {
   return (
     <header className={operationalFormStyles.header}>
@@ -119,6 +139,24 @@ export function OperationalFormHeader({
       </p>
       {title ? <h1 className={operationalFormStyles.title}>{title}</h1> : null}
       {description ? <p className={operationalFormStyles.description}>{description}</p> : null}
+      {dateLabel && onDateEdit ? (
+        <button
+          type="button"
+          onClick={onDateEdit}
+          className="mt-7 ml-auto block max-w-max text-right text-[11px] font-black uppercase tracking-[0.22em] text-white transition active:scale-[0.98]"
+        >
+          <span className="block">Cambiar fecha y hora:</span>
+          <span className="mt-1 flex items-center justify-end gap-2 tracking-[0.16em]">
+            {hasPendingDates ? (
+              <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+              </span>
+            ) : null}
+            <span className={isDateModified ? "text-[#48c7d2]" : "text-white"}>{dateLabel}</span>
+          </span>
+        </button>
+      ) : null}
     </header>
   );
 }

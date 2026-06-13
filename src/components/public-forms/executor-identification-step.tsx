@@ -57,7 +57,7 @@ export function ExecutorIdentificationStep({
               onChange={() => onExecutorSelectionChange("self")}
               className="h-4 w-4 shrink-0 accent-[#111816]"
             />
-            <span>La realicé yo mismo.</span>
+            <span>Yo mismo.</span>
           </label>
 
           <label className={getExecutorOptionClassName(executorSelection === "operator")}>
@@ -69,7 +69,7 @@ export function ExecutorIdentificationStep({
               onChange={() => onExecutorSelectionChange("operator")}
               className="h-4 w-4 shrink-0 accent-[#111816]"
             />
-            <span>La realizó un operario.</span>
+            <span>Un operario.</span>
           </label>
 
           {executorSelection === "operator" ? (

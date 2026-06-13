@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 
+import { formatDateKeyFromParts } from "@/lib/operational-record-dates";
+
 type DateTimePickerProps = {
+  completedDateKeys?: string[];
   value: string;
   min: string;
   max: string;
@@ -19,6 +22,7 @@ type DateTimeParts = {
 
 const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const weekdayLabels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+const emptyCompletedDateKeys: string[] = [];
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -55,8 +59,22 @@ function formatDateTimeValue(parts: DateTimeParts) {
   return `${parts.year}-${pad(parts.monthIndex + 1)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
+function formatHourLabel(hour: number) {
+  const hour12 = hour % 12 || 12;
+  const meridiem = hour >= 12 ? "PM" : "AM";
+
+  return `${pad(hour12)} ${meridiem}`;
+}
+
+function formatTimeLabel(parts: Pick<DateTimeParts, "hour">) {
+  const hour12 = parts.hour % 12 || 12;
+  const meridiem = parts.hour >= 12 ? "PM" : "AM";
+
+  return `${pad(hour12)} ${meridiem}`;
+}
+
 function formatDisplayValue(parts: DateTimeParts) {
-  return `${pad(parts.day)}/${monthLabels[parts.monthIndex]}/${parts.year} ${pad(parts.hour)}:${pad(parts.minute)}`;
+  return `${pad(parts.day)} ${monthLabels[parts.monthIndex]} ${parts.year} - ${formatTimeLabel(parts)}`;
 }
 
 function getDateKey(parts: Pick<DateTimeParts, "year" | "monthIndex" | "day">) {
@@ -127,11 +145,13 @@ function getHourOptions() {
   return Array.from({ length: 24 }, (_, hour) => hour);
 }
 
-function getMinuteOptions() {
-  return Array.from({ length: 60 }, (_, minute) => minute);
-}
-
-export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProps) {
+export function DateTimePicker({
+  completedDateKeys = emptyCompletedDateKeys,
+  value,
+  min,
+  max,
+  onChange,
+}: DateTimePickerProps) {
   const minParts = parseDateTimeValue(min);
   const maxParts = parseDateTimeValue(max);
   const fallbackParts = maxParts ?? parseDateTimeValue(value) ?? {
@@ -139,14 +159,14 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
     monthIndex: new Date().getMonth(),
     day: new Date().getDate(),
     hour: new Date().getHours(),
-    minute: new Date().getMinutes(),
+    minute: 0,
   };
-  const selectedParts = parseDateTimeValue(value) ?? fallbackParts;
+  const selectedParts = { ...(parseDateTimeValue(value) ?? fallbackParts), minute: 0 };
   const selectedDateKey = getDateKey(selectedParts);
   const minDateKey = minParts ? getDateKey(minParts) : Number.NEGATIVE_INFINITY;
   const maxDateKey = maxParts ? getDateKey(maxParts) : Number.POSITIVE_INFINITY;
+  const completedDateKeySet = useMemo(() => new Set(completedDateKeys), [completedDateKeys]);
   const hourOptions = useMemo(() => getHourOptions(), []);
-  const minuteOptions = useMemo(() => getMinuteOptions(), []);
   const [visibleMonthKey, setVisibleMonthKey] = useState(() => getMonthKey(selectedParts));
   const visibleMonth = getMonthPartsFromKey(visibleMonthKey);
   const calendarCells = useMemo(
@@ -168,12 +188,6 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
     return endOfHour < min || startOfHour > max;
   }
 
-  function isMinuteDisabled(minute: number) {
-    const minuteValue = formatDateTimeValue({ ...selectedParts, minute });
-
-    return minuteValue < min || minuteValue > max;
-  }
-
   function selectDate(date: Date) {
     if (isDayDisabled(date)) {
       return;
@@ -182,18 +196,14 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
     const nextValue = formatDateTimeValue({
       ...selectedParts,
       ...getDatePartsFromDate(date),
+      minute: 0,
     });
 
     onChange(clampDateTimeValue(nextValue, min, max));
   }
 
   function selectHour(hour: number) {
-    const nextValue = formatDateTimeValue({ ...selectedParts, hour });
-    onChange(clampDateTimeValue(nextValue, min, max));
-  }
-
-  function selectMinute(minute: number) {
-    const nextValue = formatDateTimeValue({ ...selectedParts, minute });
+    const nextValue = formatDateTimeValue({ ...selectedParts, hour, minute: 0 });
     onChange(clampDateTimeValue(nextValue, min, max));
   }
 
@@ -237,8 +247,10 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
 
           const dayParts = getDatePartsFromDate(date);
           const dateKey = getDateKey(dayParts);
+          const recordDateKey = formatDateKeyFromParts(dayParts);
           const isSelected = dateKey === selectedDateKey;
           const isDisabled = isDayDisabled(date);
+          const recordStatus = isDisabled ? null : completedDateKeySet.has(recordDateKey) ? "completed" : "pending";
 
           return (
             <button
@@ -247,7 +259,7 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
               disabled={isDisabled}
               onClick={() => selectDate(date)}
               className={[
-                "aspect-square rounded-2xl border text-sm font-black transition active:scale-[0.94]",
+                "flex aspect-square flex-col items-center justify-center gap-1 rounded-2xl border text-sm font-black transition active:scale-[0.94]",
                 isSelected
                   ? "border-neutral-950 bg-neutral-950 text-white"
                   : isDisabled
@@ -256,13 +268,22 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
               ].join(" ")}
               aria-pressed={isSelected}
             >
-              {dayParts.day}
+              <span>{dayParts.day}</span>
+              {recordStatus ? (
+                <span
+                  className={[
+                    "h-1.5 w-1.5 rounded-full",
+                    recordStatus === "completed" ? "bg-green-500" : "animate-pulse bg-red-500",
+                  ].join(" ")}
+                  aria-hidden="true"
+                />
+              ) : null}
             </button>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3">
         <label className="grid gap-2">
           <span className="text-xs font-black uppercase tracking-[0.12em] text-neutral-500">Hora</span>
           <select
@@ -272,22 +293,7 @@ export function DateTimePicker({ value, min, max, onChange }: DateTimePickerProp
           >
             {hourOptions.map((hour) => (
               <option key={hour} value={hour} disabled={isHourDisabled(hour)}>
-                {pad(hour)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="grid gap-2">
-          <span className="text-xs font-black uppercase tracking-[0.12em] text-neutral-500">Minuto</span>
-          <select
-            value={selectedParts.minute}
-            onChange={(event) => selectMinute(Number(event.target.value))}
-            className="min-h-12 rounded-2xl border border-neutral-300 bg-white px-3 text-base font-black text-neutral-950 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10 active:scale-[0.99]"
-          >
-            {minuteOptions.map((minute) => (
-              <option key={minute} value={minute} disabled={isMinuteDisabled(minute)}>
-                {pad(minute)}
+                {formatHourLabel(hour)}
               </option>
             ))}
           </select>
