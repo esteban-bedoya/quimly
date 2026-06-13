@@ -8,7 +8,7 @@ import { ProductsSection } from "@/components/landing/products-section";
 
 export default function Home() {
   return (
-    <>
+    <div data-home-shell>
       <Header />
       <FloatingAdvisoryButton />
       <main>
@@ -18,6 +18,6 @@ export default function Home() {
         <CertificatesSection />
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

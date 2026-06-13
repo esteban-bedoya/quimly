@@ -82,6 +82,16 @@ body:has([data-public-form-shell]) {
   background: #12110f;
 }
 
+html:has([data-home-shell]),
+body:has([data-home-shell]) {
+  background: #ffffff;
+}
+
+html:has([data-dashboard-shell]),
+body:has([data-dashboard-shell]) {
+  background: #f8fafb;
+}
+
 @utility section-kicker {
   @apply w-fit rounded-full border px-3.5 py-2 text-[0.8rem] font-extrabold uppercase;
   background-color: var(--section-chip-bg);

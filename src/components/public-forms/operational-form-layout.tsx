@@ -3,7 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 
 export const operationalFormStyles = {
-  page: "min-h-screen min-h-dvh bg-[#12110F] px-0 pb-5 pt-10 text-[#111816]",
+  page: "min-h-screen min-h-dvh bg-[#12110F] px-0 pb-5 pt-12 text-[#111816]",
   shell: "mx-auto flex w-full max-w-lg flex-col",
   layoutContent: "grid gap-0",
   header: "px-4 pb-5 pt-4",
