@@ -219,6 +219,33 @@ html {
   line-height: 1.5rem;
 }
 
+.public-scroll-hint {
+  overscroll-behavior: contain;
+  scrollbar-color: #7b8c87 #edf3f1;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.public-scroll-hint::-webkit-scrollbar {
+  width: 0.625rem;
+}
+
+.public-scroll-hint::-webkit-scrollbar-track {
+  border-radius: 9999px;
+  background: #edf3f1;
+}
+
+.public-scroll-hint::-webkit-scrollbar-thumb {
+  border: 2px solid #edf3f1;
+  border-radius: 9999px;
+  background: #7b8c87;
+}
+
+.public-scroll-hint::-webkit-scrollbar-thumb:active {
+  background: #51645f;
+}
+
 .ui-item-title {
   color: var(--ui-text-strong);
   font-size: 1rem;

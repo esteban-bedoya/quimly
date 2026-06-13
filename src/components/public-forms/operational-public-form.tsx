@@ -1394,7 +1394,7 @@ export function OperationalPublicForm({
                       No hay equipos de frío activos para esta sede. Configúralos desde el administrador.
                     </p>
                   ) : (
-                    <div className="grid max-h-80 gap-3 overflow-y-auto pr-1">
+                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-1">
                       {equipment.map((item) => {
                         const isSelected = selectedEquipmentId === item.id;
                         const equipmentTypeLabel = getCatalogEquipmentTypeLabel(item);
@@ -1456,7 +1456,7 @@ export function OperationalPublicForm({
                     {isTemperatureMenuOpen ? (
                       <div
                         ref={temperatureMenuRef}
-                        className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                        className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
                       >
                         <div className="grid gap-1">
                           {temperatureOptions.map((option) => {
@@ -1624,7 +1624,7 @@ export function OperationalPublicForm({
                       Esta sede aun no tiene areas registradas para usar este QR.
                     </p>
                   ) : (
-                    <div className="grid max-h-80 gap-3 overflow-y-auto pr-1">
+                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-1">
                       {sanitationAreas.map((item) => {
                         const isSelected = selectedSanitationAreaId === item.id;
 
@@ -2013,7 +2013,7 @@ export function OperationalPublicForm({
                   {isTemperatureMenuOpen ? (
                     <div
                       ref={temperatureMenuRef}
-                      className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                      className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
                     >
                       <div className="grid gap-1">
                         {temperatureOptions.map((option) => {
