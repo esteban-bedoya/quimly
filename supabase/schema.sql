@@ -1115,12 +1115,13 @@ begin
       raise exception 'Selecciona si color, olor y textura son adecuados.';
     end if;
 
-    if p_decision is null or p_decision not in ('Aceptar Producto', 'Rechazar Producto') then
+    if p_decision is null or p_decision not in ('Aceptar Producto', 'Aceptar Producto con novedad', 'Rechazar Producto') then
       raise exception 'Selecciona la decisión.';
     end if;
 
-    if p_decision = 'Rechazar Producto' and nullif(trim(coalesce(p_observations, '')), '') is null then
-      raise exception 'Describe la acción tomada para rechazar el producto.';
+    if p_decision in ('Aceptar Producto con novedad', 'Rechazar Producto')
+      and nullif(trim(coalesce(p_observations, '')), '') is null then
+      raise exception 'Describe la medida tomada para esta recepción.';
     end if;
 
     insert into public.supply_reception_records (

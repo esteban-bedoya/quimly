@@ -220,6 +220,10 @@ html {
 }
 
 .public-scroll-hint {
+  background-image: linear-gradient(#edf3f1, #edf3f1);
+  background-position: right 0.125rem top;
+  background-repeat: no-repeat;
+  background-size: 0.25rem 100%;
   overscroll-behavior: contain;
   scrollbar-color: #7b8c87 #edf3f1;
   scrollbar-gutter: stable;

@@ -55,30 +55,30 @@ const supplyProductTypeLabels: Record<SupplyProductType, string> = {
 const otherActionTakenValue = "__other__";
 
 const supplyAcceptedActionOptions = [
-  "Se informa al administrador/responsable.",
-  "Se acepta para uso inmediato.",
-  "Se traslada urgente a refrigeración/congelación.",
-  "Se separa para revisión.",
+  "Se informó al administrador/responsable.",
+  "Se aceptó para uso inmediato.",
+  "Se trasladó de urgencia a refrigeración/congelación.",
+  "Se separó para revisión.",
 ];
 
 const supplyRejectedActionOptions = [
-  "Se informa al administrador/responsable.",
-  "Se devuelve al proveedor.",
-  "Se desecha el lote.",
-  "Se aísla producto no conforme.",
+  "Se informó al administrador/responsable.",
+  "Se devolvió al proveedor.",
+  "Se desechó el lote.",
+  "Se aisló producto no conforme.",
 ];
 
 const waterCorrectiveActionOptions = [
-  "Se informa al administrador/responsable.",
-  "Se revisa sistema de filtración.",
-  "Se usa suministro alterno.",
-  "Se realiza contramuestra en otro punto de la red.",
+  "Se informó al administrador/responsable.",
+  "Se revisó el sistema de filtración.",
+  "Se usó suministro alterno.",
+  "Se realizó contramuestra en otro punto de la red.",
 ];
 
 const thermalCorrectiveActionOptions = [
-  "Se informa al administrador/responsable.",
-  "Se ajusta el termostato del equipo.",
-  "Se trasladan los alimentos urgentes a otro equipo de frío operativo.",
+  "Se informó al administrador/responsable.",
+  "Se ajustó el termostato del equipo.",
+  "Se trasladaron los alimentos urgentes a otro equipo de frío.",
 ];
 
 const sanitationCleaningTypes = ["Superficial", "Profunda"] as const;
@@ -829,13 +829,18 @@ export function OperationalPublicForm({
     temperatureCompliant,
   ]);
   const showActionTakenBlock = supplyActionTakenItems.length > 0 || decision === "Rechazar Producto";
+  const supplySubmittedDecision =
+    decision === "Aceptar Producto" && supplyActionTakenItems.length > 0 ? "Aceptar Producto con novedad" : decision;
   const supplyDecisionTakenItem: SupplyActionTakenItem | null =
-    decision === "Aceptar Producto"
+    supplySubmittedDecision === "Aceptar Producto" || supplySubmittedDecision === "Aceptar Producto con novedad"
       ? {
           key: "accepted",
-          text: "Producto ACEPTADO.",
+          text:
+            supplySubmittedDecision === "Aceptar Producto con novedad"
+              ? "Producto ACEPTADO con novedad."
+              : "Producto ACEPTADO.",
         }
-      : decision === "Rechazar Producto"
+      : supplySubmittedDecision === "Rechazar Producto"
         ? {
             key: "rejected",
             text: "Producto RECHAZADO.",
@@ -852,8 +857,8 @@ export function OperationalPublicForm({
       : "¿Con qué temperatura llegó el producto refrigerado?";
   const thermalTemperatureStepTitle =
     selectedThermalEquipmentType === "freezer"
-      ? "¿Qué temperatura tiene el congelador?"
-      : "¿Qué temperatura tiene el refrigerador?";
+      ? "¿Qué temperatura registró el congelador?"
+      : "¿Qué temperatura registró el refrigerador?";
   const thermalTemperatureAlertText =
     selectedThermalEquipmentType === "freezer"
       ? "Temperatura del congelador fuera de rango seguro."
@@ -1346,7 +1351,7 @@ export function OperationalPublicForm({
             <input type="hidden" name="temperatureC" value={temperatureC} />
             <input type="hidden" name="packageIntactDateValid" value={packageIntactDateValid} />
             <input type="hidden" name="organolepticAdequate" value={organolepticAdequate} />
-            <input type="hidden" name="decision" value={decision} />
+            <input type="hidden" name="decision" value={supplySubmittedDecision} />
             <input type="hidden" name="observations" value={observations} />
           </>
         ) : null}
@@ -1364,7 +1369,7 @@ export function OperationalPublicForm({
               {thermalStep === 1 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la medición?</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la medición?</h2>
                   </div>
                   <input
                     autoComplete="name"
@@ -1394,7 +1399,7 @@ export function OperationalPublicForm({
                       No hay equipos de frío activos para esta sede. Configúralos desde el administrador.
                     </p>
                   ) : (
-                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-1">
+                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-4">
                       {equipment.map((item) => {
                         const isSelected = selectedEquipmentId === item.id;
                         const equipmentTypeLabel = getCatalogEquipmentTypeLabel(item);
@@ -1456,7 +1461,7 @@ export function OperationalPublicForm({
                     {isTemperatureMenuOpen ? (
                       <div
                         ref={temperatureMenuRef}
-                        className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                        className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 pr-5 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
                       >
                         <div className="grid gap-1">
                           {temperatureOptions.map((option) => {
@@ -1594,7 +1599,7 @@ export function OperationalPublicForm({
               {sanitationStep === 1 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la limpieza?</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la limpieza?</h2>
                   </div>
                   <input
                     autoComplete="name"
@@ -1617,14 +1622,14 @@ export function OperationalPublicForm({
               {sanitationStep === 2 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Área o elemento a limpiar</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Área o elemento limpiado</h2>
                   </div>
                   {missingAreaCatalog ? (
                     <p className={operationalFormStyles.statusWarning}>
                       Esta sede aun no tiene areas registradas para usar este QR.
                     </p>
                   ) : (
-                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-1">
+                    <div className="public-scroll-hint grid max-h-80 gap-3 overflow-y-auto pr-4">
                       {sanitationAreas.map((item) => {
                         const isSelected = selectedSanitationAreaId === item.id;
 
@@ -1659,8 +1664,8 @@ export function OperationalPublicForm({
               {sanitationStep === 3 ? (
                 <div className="grid gap-7">
                   <fieldset className="grid gap-5">
-                    <legend className="sr-only">Elija el tipo de limpieza realizada</legend>
-                    <h3 className="text-[1.7rem] font-black leading-tight text-neutral-950">Elija el tipo de limpieza realizada</h3>
+                    <legend className="sr-only">Tipo de limpieza realizada</legend>
+                    <h3 className="text-3xl font-black leading-tight text-neutral-950">Tipo de limpieza realizada</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {sanitationCleaningTypes.map((option) => (
                         <label
@@ -1689,7 +1694,7 @@ export function OperationalPublicForm({
                   <div aria-hidden="true" className="h-px w-full bg-[#d7e4e1]" />
 
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Protocolo de saneamiento</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Siguió el protocolo de saneamiento?</h2>
                   </div>
                   <div className="grid gap-3">
                     <label
@@ -1760,7 +1765,7 @@ export function OperationalPublicForm({
               {waterStep === 1 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realiza la medición?</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la medición?</h2>
                   </div>
                   <input
                     autoComplete="name"
@@ -1888,7 +1893,7 @@ export function OperationalPublicForm({
               {currentStep === 1 ? (
                 <div className="grid gap-7">
                 <div className="grid gap-3">
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién recibe el producto?</h2>
+                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién recibió el producto?</h2>
                 </div>
                 <input
                   autoComplete="name"
@@ -2013,7 +2018,7 @@ export function OperationalPublicForm({
                   {isTemperatureMenuOpen ? (
                     <div
                       ref={temperatureMenuRef}
-                      className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
+                      className="public-scroll-hint max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 pr-5 shadow-[0_18px_40px_rgba(17,24,22,0.12)]"
                     >
                       <div className="grid gap-1">
                         {temperatureOptions.map((option) => {
@@ -2081,7 +2086,7 @@ export function OperationalPublicForm({
                 <div className="grid gap-7">
                 <div className="grid gap-3">
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">
-                    ¿El empaque está correcto e intacto?
+                    ¿Empaque intacto y fecha de vencimiento vigente?
                   </h2>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -2129,7 +2134,7 @@ export function OperationalPublicForm({
                 <div className="grid gap-7">
                 <div className="grid gap-3">
                   <h2 className="text-3xl font-black leading-tight text-neutral-950">
-                    ¿El producto se ve y huele como se espera?
+                    ¿Aspecto y olor del producto adecuados?
                   </h2>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

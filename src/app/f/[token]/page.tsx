@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { OperationalPublicForm } from "@/components/public-forms/operational-public-form";
 import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
@@ -33,6 +34,32 @@ type RefrigerationEquipmentRow = {
   name: string;
   equipment_type: BranchRefrigerationEquipmentType;
 };
+
+const loadPublicOperationalFormPayload = cache(async (token: string) => {
+  const supabase = getSupabasePublicClient();
+
+  if (!supabase) {
+    return {
+      payload: null,
+      error: new Error("Supabase public client is not configured."),
+    };
+  }
+
+  const { data, error } = await supabase.rpc("get_public_operational_form", {
+    p_token: token,
+  });
+
+  return {
+    payload: data as PublicOperationalFormPayload | null,
+    error,
+  };
+});
+
+function getPublicFormBrowserTitle(formType: string | undefined) {
+  return formType && isOperationalFormType(formType)
+    ? operationalFormLabels[formType].title
+    : "Quimly";
+}
 
 async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: CatalogRow[]) {
   const supabase = getSupabaseServerClient();
@@ -89,30 +116,14 @@ export async function generateMetadata({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const supabase = getSupabasePublicClient();
-
-  if (!supabase) {
-    return {
-      title: "Formulario publico | Quimly",
-      robots: { index: false, follow: false },
-    };
-  }
-
-  const { data, error } = await supabase.rpc("get_public_operational_form", {
-    p_token: token,
-  });
+  const { payload, error } = await loadPublicOperationalFormPayload(token);
 
   if (error) {
     logServerError("public_form.metadata.load_failed", error, { tokenLength: token.length });
   }
 
-  const payload = data as PublicOperationalFormPayload | null;
-  const formType = payload?.form_type;
-
   return {
-    title: formType && isOperationalFormType(formType)
-      ? `${operationalFormLabels[formType].title} | Quimly`
-      : "Formulario publico | Quimly",
+    title: getPublicFormBrowserTitle(payload?.form_type),
     robots: { index: false, follow: false },
   };
 }
@@ -123,25 +134,12 @@ export default async function PublicOperationalFormPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const supabase = getSupabasePublicClient();
-
-  if (!supabase) {
-    logServerError("public_form.page.public_client_missing", new Error("Supabase public client is not configured."), {
-      tokenLength: token.length,
-    });
-    notFound();
-  }
-
-  const { data, error } = await supabase.rpc("get_public_operational_form", {
-    p_token: token,
-  });
+  const { payload, error } = await loadPublicOperationalFormPayload(token);
 
   if (error) {
     logServerError("public_form.page.load_failed", error, { tokenLength: token.length });
     throw new Error(error.message);
   }
-
-  const payload = data as PublicOperationalFormPayload | null;
 
   if (!payload || !isOperationalFormType(payload.form_type)) {
     notFound();
