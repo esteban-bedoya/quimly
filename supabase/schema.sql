@@ -829,6 +829,87 @@ begin
 end;
 $$;
 
+drop function if exists public.get_public_operational_form_completed_dates(text);
+
+create or replace function public.get_public_operational_form_completed_dates(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  completed_dates jsonb := '[]'::jsonb;
+  qr_record record;
+begin
+  if nullif(trim(p_token), '') is null then
+    return completed_dates;
+  end if;
+
+  select
+    qr.branch_id,
+    qr.company_id,
+    qr.form_type
+  into qr_record
+  from public.branch_form_qr_codes qr
+  join public.branches b on b.id = qr.branch_id
+  join public.companies c on c.id = qr.company_id
+  where qr.token = p_token
+    and qr.is_active = true
+    and b.is_active = true
+    and c.is_active = true
+  limit 1;
+
+  if qr_record.branch_id is null then
+    return completed_dates;
+  end if;
+
+  if qr_record.form_type = 'thermal_control' then
+    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
+    into completed_dates
+    from (
+      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
+      from public.thermal_control_records records
+      where records.sede_id = qr_record.branch_id
+        and records.tipo_formulario = qr_record.form_type
+        and records.fecha_hora_servidor >= now() - interval '30 days'
+    ) days;
+  elsif qr_record.form_type = 'area_sanitation' then
+    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
+    into completed_dates
+    from (
+      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
+      from public.area_sanitation_records records
+      where records.sede_id = qr_record.branch_id
+        and records.tipo_formulario = qr_record.form_type
+        and records.fecha_hora_servidor >= now() - interval '30 days'
+    ) days;
+  elsif qr_record.form_type = 'supply_reception' then
+    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
+    into completed_dates
+    from (
+      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
+      from public.supply_reception_records records
+      where records.sede_id = qr_record.branch_id
+        and records.tipo_formulario = qr_record.form_type
+        and records.fecha_hora_servidor >= now() - interval '30 days'
+    ) days;
+  elsif qr_record.form_type = 'water_quality' then
+    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
+    into completed_dates
+    from (
+      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
+      from public.water_quality_records records
+      where records.sede_id = qr_record.branch_id
+        and records.tipo_formulario = qr_record.form_type
+        and records.fecha_hora_servidor >= now() - interval '30 days'
+    ) days;
+  end if;
+
+  return completed_dates;
+end;
+$$;
+
 drop function if exists public.submit_public_operational_form(
   text,
   text,
@@ -1674,6 +1755,7 @@ for select
 using (public.is_owner() or public.is_super_admin());
 
 revoke all on function public.get_public_operational_form(text) from public;
+revoke all on function public.get_public_operational_form_completed_dates(text) from public;
 revoke all on function public.submit_public_operational_form(
   text,
   text,
@@ -1698,6 +1780,7 @@ revoke all on function public.submit_public_operational_form(
 ) from public;
 
 grant execute on function public.get_public_operational_form(text) to anon, authenticated;
+grant execute on function public.get_public_operational_form_completed_dates(text) to anon, authenticated;
 grant execute on function public.submit_public_operational_form(
   text,
   text,

@@ -30,12 +30,6 @@ function getDateKeyFromLocalDateTime(value: string) {
   return formatLocalDateKey(date);
 }
 
-function addDays(date: Date, days: number) {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
-}
-
 export function getPendingRecordDateKeys({
   completedDateKeys,
   max,
@@ -76,8 +70,4 @@ export function hasPendingRecordDates(input: {
   min: string;
 }) {
   return getPendingRecordDateKeys(input).length > 0;
-}
-
-export function getRecentWindowStartDate(daysBack: number) {
-  return addDays(new Date(), -daysBack);
 }

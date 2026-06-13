@@ -3,8 +3,7 @@ import { cache } from "react";
 
 import { OperationalPublicForm } from "@/components/public-forms/operational-public-form";
 import { getCurrentUserContext } from "@/lib/auth/user-context";
-import { isOperationalFormType, operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
-import { getRecentWindowStartDate } from "@/lib/operational-record-dates";
+import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
@@ -41,37 +40,6 @@ type RefrigerationEquipmentRow = {
   name: string;
   equipment_type: BranchRefrigerationEquipmentType;
 };
-
-type OperationalRecordDateRow = {
-  fecha_hora_servidor: string;
-};
-
-const operationalRecordTables: Record<OperationalFormType, string> = {
-  thermal_control: "thermal_control_records",
-  area_sanitation: "area_sanitation_records",
-  supply_reception: "supply_reception_records",
-  water_quality: "water_quality_records",
-};
-
-function formatDateKeyInTimeZone(value: string, timeZone = "America/Bogota") {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-
-  return year && month && day ? `${year}-${month}-${day}` : null;
-}
 
 const loadPublicOperationalFormPayload = cache(async (token: string) => {
   const supabase = getSupabasePublicClient();
@@ -148,42 +116,26 @@ async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: 
   );
 }
 
-async function loadCompletedRecordDateKeys(token: string, formType: OperationalFormType) {
-  const supabase = getSupabaseServerClient();
+async function loadCompletedRecordDateKeys(token: string) {
+  const supabase = getSupabasePublicClient();
 
   if (!supabase) {
     return [];
   }
 
-  const tableName = operationalRecordTables[formType];
-  const sinceDate = getRecentWindowStartDate(30);
   const { data, error } = await supabase
-    .from(tableName)
-    .select("fecha_hora_servidor")
-    .eq("token_qr_utilizado", token)
-    .gte("fecha_hora_servidor", sinceDate.toISOString())
-    .order("fecha_hora_servidor", { ascending: false })
-    .returns<OperationalRecordDateRow[]>();
+    .rpc("get_public_operational_form_completed_dates", {
+      p_token: token,
+    });
 
   if (error) {
     logServerError("public_form.page.completed_dates_lookup_failed", error, {
-      formType,
       tokenLength: token.length,
     });
     return [];
   }
 
-  const completedDateKeys = new Set<string>();
-
-  for (const row of data ?? []) {
-    const dateKey = formatDateKeyInTimeZone(row.fecha_hora_servidor);
-
-    if (dateKey) {
-      completedDateKeys.add(dateKey);
-    }
-  }
-
-  return Array.from(completedDateKeys);
+  return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
 }
 
 function getAdminDisplayName(fullName: string | null, email: string) {
@@ -282,7 +234,7 @@ export default async function PublicOperationalFormPage({
     payload.form_type === "thermal_control"
       ? await loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
       : payload.equipment ?? [];
-  const completedRecordDateKeys = await loadCompletedRecordDateKeys(token, payload.form_type);
+  const completedRecordDateKeys = await loadCompletedRecordDateKeys(token);
   const adminContext = await loadOperationalFormAdminContext({ admin, source, token });
 
   return (
