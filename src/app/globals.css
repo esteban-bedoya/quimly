@@ -85,6 +85,12 @@ body:has([data-public-form-shell]) {
   background: #12110f;
 }
 
+[data-public-form-shell],
+[data-public-form-shell] * {
+  color-scheme: only light;
+  forced-color-adjust: none;
+}
+
 html:has([data-home-shell]),
 body:has([data-home-shell]) {
   background: #ffffff;
