@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 export const operationalFormStyles = {
   page: "min-h-screen min-h-dvh bg-[#12110F] px-0 pb-5 pt-10 text-[#111816]",
@@ -71,8 +71,18 @@ export function OperationalFormLayout({
   branchName: string;
   children: ReactNode;
 }) {
+  useEffect(() => {
+    document.documentElement.classList.add("public-form-document");
+    document.body.classList.add("public-form-document");
+
+    return () => {
+      document.documentElement.classList.remove("public-form-document");
+      document.body.classList.remove("public-form-document");
+    };
+  }, []);
+
   return (
-    <main className={operationalFormStyles.page}>
+    <main className={operationalFormStyles.page} data-public-form-shell>
       <div className={operationalFormStyles.shell}>
         <div className={operationalFormStyles.layoutContent}>
           <OperationalFormHeader

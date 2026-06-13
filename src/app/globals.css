@@ -75,6 +75,13 @@ html {
   scroll-behavior: smooth;
 }
 
+html.public-form-document,
+body.public-form-document,
+html:has([data-public-form-shell]),
+body:has([data-public-form-shell]) {
+  background: #12110f;
+}
+
 @utility section-kicker {
   @apply w-fit rounded-full border px-3.5 py-2 text-[0.8rem] font-extrabold uppercase;
   background-color: var(--section-chip-bg);
