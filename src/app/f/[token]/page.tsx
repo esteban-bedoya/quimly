@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { OperationalPublicForm } from "@/components/public-forms/operational-public-form";
+import { getCurrentUserContext } from "@/lib/auth/user-context";
 import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
@@ -27,6 +28,14 @@ type CatalogRow = {
 
 type PublicQrBranchRow = {
   branch_id: string;
+};
+
+type PublicQrCompanyRow = {
+  company_id: string;
+};
+
+type CompanyAdminRow = {
+  company_admin_user_id: string | null;
 };
 
 type RefrigerationEquipmentRow = {
@@ -110,6 +119,67 @@ async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: 
   );
 }
 
+function getAdminDisplayName(fullName: string | null, email: string) {
+  return (fullName?.trim() || email).toLocaleUpperCase("es-CO");
+}
+
+async function loadOperationalFormAdminContext(token: string, source: string | string[] | undefined) {
+  if (source !== "dashboard") {
+    return null;
+  }
+
+  const userContext = await getCurrentUserContext();
+
+  if (userContext?.profile.globalRole !== "company_admin") {
+    return null;
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return null;
+  }
+
+  const { data: qrRow, error: qrError } = await supabase
+    .from("branch_form_qr_codes")
+    .select("company_id")
+    .eq("token", token)
+    .eq("is_active", true)
+    .maybeSingle<PublicQrCompanyRow>();
+
+  if (qrError) {
+    logServerError("public_form.page.admin_qr_lookup_failed", qrError, { tokenLength: token.length });
+    return null;
+  }
+
+  if (!qrRow?.company_id) {
+    return null;
+  }
+
+  const { data: companyRow, error: companyError } = await supabase
+    .from("companies")
+    .select("company_admin_user_id")
+    .eq("id", qrRow.company_id)
+    .eq("is_active", true)
+    .maybeSingle<CompanyAdminRow>();
+
+  if (companyError) {
+    logServerError("public_form.page.admin_company_lookup_failed", companyError, {
+      companyId: qrRow.company_id,
+      tokenLength: token.length,
+    });
+    return null;
+  }
+
+  if (companyRow?.company_admin_user_id !== userContext.profile.userId) {
+    return null;
+  }
+
+  return {
+    administratorName: getAdminDisplayName(userContext.profile.fullName, userContext.profile.email),
+  };
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -130,10 +200,13 @@ export async function generateMetadata({
 
 export default async function PublicOperationalFormPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ source?: string | string[] }>;
 }) {
   const { token } = await params;
+  const { source } = await searchParams;
   const { payload, error } = await loadPublicOperationalFormPayload(token);
 
   if (error) {
@@ -149,6 +222,7 @@ export default async function PublicOperationalFormPage({
     payload.form_type === "thermal_control"
       ? await loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
       : payload.equipment ?? [];
+  const adminContext = await loadOperationalFormAdminContext(token, source);
 
   return (
     <OperationalPublicForm
@@ -158,6 +232,7 @@ export default async function PublicOperationalFormPage({
       companyName={payload.company_name}
       equipment={equipment}
       sanitationAreas={payload.sanitation_areas ?? []}
+      adminContext={adminContext}
     />
   );
 }

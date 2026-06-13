@@ -926,6 +926,7 @@ declare
   chlorine_compliant_value boolean;
   ph_compliant_value boolean;
   recorded_at_value timestamptz;
+  max_recorded_at_age interval := interval '5 days';
 begin
   if nullif(trim(p_token), '') is null then
     raise exception 'Este formulario no tiene un QR válido.';
@@ -935,18 +936,13 @@ begin
     raise exception 'Ingresa el nombre del operador para guardar el registro.';
   end if;
 
-  recorded_at_value := coalesce(p_recorded_at, now());
-
-  if recorded_at_value < now() - interval '5 days' or recorded_at_value > now() then
-    raise exception 'La fecha del registro debe estar entre ahora y máximo 5 días atrás.';
-  end if;
-
   select
     qr.id,
     qr.branch_id,
     qr.company_id,
     qr.form_type,
-    qr.token
+    qr.token,
+    c.company_admin_user_id
   into qr_record
   from public.branch_form_qr_codes qr
   join public.branches b on b.id = qr.branch_id
@@ -959,6 +955,17 @@ begin
 
   if qr_record.id is null then
     raise exception 'Este QR no está activo. Solicita soporte para revisar la sede.';
+  end if;
+
+  if auth.uid() is not null and auth.uid() = qr_record.company_admin_user_id then
+    max_recorded_at_age := interval '30 days';
+  end if;
+
+  recorded_at_value := coalesce(p_recorded_at, now());
+
+  if recorded_at_value < now() - max_recorded_at_age or recorded_at_value > now() then
+    raise exception 'La fecha del registro debe estar entre ahora y máximo % días atrás.',
+      extract(day from max_recorded_at_age)::integer;
   end if;
 
   if qr_record.form_type = 'thermal_control' then

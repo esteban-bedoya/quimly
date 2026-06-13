@@ -5,10 +5,15 @@ import { type FormEvent, type RefObject, useActionState, useEffect, useMemo, use
 import { submitPublicOperationalForm, type PublicFormState } from "@/app/f/[token]/actions";
 import {
   OperationalFormLayout,
-  OperationalFormSubmitButton,
   OperationalFormSuccessDialog,
   operationalFormStyles,
 } from "@/components/public-forms/operational-form-layout";
+import {
+  ExecutorIdentificationStep,
+  type AdminExecutorContext,
+  type ExecutorSelection,
+} from "@/components/public-forms/executor-identification-step";
+import { FinalRegistrationConfirmation } from "@/components/public-forms/final-registration-confirmation";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
@@ -175,12 +180,12 @@ function toDateTimeLocalValue(date: Date) {
   return offsetDate.toISOString().slice(0, 16);
 }
 
-function getRecordDateLimits() {
+function getRecordDateLimits(maxPastDays = 5) {
   const now = new Date();
-  const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+  const minDate = new Date(now.getTime() - maxPastDays * 24 * 60 * 60 * 1000);
 
   return {
-    min: toDateTimeLocalValue(fiveDaysAgo),
+    min: toDateTimeLocalValue(minDate),
     max: toDateTimeLocalValue(now),
   };
 }
@@ -264,205 +269,6 @@ function PublicFormCardHeader({
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-function EditableResponsibleSummary({
-  isEditing,
-  onEditingChange,
-  responsibleName,
-  onResponsibleNameChange,
-}: {
-  isEditing: boolean;
-  onEditingChange: (isEditing: boolean) => void;
-  responsibleName: string;
-  onResponsibleNameChange: (responsibleName: string) => void;
-}) {
-  const [draftName, setDraftName] = useState(responsibleName);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const displayName = responsibleName.trim();
-  const canSave = Boolean(draftName.trim());
-
-  function startEditing() {
-    setDraftName(responsibleName);
-    onEditingChange(true);
-    window.requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-  }
-
-  function saveResponsibleName() {
-    const nextName = draftName.trim();
-
-    if (!nextName) {
-      return;
-    }
-
-    onResponsibleNameChange(formatResponsibleName(nextName));
-    onEditingChange(false);
-  }
-
-  return (
-    <div className="flex min-h-20 items-center justify-between gap-3 rounded-2xl bg-[#f4faf7] px-5 py-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-[#51645f]">Responsable del registro</p>
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            value={draftName}
-            onChange={(event) => setDraftName(formatResponsibleName(event.target.value))}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                saveResponsibleName();
-              }
-
-              if (event.key === "Escape") {
-                onEditingChange(false);
-              }
-            }}
-            className="mt-1 min-h-10 w-full rounded-xl border border-[#147060]/30 bg-white px-3 text-xl font-black text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
-          />
-        ) : (
-          <p className={displayName ? "truncate text-xl font-black text-neutral-950" : "text-xl font-black text-[#7b8c87]"}>
-            {displayName || "Sin definir"}
-          </p>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={isEditing ? saveResponsibleName : startEditing}
-        disabled={isEditing && !canSave}
-        className={[
-          "grid h-11 w-11 shrink-0 place-items-center rounded-2xl border transition active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-45",
-          isEditing ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-[#d7e4e1] bg-white text-neutral-800",
-        ].join(" ")}
-        aria-label={isEditing ? "Guardar responsable del registro" : "Editar responsable del registro"}
-      >
-        {isEditing ? (
-          <svg
-            aria-hidden="true"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2.6"
-            viewBox="0 0 24 24"
-          >
-            <path d="m20 6-11 11-5-5" />
-          </svg>
-        ) : (
-          <svg
-            aria-hidden="true"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2.2"
-            viewBox="0 0 24 24"
-          >
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-          </svg>
-        )}
-      </button>
-    </div>
-  );
-}
-
-function EditableExecutionDateSummary({
-  dateLabel,
-  isModified,
-  onEdit,
-}: {
-  dateLabel: string;
-  isModified: boolean;
-  onEdit: () => void;
-}) {
-  return (
-    <div className="flex min-h-20 items-center justify-between gap-3 rounded-2xl bg-[#f4faf7] px-5 py-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-[#51645f]">Fecha y hora ejecución</p>
-        <p
-          className={[
-            "truncate text-xl font-black",
-            isModified ? "text-[#48c7d2]" : "text-neutral-950",
-          ].join(" ")}
-        >
-          {dateLabel}
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={onEdit}
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-[#d7e4e1] bg-white text-neutral-800 transition active:scale-[0.94]"
-        aria-label="Cambiar fecha y hora de ejecución"
-      >
-        <svg
-          aria-hidden="true"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2.2"
-          viewBox="0 0 24 24"
-        >
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-function FinalRegistrationStep({
-  dateLabel,
-  errorMessage,
-  isDateModified,
-  isPending,
-  isResponsibleEditing,
-  onDateEdit,
-  onResponsibleEditingChange,
-  onResponsibleNameChange,
-  responsibleName,
-  submitDisabled,
-}: {
-  dateLabel: string;
-  errorMessage?: string;
-  isDateModified: boolean;
-  isPending: boolean;
-  isResponsibleEditing: boolean;
-  onDateEdit: () => void;
-  onResponsibleEditingChange: (isEditing: boolean) => void;
-  onResponsibleNameChange: (responsibleName: string) => void;
-  responsibleName: string;
-  submitDisabled: boolean;
-}) {
-  return (
-    <div className="grid gap-8">
-      <div className="grid gap-3">
-        <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
-      </div>
-      <EditableResponsibleSummary
-        isEditing={isResponsibleEditing}
-        onEditingChange={onResponsibleEditingChange}
-        responsibleName={responsibleName}
-        onResponsibleNameChange={onResponsibleNameChange}
-      />
-      <EditableExecutionDateSummary dateLabel={dateLabel} isModified={isDateModified} onEdit={onDateEdit} />
-
-      {errorMessage ? <p className={operationalFormStyles.statusError}>{errorMessage}</p> : null}
-
-      <OperationalFormSubmitButton disabled={submitDisabled}>
-        {isPending ? "Guardando..." : "Firmar y registrar"}
-      </OperationalFormSubmitButton>
     </div>
   );
 }
@@ -686,6 +492,7 @@ export function OperationalPublicForm({
   companyName,
   equipment,
   sanitationAreas,
+  adminContext,
 }: {
   token: string;
   formType: OperationalFormType;
@@ -693,6 +500,7 @@ export function OperationalPublicForm({
   companyName: string;
   equipment: CatalogItem[];
   sanitationAreas: CatalogItem[];
+  adminContext?: AdminExecutorContext | null;
 }) {
   const [state, action, isPending] = useActionState<PublicFormState, FormData>(
     submitPublicOperationalForm,
@@ -707,6 +515,7 @@ export function OperationalPublicForm({
   const [thermalStep, setThermalStep] = useState<ThermalStep>(1);
   const [sanitationStep, setSanitationStep] = useState<SanitationStep>(1);
   const [operatorName, setOperatorName] = useState("");
+  const [executorSelection, setExecutorSelection] = useState<ExecutorSelection>("");
   const [selectedEquipmentId, setSelectedEquipmentId] = useState("");
   const [selectedSanitationAreaId, setSelectedSanitationAreaId] = useState("");
   const [sanitationCleaningType, setSanitationCleaningType] = useState<SanitationCleaningType | "">("");
@@ -731,7 +540,7 @@ export function OperationalPublicForm({
   const [phInteger, setPhInteger] = useState<number | null>(null);
   const [phDecimal, setPhDecimal] = useState<number | null>(null);
   const [recordedAtLocalValue, setRecordedAtLocalValue] = useState(() => toDateTimeLocalValue(new Date()));
-  const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits());
+  const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits(adminContext ? 30 : 5));
   const [datePickerValue, setDatePickerValue] = useState(recordedAtLocalValue);
   const [hasCustomRecordedAt, setHasCustomRecordedAt] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -739,6 +548,9 @@ export function OperationalPublicForm({
   const temperatureMenuRef = useRef<HTMLDivElement>(null);
   const actionTakenCustomInputRef = useRef<HTMLInputElement>(null);
   const label = operationalFormLabels[formType];
+  const isAdminFlow = Boolean(adminContext);
+  const administratorName = adminContext?.administratorName ?? "";
+  const recordBackdateDays = isAdminFlow ? 30 : 5;
   const missingThermalCatalog = isThermalControl && equipment.length === 0;
   const missingAreaCatalog = isAreaSanitation && sanitationAreas.length === 0;
   const isDisabled = isPending || missingThermalCatalog || missingAreaCatalog;
@@ -879,7 +691,7 @@ export function OperationalPublicForm({
   }, [hasCustomRecordedAt, showDatePicker]);
 
   useEffect(() => {
-    if (!isSupplyReception) {
+    if (!isSupplyReception || isAdminFlow) {
       return;
     }
 
@@ -904,10 +716,10 @@ export function OperationalPublicForm({
     }
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [isSupplyReception, supplyStorageKey]);
+  }, [isAdminFlow, isSupplyReception, supplyStorageKey]);
 
   useEffect(() => {
-    if (!isSupplyReception || !hasLoadedSupplyDraft) {
+    if (!isSupplyReception || isAdminFlow || !hasLoadedSupplyDraft) {
       return;
     }
 
@@ -918,6 +730,7 @@ export function OperationalPublicForm({
     window.localStorage.setItem(supplyStorageKey, JSON.stringify(draft));
   }, [
     hasLoadedSupplyDraft,
+    isAdminFlow,
     isSupplyReception,
     operatorName,
     supplyStorageKey,
@@ -1020,15 +833,31 @@ export function OperationalPublicForm({
     }
   }
 
+  function updateOperatorName(value: string) {
+    setOperatorName(formatResponsibleName(value));
+  }
+
+  function updateExecutorSelection(selection: ExecutorSelection) {
+    setExecutorSelection(selection);
+    setIsResponsibleEditing(false);
+
+    if (selection === "self") {
+      setOperatorName(administratorName);
+      return;
+    }
+
+    setOperatorName("");
+  }
+
   function openDatePicker() {
-    const nextLimits = getRecordDateLimits();
+    const nextLimits = getRecordDateLimits(recordBackdateDays);
     setRecordDateLimits(nextLimits);
     setDatePickerValue(recordedAtLocalValue);
     setShowDatePicker(true);
   }
 
   function saveDatePickerValue() {
-    const nextLimits = getRecordDateLimits();
+    const nextLimits = getRecordDateLimits(recordBackdateDays);
     const clampedValue =
       datePickerValue < nextLimits.min ? nextLimits.min : datePickerValue > nextLimits.max ? nextLimits.max : datePickerValue;
 
@@ -1039,7 +868,7 @@ export function OperationalPublicForm({
   }
 
   function handleSuccessAccept() {
-    if (isSupplyReception) {
+    if (isSupplyReception && !isAdminFlow) {
       const rememberedDraft: SupplyDraft = {
         operatorName,
       };
@@ -1289,13 +1118,15 @@ export function OperationalPublicForm({
   const finalRegistrationStepProps = {
     dateLabel: recordedAtDisplay,
     errorMessage: state.error,
+    executionResponsibleEditable: !isAdminFlow || executorSelection === "operator",
+    executionResponsibleName: operatorName,
     isDateModified: hasCustomRecordedAt,
+    isExecutionResponsibleEditing: isResponsibleEditing,
     isPending,
-    isResponsibleEditing,
     onDateEdit: openDatePicker,
-    onResponsibleEditingChange: setIsResponsibleEditing,
-    onResponsibleNameChange: setOperatorName,
-    responsibleName: operatorName,
+    onExecutionResponsibleEditingChange: setIsResponsibleEditing,
+    onExecutionResponsibleNameChange: updateOperatorName,
+    registrationResponsibleName: isAdminFlow ? administratorName : undefined,
     submitDisabled: isSubmitDisabled,
   };
 
@@ -1367,26 +1198,15 @@ export function OperationalPublicForm({
               />
 
               {thermalStep === 1 ? (
-                <div className="grid gap-7">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la medición?</h2>
-                  </div>
-                  <input
-                    autoComplete="name"
-                    placeholder="Ej. Ana Gomez"
-                    value={operatorName}
-                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
-                  />
-                  <button
-                    type="button"
-                    disabled={!operatorName.trim()}
-                    onClick={() => setThermalStep(2)}
-                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
-                  >
-                    Continuar
-                  </button>
-                </div>
+                <ExecutorIdentificationStep
+                  title="¿Quién realizó la medición?"
+                  adminContext={adminContext}
+                  executorName={operatorName}
+                  executorSelection={executorSelection}
+                  onExecutorNameChange={updateOperatorName}
+                  onExecutorSelectionChange={updateExecutorSelection}
+                  onContinue={() => setThermalStep(2)}
+                />
               ) : null}
 
               {thermalStep === 2 ? (
@@ -1580,7 +1400,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {thermalStep === 5 ? (
-                <FinalRegistrationStep {...finalRegistrationStepProps} />
+                <FinalRegistrationConfirmation {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -1597,26 +1417,15 @@ export function OperationalPublicForm({
               />
 
               {sanitationStep === 1 ? (
-                <div className="grid gap-7">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la limpieza?</h2>
-                  </div>
-                  <input
-                    autoComplete="name"
-                    placeholder="Ej. Ana Gomez"
-                    value={operatorName}
-                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
-                  />
-                  <button
-                    type="button"
-                    disabled={!operatorName.trim()}
-                    onClick={() => setSanitationStep(2)}
-                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
-                  >
-                    Continuar
-                  </button>
-                </div>
+                <ExecutorIdentificationStep
+                  title="¿Quién realizó la limpieza?"
+                  adminContext={adminContext}
+                  executorName={operatorName}
+                  executorSelection={executorSelection}
+                  onExecutorNameChange={updateOperatorName}
+                  onExecutorSelectionChange={updateExecutorSelection}
+                  onContinue={() => setSanitationStep(2)}
+                />
               ) : null}
 
               {sanitationStep === 2 ? (
@@ -1746,7 +1555,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {sanitationStep === 4 ? (
-                <FinalRegistrationStep {...finalRegistrationStepProps} />
+                <FinalRegistrationConfirmation {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -1763,26 +1572,15 @@ export function OperationalPublicForm({
               />
 
               {waterStep === 1 ? (
-                <div className="grid gap-7">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién realizó la medición?</h2>
-                  </div>
-                  <input
-                    autoComplete="name"
-                    placeholder="Ej. Ana Gomez"
-                    value={operatorName}
-                    onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                    className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-left text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
-                  />
-                  <button
-                    type="button"
-                    disabled={!operatorName.trim()}
-                    onClick={() => setWaterStep(2)}
-                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
-                  >
-                    Continuar
-                  </button>
-                </div>
+                <ExecutorIdentificationStep
+                  title="¿Quién realizó la medición?"
+                  adminContext={adminContext}
+                  executorName={operatorName}
+                  executorSelection={executorSelection}
+                  onExecutorNameChange={updateOperatorName}
+                  onExecutorSelectionChange={updateExecutorSelection}
+                  onContinue={() => setWaterStep(2)}
+                />
               ) : null}
 
               {waterStep === 2 ? (
@@ -1874,7 +1672,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {waterStep === 4 ? (
-                <FinalRegistrationStep {...finalRegistrationStepProps} />
+                <FinalRegistrationConfirmation {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -1891,26 +1689,15 @@ export function OperationalPublicForm({
               />
 
               {currentStep === 1 ? (
-                <div className="grid gap-7">
-                <div className="grid gap-3">
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">¿Quién recibió el producto?</h2>
-                </div>
-                <input
-                  autoComplete="name"
-                  placeholder="Ej. Ana Gomez"
-                  value={operatorName}
-                  onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                  className="min-h-16 rounded-2xl border border-[#c7d8d4] bg-white px-5 text-xl font-black text-neutral-950 outline-none transition placeholder:text-[#7b8c87] focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
+                <ExecutorIdentificationStep
+                  title="¿Quién recibió el producto?"
+                  adminContext={adminContext}
+                  executorName={operatorName}
+                  executorSelection={executorSelection}
+                  onExecutorNameChange={updateOperatorName}
+                  onExecutorSelectionChange={updateExecutorSelection}
+                  onContinue={() => setCurrentStep(2)}
                 />
-                <button
-                  type="button"
-                  disabled={!operatorName.trim()}
-                  onClick={() => setCurrentStep(2)}
-                  className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
-                >
-                  Continuar
-                </button>
-                </div>
               ) : null}
 
               {currentStep === 2 ? (
@@ -2273,7 +2060,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {currentStep === 10 ? (
-                <FinalRegistrationStep {...finalRegistrationStepProps} />
+                <FinalRegistrationConfirmation {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -2291,7 +2078,9 @@ export function OperationalPublicForm({
           >
             <div className="grid gap-1">
               <h2 className="text-xl font-black text-neutral-950">Fecha y hora del registro</h2>
-              <p className="text-sm font-semibold leading-5 text-neutral-500">Puedes ajustar máximo 5 días hacia atrás.</p>
+              <p className="text-sm font-semibold leading-5 text-neutral-500">
+                Puedes ajustar máximo {recordBackdateDays} días hacia atrás.
+              </p>
             </div>
 
             <DateTimePicker

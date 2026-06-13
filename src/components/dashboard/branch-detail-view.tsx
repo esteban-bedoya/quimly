@@ -18,7 +18,7 @@ import {
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
-import { operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
+import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
 import { printableQrInstructions } from "@/lib/qr/printable";
 import type {
   BranchCatalogItemSummary,
@@ -380,10 +380,32 @@ function CompactModuleList({
   );
 }
 
-function OperationalActionsBlock() {
+function OperationalActionsBlock({ formPath }: { formPath?: string }) {
+  if (!formPath) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={`${mutedActionCompact} cursor-not-allowed opacity-55`}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
+          <path
+            d="M5 2.5h4l2 2V13a.5.5 0 0 1-.5.5h-5A.5.5 0 0 1 5 13V2.5Z"
+            fill="none"
+            stroke="currentColor"
+            strokeLinejoin="round"
+            strokeWidth="1.4"
+          />
+          <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
+        </svg>
+        Registrar control interno
+      </button>
+    );
+  }
+
   return (
-    <button
-      type="button"
+    <Link
+      href={formPath}
       className={mutedActionCompact}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0">
@@ -397,7 +419,7 @@ function OperationalActionsBlock() {
         <path d="M9 2.5v2h2" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" />
       </svg>
       Registrar control interno
-    </button>
+    </Link>
   );
 }
 
@@ -1106,9 +1128,11 @@ function EquipmentTypeSelect() {
 function OperationalFlowCard({
   formType,
   configuration,
+  formPath,
 }: {
   formType: OperationalFormType;
   configuration?: ReactNode;
+  formPath?: string;
 }) {
   const label = operationalFormLabels[formType];
   const instructions = printableQrInstructions[formType];
@@ -1122,7 +1146,7 @@ function OperationalFlowCard({
           </p>
 
           <div className="my-3">
-            <OperationalActionsBlock />
+            <OperationalActionsBlock formPath={formPath} />
           </div>
 
           <div className="type-metadata space-y-1 text-[#7f878d]">
@@ -1635,6 +1659,8 @@ export function BranchOperationalView({
   const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
   const operationalCards = operationalFormTypes.map((formType) => {
     let configuration: ReactNode | undefined;
+    const activeQrCode = activeOperationalQrCodes.find((qrCode) => qrCode.formType === formType);
+    const formPath = activeQrCode ? `${createPublicFormPath(activeQrCode.token)}?source=dashboard` : undefined;
 
     if (formType === "thermal_control") {
       configuration = (
@@ -1681,6 +1707,7 @@ export function BranchOperationalView({
       <OperationalFlowCard
         key={formType}
         formType={formType}
+        formPath={formPath}
         configuration={configuration}
       />
     );
