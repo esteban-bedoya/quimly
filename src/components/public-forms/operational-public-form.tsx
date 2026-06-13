@@ -196,10 +196,13 @@ function formatRecordDateLabel(value: string) {
   const day = String(date.getDate()).padStart(2, "0");
   const month = months[date.getMonth()];
   const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
+  const hours24 = date.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const hours = String(hours12).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
+  const meridiem = hours24 >= 12 ? "PM" : "AM";
 
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  return `${day} ${month} ${year} · ${hours}:${minutes} ${meridiem}`;
 }
 
 function toIsoDateTime(value: string) {
@@ -265,38 +268,6 @@ function PublicFormCardHeader({
   );
 }
 
-function PublicFormDateControl({
-  dateLabel,
-  isModified,
-  onOpenDatePicker,
-}: {
-  dateLabel: string;
-  isModified: boolean;
-  onOpenDatePicker: () => void;
-}) {
-  return (
-    <div className="flex justify-end px-4 sm:px-1">
-      <button
-        type="button"
-        onClick={onOpenDatePicker}
-        className="group grid justify-items-end gap-1 text-right text-white"
-      >
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white transition group-hover:text-white/80">
-          Cambiar fecha y hora:
-        </span>
-        <span
-          className={[
-            "font-mono text-xs font-semibold tracking-[0.08em] transition",
-            isModified ? "text-[#48c7d2]" : "text-white",
-          ].join(" ")}
-        >
-          {dateLabel}
-        </span>
-      </button>
-    </div>
-  );
-}
-
 function EditableResponsibleSummary({
   isEditing,
   onEditingChange,
@@ -355,7 +326,7 @@ function EditableResponsibleSummary({
             className="mt-1 min-h-10 w-full rounded-xl border border-[#147060]/30 bg-white px-3 text-xl font-black text-neutral-950 outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10"
           />
         ) : (
-          <p className={displayName ? "truncate text-2xl font-black text-neutral-950" : "text-2xl font-black text-[#7b8c87]"}>
+          <p className={displayName ? "truncate text-xl font-black text-neutral-950" : "text-xl font-black text-[#7b8c87]"}>
             {displayName || "Sin definir"}
           </p>
         )}
@@ -400,6 +371,98 @@ function EditableResponsibleSummary({
           </svg>
         )}
       </button>
+    </div>
+  );
+}
+
+function EditableExecutionDateSummary({
+  dateLabel,
+  isModified,
+  onEdit,
+}: {
+  dateLabel: string;
+  isModified: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="flex min-h-20 items-center justify-between gap-3 rounded-2xl bg-[#f4faf7] px-5 py-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-[#51645f]">Fecha y hora ejecución</p>
+        <p
+          className={[
+            "truncate text-xl font-black",
+            isModified ? "text-[#48c7d2]" : "text-neutral-950",
+          ].join(" ")}
+        >
+          {dateLabel}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-[#d7e4e1] bg-white text-neutral-800 transition active:scale-[0.94]"
+        aria-label="Cambiar fecha y hora de ejecución"
+      >
+        <svg
+          aria-hidden="true"
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2.2"
+          viewBox="0 0 24 24"
+        >
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function FinalRegistrationStep({
+  dateLabel,
+  errorMessage,
+  isDateModified,
+  isPending,
+  isResponsibleEditing,
+  onDateEdit,
+  onResponsibleEditingChange,
+  onResponsibleNameChange,
+  responsibleName,
+  submitDisabled,
+}: {
+  dateLabel: string;
+  errorMessage?: string;
+  isDateModified: boolean;
+  isPending: boolean;
+  isResponsibleEditing: boolean;
+  onDateEdit: () => void;
+  onResponsibleEditingChange: (isEditing: boolean) => void;
+  onResponsibleNameChange: (responsibleName: string) => void;
+  responsibleName: string;
+  submitDisabled: boolean;
+}) {
+  return (
+    <div className="grid gap-8">
+      <div className="grid gap-3">
+        <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
+      </div>
+      <EditableResponsibleSummary
+        isEditing={isResponsibleEditing}
+        onEditingChange={onResponsibleEditingChange}
+        responsibleName={responsibleName}
+        onResponsibleNameChange={onResponsibleNameChange}
+      />
+      <EditableExecutionDateSummary dateLabel={dateLabel} isModified={isDateModified} onEdit={onDateEdit} />
+
+      {errorMessage ? <p className={operationalFormStyles.statusError}>{errorMessage}</p> : null}
+
+      <OperationalFormSubmitButton disabled={submitDisabled}>
+        {isPending ? "Guardando..." : "Firmar y registrar"}
+      </OperationalFormSubmitButton>
     </div>
   );
 }
@@ -662,7 +725,6 @@ export function OperationalPublicForm({
   const [actionTakenError, setActionTakenError] = useState("");
   const [hasLoadedSupplyDraft, setHasLoadedSupplyDraft] = useState(false);
   const [isTemperatureMenuOpen, setIsTemperatureMenuOpen] = useState(false);
-  const [isSanitationAreaMenuOpen, setIsSanitationAreaMenuOpen] = useState(false);
   const [isResponsibleEditing, setIsResponsibleEditing] = useState(false);
   const [chlorineInteger, setChlorineInteger] = useState<number | null>(null);
   const [chlorineDecimal, setChlorineDecimal] = useState<number | null>(null);
@@ -675,18 +737,13 @@ export function OperationalPublicForm({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const temperaturePickerRef = useRef<HTMLDivElement>(null);
   const temperatureMenuRef = useRef<HTMLDivElement>(null);
-  const sanitationAreaPickerRef = useRef<HTMLDivElement>(null);
   const actionTakenCustomInputRef = useRef<HTMLInputElement>(null);
   const label = operationalFormLabels[formType];
   const missingThermalCatalog = isThermalControl && equipment.length === 0;
   const missingAreaCatalog = isAreaSanitation && sanitationAreas.length === 0;
   const isDisabled = isPending || missingThermalCatalog || missingAreaCatalog;
   const isSubmitDisabled = isDisabled || isResponsibleEditing;
-  const selectedSanitationArea = useMemo(
-    () => sanitationAreas.find((item) => item.id === selectedSanitationAreaId) ?? null,
-    [sanitationAreas, selectedSanitationAreaId],
-  );
-  const hasSanitationAreaAndType = Boolean(selectedSanitationAreaId && sanitationCleaningType);
+  const hasSanitationArea = Boolean(selectedSanitationAreaId);
   const hasSanitationProtocol = sanitationImplementsConfirmed && sanitationChemicalsConfirmed;
   const showTemperaturePicker = productType === "Refrigerado" || productType === "Congelado";
   const temperatureCompliant = isTemperatureCompliant(productType, temperatureC);
@@ -890,34 +947,6 @@ export function OperationalPublicForm({
   }, [isTemperatureMenuOpen]);
 
   useEffect(() => {
-    if (!isSanitationAreaMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-
-      if (!sanitationAreaPickerRef.current?.contains(target)) {
-        setIsSanitationAreaMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsSanitationAreaMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isSanitationAreaMenuOpen]);
-
-  useEffect(() => {
     if (!isTemperatureMenuOpen) {
       return;
     }
@@ -1044,9 +1073,15 @@ export function OperationalPublicForm({
       return;
     }
 
-    if (isAreaSanitation && (!hasSanitationAreaAndType || !hasSanitationProtocol)) {
+    if (isAreaSanitation && !hasSanitationArea) {
       event.preventDefault();
-      setSanitationStep(hasSanitationAreaAndType ? 3 : 2);
+      setSanitationStep(2);
+      return;
+    }
+
+    if (isAreaSanitation && (!sanitationCleaningType || !hasSanitationProtocol)) {
+      event.preventDefault();
+      setSanitationStep(3);
       return;
     }
 
@@ -1246,6 +1281,19 @@ export function OperationalPublicForm({
     setDecision(nextDecision);
   }
 
+  const finalRegistrationStepProps = {
+    dateLabel: recordedAtDisplay,
+    errorMessage: state.error,
+    isDateModified: hasCustomRecordedAt,
+    isPending,
+    isResponsibleEditing,
+    onDateEdit: openDatePicker,
+    onResponsibleEditingChange: setIsResponsibleEditing,
+    onResponsibleNameChange: setOperatorName,
+    responsibleName: operatorName,
+    submitDisabled: isSubmitDisabled,
+  };
+
   return (
     <OperationalFormLayout
       title={label.title}
@@ -1305,11 +1353,6 @@ export function OperationalPublicForm({
 
         {isThermalControl ? (
           <section className="grid gap-2">
-            <PublicFormDateControl
-              dateLabel={recordedAtDisplay}
-              isModified={hasCustomRecordedAt}
-              onOpenDatePicker={openDatePicker}
-            />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={thermalStep > 1}
@@ -1351,7 +1394,7 @@ export function OperationalPublicForm({
                       No hay equipos de frío activos para esta sede. Configúralos desde el administrador.
                     </p>
                   ) : (
-                    <div className="grid gap-3">
+                    <div className="grid max-h-80 gap-3 overflow-y-auto pr-1">
                       {equipment.map((item) => {
                         const isSelected = selectedEquipmentId === item.id;
                         const equipmentTypeLabel = getCatalogEquipmentTypeLabel(item);
@@ -1532,20 +1575,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {thermalStep === 5 ? (
-                <div className="grid gap-8">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
-                  </div>
-                  <EditableResponsibleSummary
-                    isEditing={isResponsibleEditing}
-                    onEditingChange={setIsResponsibleEditing}
-                    responsibleName={operatorName}
-                    onResponsibleNameChange={setOperatorName}
-                  />
-                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
-                    {isPending ? "Guardando..." : "Firmar y registrar"}
-                  </OperationalFormSubmitButton>
-                </div>
+                <FinalRegistrationStep {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -1553,11 +1583,6 @@ export function OperationalPublicForm({
 
         {isAreaSanitation ? (
           <section className="grid gap-2">
-            <PublicFormDateControl
-              dateLabel={recordedAtDisplay}
-              isModified={hasCustomRecordedAt}
-              onOpenDatePicker={openDatePicker}
-            />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={sanitationStep > 1}
@@ -1592,68 +1617,50 @@ export function OperationalPublicForm({
               {sanitationStep === 2 ? (
                 <div className="grid gap-7">
                   <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Selección del área / elemento</h2>
+                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Área o elemento a limpiar</h2>
                   </div>
                   {missingAreaCatalog ? (
                     <p className={operationalFormStyles.statusWarning}>
                       Esta sede aun no tiene areas registradas para usar este QR.
                     </p>
                   ) : (
-                    <div ref={sanitationAreaPickerRef} className="grid gap-2">
-                      <p className="text-sm font-black text-neutral-950">Área o elemento</p>
-                      <button
-                        type="button"
-                        aria-expanded={isSanitationAreaMenuOpen}
-                        onClick={() => setIsSanitationAreaMenuOpen((currentValue) => !currentValue)}
-                        className={[
-                          "flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border px-5 text-left text-lg font-black outline-none transition focus:border-[#147060] focus:ring-2 focus:ring-[#147060]/10",
-                          selectedSanitationArea
-                            ? "border-[#147060]/20 bg-white text-neutral-950"
-                            : "border-[#c7d8d4] bg-white text-[#7b8c87]",
-                        ].join(" ")}
-                      >
-                        <span>{selectedSanitationArea?.name ?? "Seleccionar área o elemento"}</span>
-                        <span aria-hidden="true" className="text-2xl leading-none text-[#147060]">
-                          ▾
-                        </span>
-                      </button>
+                    <div className="grid max-h-80 gap-3 overflow-y-auto pr-1">
+                      {sanitationAreas.map((item) => {
+                        const isSelected = selectedSanitationAreaId === item.id;
 
-                      {isSanitationAreaMenuOpen ? (
-                        <div className="max-h-72 overflow-y-auto rounded-2xl border border-[#c7d8d4] bg-white p-2 shadow-[0_18px_40px_rgba(17,24,22,0.12)]">
-                          <div className="grid gap-1">
-                            {sanitationAreas.map((item) => {
-                              const isSelected = selectedSanitationAreaId === item.id;
-
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedSanitationAreaId(item.id);
-                                    setIsSanitationAreaMenuOpen(false);
-                                  }}
-                                  className={[
-                                    "flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-lg font-black transition active:scale-[0.99]",
-                                    isSelected
-                                      ? "border-[#111816] bg-[#111816] text-white"
-                                      : "border-[#d7e4e1] bg-[#f8fbfa] text-neutral-950",
-                                  ].join(" ")}
-                                >
-                                  <span>{item.name}</span>
-                                  {isSelected ? (
-                                    <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-[#48c7d2]" />
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSelectedSanitationAreaId(item.id)}
+                            className={[
+                              "min-h-16 rounded-2xl border px-5 text-left transition active:scale-[0.99]",
+                              isSelected ? "border-neutral-900 bg-neutral-200" : "border-[#c7d8d4] bg-white",
+                            ].join(" ")}
+                          >
+                            <span className="block text-xl font-black text-neutral-950">{item.name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
-                  <fieldset className="grid gap-3">
-                    <legend className="text-sm font-black text-neutral-950">Tipo de limpieza ejecutada</legend>
+                  <button
+                    type="button"
+                    disabled={!hasSanitationArea}
+                    onClick={() => setSanitationStep(3)}
+                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              ) : null}
+
+              {sanitationStep === 3 ? (
+                <div className="grid gap-7">
+                  <fieldset className="grid gap-5">
+                    <legend className="sr-only">Elija el tipo de limpieza realizada</legend>
+                    <h3 className="text-[1.7rem] font-black leading-tight text-neutral-950">Elija el tipo de limpieza realizada</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {sanitationCleaningTypes.map((option) => (
                         <label
@@ -1679,19 +1686,8 @@ export function OperationalPublicForm({
                     </div>
                   </fieldset>
 
-                  <button
-                    type="button"
-                    disabled={!hasSanitationAreaAndType}
-                    onClick={() => setSanitationStep(3)}
-                    className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
-                  >
-                    Continuar
-                  </button>
-                </div>
-              ) : null}
+                  <div aria-hidden="true" className="h-px w-full bg-[#d7e4e1]" />
 
-              {sanitationStep === 3 ? (
-                <div className="grid gap-7">
                   <div className="grid gap-3">
                     <h2 className="text-3xl font-black leading-tight text-neutral-950">Protocolo de saneamiento</h2>
                   </div>
@@ -1735,7 +1731,7 @@ export function OperationalPublicForm({
 
                   <button
                     type="button"
-                    disabled={!hasSanitationProtocol}
+                    disabled={!sanitationCleaningType || !hasSanitationProtocol}
                     onClick={() => setSanitationStep(4)}
                     className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
                   >
@@ -1745,77 +1741,14 @@ export function OperationalPublicForm({
               ) : null}
 
               {sanitationStep === 4 ? (
-                <div className="grid gap-8">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
-                  </div>
-                  <EditableResponsibleSummary
-                    isEditing={isResponsibleEditing}
-                    onEditingChange={setIsResponsibleEditing}
-                    responsibleName={operatorName}
-                    onResponsibleNameChange={setOperatorName}
-                  />
-                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
-                    {isPending ? "Guardando..." : "Firmar y registrar"}
-                  </OperationalFormSubmitButton>
-                </div>
+                <FinalRegistrationStep {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
         ) : null}
 
-        {!isSupplyReception && !isWaterQuality && !isThermalControl && !isAreaSanitation ? (
-          <div className="grid gap-2">
-            <PublicFormDateControl
-              dateLabel={recordedAtDisplay}
-              isModified={hasCustomRecordedAt}
-              onOpenDatePicker={openDatePicker}
-            />
-            <section className="grid gap-6 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
-              <PublicFormCardHeader canGoBack={false} currentStep={1} totalSteps={1} />
-
-            <label className={operationalFormStyles.field}>
-              <span className={operationalFormStyles.fieldLabel}>Nombre del operador</span>
-              <input
-                name="operatorName"
-                autoComplete="name"
-                required
-                placeholder="Ej. Ana Gomez"
-                value={operatorName}
-                onChange={(event) => setOperatorName(formatResponsibleName(event.target.value))}
-                className={operationalFormStyles.inputOnWhite}
-              />
-            </label>
-
-            {missingThermalCatalog ? (
-              <p className={operationalFormStyles.statusWarning}>
-                Esta sede aun no tiene equipos registrados para usar este QR.
-              </p>
-            ) : null}
-
-            {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
-
-            <EditableResponsibleSummary
-              isEditing={isResponsibleEditing}
-              onEditingChange={setIsResponsibleEditing}
-              responsibleName={operatorName}
-              onResponsibleNameChange={setOperatorName}
-            />
-
-            <OperationalFormSubmitButton disabled={isSubmitDisabled}>
-              {isPending ? "Guardando..." : "Guardar registro"}
-            </OperationalFormSubmitButton>
-            </section>
-          </div>
-        ) : null}
-
         {isWaterQuality ? (
           <section className="grid gap-2">
-            <PublicFormDateControl
-              dateLabel={recordedAtDisplay}
-              isModified={hasCustomRecordedAt}
-              onOpenDatePicker={openDatePicker}
-            />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={waterStep > 1}
@@ -1936,23 +1869,7 @@ export function OperationalPublicForm({
               ) : null}
 
               {waterStep === 4 ? (
-                <div className="grid gap-8">
-                  <div className="grid gap-3">
-                    <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
-                  </div>
-                  <EditableResponsibleSummary
-                    isEditing={isResponsibleEditing}
-                    onEditingChange={setIsResponsibleEditing}
-                    responsibleName={operatorName}
-                    onResponsibleNameChange={setOperatorName}
-                  />
-
-                  {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
-
-                  <OperationalFormSubmitButton disabled={isSubmitDisabled}>
-                    {isPending ? "Guardando..." : "Firmar y registrar"}
-                  </OperationalFormSubmitButton>
-                </div>
+                <FinalRegistrationStep {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
@@ -1960,11 +1877,6 @@ export function OperationalPublicForm({
 
         {formType === "supply_reception" ? (
           <section className="grid gap-2">
-            <PublicFormDateControl
-              dateLabel={recordedAtDisplay}
-              isModified={hasCustomRecordedAt}
-              onOpenDatePicker={openDatePicker}
-            />
             <div className="grid min-h-[560px] content-start gap-8 rounded-[1.75rem] bg-white px-5 py-6 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
               <PublicFormCardHeader
                 canGoBack={currentStep > 1}
@@ -2356,26 +2268,12 @@ export function OperationalPublicForm({
               ) : null}
 
               {currentStep === 10 ? (
-                <div className="grid gap-8">
-                <div className="grid gap-3">
-                  <h2 className="text-3xl font-black leading-tight text-neutral-950">Listo para registrar</h2>
-                </div>
-                <EditableResponsibleSummary
-                  isEditing={isResponsibleEditing}
-                  onEditingChange={setIsResponsibleEditing}
-                  responsibleName={operatorName}
-                  onResponsibleNameChange={setOperatorName}
-                />
-                <OperationalFormSubmitButton disabled={isSubmitDisabled}>
-                  {isPending ? "Guardando..." : "Firmar y registrar"}
-                </OperationalFormSubmitButton>
-                </div>
+                <FinalRegistrationStep {...finalRegistrationStepProps} />
               ) : null}
             </div>
           </section>
         ) : null}
 
-        {state.error ? <p className={operationalFormStyles.statusError}>{state.error}</p> : null}
       </form>
 
       {showDatePicker ? (

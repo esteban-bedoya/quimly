@@ -444,6 +444,7 @@ function InlineCatalogManager({
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const createFormRef = useRef<HTMLFormElement>(null);
   const [createState, createFormAction] = useActionState<AdminActionState | undefined, FormData>(createStateAction, undefined);
   const [toggleState, toggleFormAction] = useActionState<AdminActionState | undefined, FormData>(
     toggleStateAction,
@@ -484,12 +485,19 @@ function InlineCatalogManager({
   const creationButtonLabel = isEquipmentManager ? "+ Agregar equipo" : "+ Agregar elemento";
 
   useEffect(() => {
-    if (createState?.success) {
-      const frameId = window.requestAnimationFrame(() => setIsCreateModalOpen(false));
-
-      return () => window.cancelAnimationFrame(frameId);
+    if (!createState?.success) {
+      return;
     }
-  }, [createState?.success]);
+
+    const successMessage = createState.success;
+    const frameId = window.requestAnimationFrame(() => {
+      createFormRef.current?.reset();
+      setIsCreateModalOpen(false);
+      setStatusToast(successMessage);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [createState]);
 
   useEffect(() => {
     if (!toggleState?.success) {
@@ -615,7 +623,7 @@ function InlineCatalogManager({
                   </p>
                 </div>
 
-                <form action={createFormAction} className="mt-4 grid gap-3">
+                <form ref={createFormRef} action={createFormAction} className="mt-4 grid gap-3">
                   <input type="hidden" name="branchId" value={branchId} />
                   <input type="hidden" name="companySlug" value={companySlug} />
                   <input type="hidden" name="branchSlug" value={branchSlug} />
