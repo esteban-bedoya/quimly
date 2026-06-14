@@ -138,6 +138,139 @@ begin
   if not exists (
     select 1
     from pg_type
+    where typname = 'branch_sanitary_document_kind'
+  ) then
+    create type public.branch_sanitary_document_kind as enum (
+      'sanitation_plan',
+      'chemical_technical_sheet',
+      'chemical_safety_sheet',
+      'pest_control_certificate',
+      'water_tank_cleaning_certificate',
+      'acu_final_disposal_certificate',
+      'food_handling_course',
+      'medical_fitness_exam'
+    );
+  end if;
+end $$;
+
+create table if not exists public.branch_chemical_products (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint branch_chemical_products_name_not_empty check (char_length(trim(name)) > 0)
+);
+
+create table if not exists public.branch_staff_members (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  full_name text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint branch_staff_members_full_name_not_empty check (char_length(trim(full_name)) > 0)
+);
+
+create table if not exists public.branch_sanitary_document_files (
+  id uuid primary key default gen_random_uuid(),
+  branch_id uuid not null references public.branches (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  document_kind public.branch_sanitary_document_kind not null,
+  chemical_product_id uuid references public.branch_chemical_products (id) on delete cascade,
+  staff_member_id uuid references public.branch_staff_members (id) on delete cascade,
+  file_url text not null,
+  file_name text not null,
+  file_size_bytes integer not null,
+  mime_type text not null default 'application/pdf',
+  expires_at date,
+  is_active boolean not null default true,
+  replaced_by_file_id uuid references public.branch_sanitary_document_files (id) on delete set null,
+  uploaded_by uuid references auth.users (id) on delete set null default auth.uid(),
+  uploaded_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint branch_sanitary_document_files_pdf_only check (mime_type = 'application/pdf'),
+  constraint branch_sanitary_document_files_pdf_size check (
+    (
+      document_kind = 'sanitation_plan'
+      and file_size_bytes > 0
+      and file_size_bytes <= 6291456
+    )
+    or (
+      document_kind <> 'sanitation_plan'
+      and file_size_bytes > 0
+      and file_size_bytes <= 1572864
+    )
+  ),
+  constraint branch_sanitary_document_files_owner_scope check (
+    (
+      document_kind in (
+        'sanitation_plan',
+        'pest_control_certificate',
+        'water_tank_cleaning_certificate',
+        'acu_final_disposal_certificate'
+      )
+      and chemical_product_id is null
+      and staff_member_id is null
+    )
+    or (
+      document_kind in ('chemical_technical_sheet', 'chemical_safety_sheet')
+      and chemical_product_id is not null
+      and staff_member_id is null
+    )
+    or (
+      document_kind in ('food_handling_course', 'medical_fitness_exam')
+      and chemical_product_id is null
+      and staff_member_id is not null
+    )
+  ),
+  constraint branch_sanitary_document_files_expiration_required check (
+    document_kind in (
+      'sanitation_plan',
+      'chemical_technical_sheet',
+      'chemical_safety_sheet',
+      'acu_final_disposal_certificate'
+    )
+    or expires_at is not null
+  )
+);
+
+create unique index if not exists branch_chemical_products_active_name_idx
+on public.branch_chemical_products (branch_id, lower(name))
+where is_active = true;
+
+create unique index if not exists branch_staff_members_active_name_idx
+on public.branch_staff_members (branch_id, lower(full_name))
+where is_active = true;
+
+create unique index if not exists branch_sanitary_document_files_sanitation_plan_idx
+on public.branch_sanitary_document_files (branch_id, document_kind)
+where is_active = true
+  and document_kind = 'sanitation_plan';
+
+create unique index if not exists branch_sanitary_document_files_chemical_item_idx
+on public.branch_sanitary_document_files (chemical_product_id, document_kind)
+where is_active = true
+  and document_kind in ('chemical_technical_sheet', 'chemical_safety_sheet');
+
+create unique index if not exists branch_sanitary_document_files_plant_single_idx
+on public.branch_sanitary_document_files (branch_id, document_kind)
+where is_active = true
+  and document_kind in ('pest_control_certificate', 'water_tank_cleaning_certificate');
+
+create unique index if not exists branch_sanitary_document_files_staff_item_idx
+on public.branch_sanitary_document_files (staff_member_id, document_kind)
+where is_active = true
+  and document_kind in ('food_handling_course', 'medical_fitness_exam');
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
     where typname = 'operational_form_type'
   ) then
     create type public.operational_form_type as enum (
@@ -401,7 +534,10 @@ begin
   if tg_table_name in (
     'branch_form_qr_codes',
     'branch_refrigeration_equipment',
-    'branch_sanitation_areas'
+    'branch_sanitation_areas',
+    'branch_chemical_products',
+    'branch_staff_members',
+    'branch_sanitary_document_files'
   ) then
     select b.company_id
     into resolved_company_id
@@ -476,6 +612,42 @@ execute function public.set_updated_at();
 drop trigger if exists set_branch_documents_updated_at on public.branch_documents;
 create trigger set_branch_documents_updated_at
 before update on public.branch_documents
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_chemical_products_company_id on public.branch_chemical_products;
+create trigger set_branch_chemical_products_company_id
+before insert or update of branch_id, company_id on public.branch_chemical_products
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_chemical_products_updated_at on public.branch_chemical_products;
+create trigger set_branch_chemical_products_updated_at
+before update on public.branch_chemical_products
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_staff_members_company_id on public.branch_staff_members;
+create trigger set_branch_staff_members_company_id
+before insert or update of branch_id, company_id on public.branch_staff_members
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_staff_members_updated_at on public.branch_staff_members;
+create trigger set_branch_staff_members_updated_at
+before update on public.branch_staff_members
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_branch_sanitary_document_files_company_id on public.branch_sanitary_document_files;
+create trigger set_branch_sanitary_document_files_company_id
+before insert or update of branch_id, company_id on public.branch_sanitary_document_files
+for each row
+execute function public.set_company_id_from_branch();
+
+drop trigger if exists set_branch_sanitary_document_files_updated_at on public.branch_sanitary_document_files;
+create trigger set_branch_sanitary_document_files_updated_at
+before update on public.branch_sanitary_document_files
 for each row
 execute function public.set_updated_at();
 
@@ -1466,6 +1638,9 @@ alter table public.user_profiles enable row level security;
 alter table public.branches enable row level security;
 alter table public.branch_dashboard_items enable row level security;
 alter table public.branch_documents enable row level security;
+alter table public.branch_chemical_products enable row level security;
+alter table public.branch_staff_members enable row level security;
+alter table public.branch_sanitary_document_files enable row level security;
 alter table public.branch_form_qr_codes enable row level security;
 alter table public.branch_refrigeration_equipment enable row level security;
 alter table public.branch_sanitation_areas enable row level security;
@@ -1664,6 +1839,81 @@ with check (public.can_access_branch(branch_id));
 drop policy if exists "branch_documents_delete_policy" on public.branch_documents;
 create policy "branch_documents_delete_policy"
 on public.branch_documents
+for delete
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_chemical_products_select_policy" on public.branch_chemical_products;
+create policy "branch_chemical_products_select_policy"
+on public.branch_chemical_products
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_chemical_products_insert_policy" on public.branch_chemical_products;
+create policy "branch_chemical_products_insert_policy"
+on public.branch_chemical_products
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_chemical_products_update_policy" on public.branch_chemical_products;
+create policy "branch_chemical_products_update_policy"
+on public.branch_chemical_products
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_chemical_products_delete_policy" on public.branch_chemical_products;
+create policy "branch_chemical_products_delete_policy"
+on public.branch_chemical_products
+for delete
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_staff_members_select_policy" on public.branch_staff_members;
+create policy "branch_staff_members_select_policy"
+on public.branch_staff_members
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_staff_members_insert_policy" on public.branch_staff_members;
+create policy "branch_staff_members_insert_policy"
+on public.branch_staff_members
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_staff_members_update_policy" on public.branch_staff_members;
+create policy "branch_staff_members_update_policy"
+on public.branch_staff_members
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_staff_members_delete_policy" on public.branch_staff_members;
+create policy "branch_staff_members_delete_policy"
+on public.branch_staff_members
+for delete
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitary_document_files_select_policy" on public.branch_sanitary_document_files;
+create policy "branch_sanitary_document_files_select_policy"
+on public.branch_sanitary_document_files
+for select
+using (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitary_document_files_insert_policy" on public.branch_sanitary_document_files;
+create policy "branch_sanitary_document_files_insert_policy"
+on public.branch_sanitary_document_files
+for insert
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitary_document_files_update_policy" on public.branch_sanitary_document_files;
+create policy "branch_sanitary_document_files_update_policy"
+on public.branch_sanitary_document_files
+for update
+using (public.can_access_branch(branch_id))
+with check (public.can_access_branch(branch_id));
+
+drop policy if exists "branch_sanitary_document_files_delete_policy" on public.branch_sanitary_document_files;
+create policy "branch_sanitary_document_files_delete_policy"
+on public.branch_sanitary_document_files
 for delete
 using (public.can_access_branch(branch_id));
 
