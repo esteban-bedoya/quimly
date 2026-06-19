@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const BASE_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
+const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
 
 type UploadedPdf = {
   id: string;
@@ -49,13 +50,29 @@ type AcuCertificateRecord = UploadedPdf & {
   isActive: boolean;
 };
 
-type DocumentsAccordionKey =
+type DocumentSectionId =
   | "sanitation_plan"
   | "chemical_products"
   | "pest_control"
   | "water_tank_cleaning"
   | "acu_final_disposal"
   | "staff_records";
+
+type DocumentSectionMeta = {
+  id: DocumentSectionId;
+  title: string;
+  description: string;
+};
+
+type DocumentMenuItem = {
+  sectionId: DocumentSectionId;
+  title: string;
+};
+
+type DocumentMenuBadgeState = {
+  label: string;
+  tone?: "neutral" | "success" | "warning" | "danger";
+};
 
 type PdfDropzoneProps = {
   id: string;
@@ -68,6 +85,69 @@ type PdfDropzoneProps = {
   replaceLabel?: string;
   showRemove?: boolean;
 };
+
+const DOCUMENT_SECTIONS: DocumentSectionMeta[] = [
+  {
+    id: "sanitation_plan",
+    title: "Plan de saneamiento básico",
+    description:
+      "Contiene 1 documento unificado obligatorio para los cuatro programas de control sanitario (limpieza, plagas, residuos y agua potable).",
+  },
+  {
+    id: "chemical_products",
+    title: "Fichas técnicas y hojas de seguridad",
+    description:
+      "Contiene 2 documentos obligatorios por cada producto químico usado en la operación (ficha técnica y hoja de seguridad).",
+  },
+  {
+    id: "pest_control",
+    title: "Certificado de control de plagas",
+    description: "Contiene 1 documento obligatorio con vigencia mensual o trimestral.",
+  },
+  {
+    id: "water_tank_cleaning",
+    title: "Certificado de lavado de tanques de agua potable",
+    description: "Contiene 1 documento obligatorio con vigencia semestral.",
+  },
+  {
+    id: "acu_final_disposal",
+    title: "Certificado disposición final de aceites (ACU)",
+    description: "Contiene el historial de certificados por cada entrega realizada.",
+  },
+  {
+    id: "staff_records",
+    title: "Fichas del personal",
+    description:
+      "Contiene 2 documentos obligatorios por cada empleado (manipulación de alimentos y exámenes de aptitud médica).",
+  },
+];
+
+const DOCUMENT_MENU_ITEMS: DocumentMenuItem[] = [
+  {
+    sectionId: "sanitation_plan",
+    title: "Plan de saneamiento básico (limpieza, plagas, residuos y agua potable)",
+  },
+  {
+    sectionId: "pest_control",
+    title: "Certificado de control de plagas",
+  },
+  {
+    sectionId: "water_tank_cleaning",
+    title: "Certificado de lavado de tanques de agua potable",
+  },
+  {
+    sectionId: "acu_final_disposal",
+    title: "Certificado disposición final de aceites (ACU)",
+  },
+  {
+    sectionId: "staff_records",
+    title: "Fichas del personal (manipulación de alimentos y exámenes médicos)",
+  },
+  {
+    sectionId: "chemical_products",
+    title: "Fichas técnicas y hojas de seguridad (de los productos químicos)",
+  },
+];
 
 function createId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -252,47 +332,39 @@ function isExpired(expiresAt: string) {
   return expirationDate.getTime() < todayAtMidnight;
 }
 
-function DocumentStatusIndicator({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "neutral" | "success" | "warning" | "danger";
-}) {
+function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
   const toneClassName = {
-    neutral: "border-[#d8e5e6] bg-white/82 text-[#66727a]",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    warning: "border-amber-200 bg-amber-50 text-amber-700",
-    danger: "border-rose-200 bg-rose-50 text-rose-700",
-  }[tone];
+    neutral: "text-gray-500",
+    success: "text-emerald-700",
+    warning: "text-amber-700",
+    danger: "text-rose-700",
+  }[badge.tone ?? "neutral"];
 
-  return (
-    <span
-      className={`inline-flex min-h-9 w-fit items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold leading-5 ${toneClassName}`}
-    >
-      {label}
-    </span>
-  );
+  return <span className={`text-xs font-medium ${toneClassName}`}>{badge.label}</span>;
 }
 
-function getSingleFileIndicator(fileState: FileInputState, expiresAt?: string) {
-  if (!fileState.file) {
-    return <DocumentStatusIndicator label="Pendiente" />;
-  }
-
-  if (!expiresAt) {
-    return <DocumentStatusIndicator label="👁️ Ver documento" tone="success" />;
-  }
-
-  if (isExpired(expiresAt)) {
-    return <DocumentStatusIndicator label={`Vencido · ${formatShortDate(expiresAt)}`} tone="danger" />;
-  }
-
-  return <DocumentStatusIndicator label={`Activo · Vence: ${formatShortDate(expiresAt)}`} tone="success" />;
+function getSanitationPlanBadge(fileState: FileInputState): DocumentMenuBadgeState {
+  return fileState.file ? { label: "Activo", tone: "success" } : { label: "Pendiente", tone: "warning" };
 }
 
-function getCountLabel(count: number, singular: string, plural: string) {
-  return `${count} ${count === 1 ? singular : plural}`;
+function getExpiringDocumentBadge(state: ExpiringDocumentState): DocumentMenuBadgeState {
+  if (!state.file) {
+    return { label: "Sin cargar" };
+  }
+
+  if (!state.expiresAt) {
+    return { label: "Sin fecha", tone: "warning" };
+  }
+
+  if (isExpired(state.expiresAt)) {
+    return { label: "Vencido", tone: "danger" };
+  }
+
+  return { label: `Vence: ${formatShortDate(state.expiresAt)}`, tone: "success" };
+}
+
+function getFixedCountLabel(count: number, label: string) {
+  return `${count} ${label}`;
 }
 
 function PdfDropzone({
@@ -450,70 +522,88 @@ function ExpiringPdfDropzone({
   );
 }
 
-function DocumentsAccordionCard({
-  accordionKey,
-  title,
-  description,
-  statusIndicator,
-  isOpen,
-  onToggle,
-  children,
+function DocumentMenuCard({
+  item,
+  badge,
+  onSelect,
 }: {
-  accordionKey: DocumentsAccordionKey;
-  title: string;
-  description: string;
-  statusIndicator: ReactNode;
-  isOpen: boolean;
-  onToggle: (accordionKey: DocumentsAccordionKey) => void;
-  children: ReactNode;
+  item: DocumentMenuItem;
+  badge: DocumentMenuBadgeState;
+  onSelect: (sectionId: DocumentSectionId) => void;
 }) {
-  const contentId = `documents-accordion-${accordionKey}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.sectionId)}
+      className="block w-full cursor-pointer rounded-xl bg-[#fafbfc] px-2 py-4 text-left transition-all duration-200 ease-out hover:scale-[1.015] hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-inset hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-[#2a7f86]/20 active:scale-[0.995]"
+    >
+      <span className="flex items-start gap-3">
+        <span className="font-medium text-[15px] text-gray-800">{item.title}</span>
+        <span className="ml-auto shrink-0 pt-0.5">
+          <DocumentMenuBadge badge={badge} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function DocumentsToolbar({
+  activeSectionConfig,
+  onBack,
+}: {
+  activeSectionConfig: DocumentSectionMeta | null;
+  onBack: () => void;
+}) {
+  if (!activeSectionConfig) {
+    return null;
+  }
 
   return (
-    <article className="rounded-[1.35rem] p-5 dashboard-card-surface">
+    <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-between gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
       <button
         type="button"
-        aria-expanded={isOpen}
-        aria-controls={contentId}
-        onClick={() => onToggle(accordionKey)}
-        className="grid w-full cursor-pointer gap-4 text-left sm:grid-cols-[1fr_auto] sm:items-center"
+        onClick={onBack}
+        className="ui-muted-action ui-muted-action-large operational-toolbar-action shrink-0"
       >
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span
-              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#12110f] text-white transition-transform duration-200 ${
-                isOpen ? "rotate-180" : ""
-              }`}
-            >
-              <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
-                <path
-                  d="M2.25 4.5 6 8.25 9.75 4.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </span>
-            <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f] sm:text-xl">{title}</h3>
-          </div>
-          <p className="mt-2 text-sm leading-6 text-[#5e6770]">{description}</p>
-        </div>
-        <span className="justify-self-start sm:justify-self-end">{statusIndicator}</span>
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 shrink-0">
+          <path
+            d="M10 3.5 5.5 8l4.5 4.5M6 8h7"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.4"
+          />
+        </svg>
+        <span className="operational-toolbar-action-label-short">Volver</span>
+        <span className="operational-toolbar-action-label-full">Volver a selección</span>
       </button>
 
-      {isOpen ? (
-        <div id={contentId} className="mt-5 border-t border-[#12110f]/10 pt-5">
-          {children}
-        </div>
-      ) : null}
-    </article>
+      <p className="operational-toolbar-copy min-w-0 text-right">
+        <strong className="font-semibold">{activeSectionConfig.title}</strong>
+        <br />
+        <span className="text-[0.92em]">{activeSectionConfig.description}</span>
+      </p>
+    </div>
+  );
+}
+
+function DedicatedSectionScreen({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid min-h-[70vh] gap-4 transition-all duration-300 ease-in-out">
+      <article className="overflow-hidden rounded-2xl dashboard-card-surface">
+        <div className="grid gap-5 p-4 sm:p-5">{children}</div>
+      </article>
+    </section>
   );
 }
 
 export function CompanyAdminDocumentsView() {
-  const [activeAccordion, setActiveAccordion] = useState<DocumentsAccordionKey | null>(null);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
   const [sanitationPlan, setSanitationPlan] = useState<FileInputState>(createEmptyFileState);
   const [chemicalProducts, setChemicalProducts] = useState<ChemicalProduct[]>([]);
   const [pestControlCertificate, setPestControlCertificate] = useState<ExpiringDocumentState>(
@@ -526,6 +616,30 @@ export function CompanyAdminDocumentsView() {
   const [acuHistory, setAcuHistory] = useState<AcuCertificateRecord[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const activeAcuRecords = acuHistory.filter((record) => record.isActive);
+  const activeSectionConfig = DOCUMENT_SECTIONS.find((section) => section.id === activeSection) ?? null;
+  const sectionStatusBadges: Record<DocumentSectionId, DocumentMenuBadgeState> = {
+    sanitation_plan: getSanitationPlanBadge(sanitationPlan),
+    chemical_products: {
+      label: getFixedCountLabel(chemicalProducts.length, "Productos"),
+      tone: chemicalProducts.length ? "success" : "neutral",
+    },
+    pest_control: getExpiringDocumentBadge(pestControlCertificate),
+    water_tank_cleaning: getExpiringDocumentBadge(waterTankCertificate),
+    acu_final_disposal: activeAcuRecords.length
+      ? { label: getFixedCountLabel(activeAcuRecords.length, "Certificados"), tone: "success" }
+      : { label: "Sin registros" },
+    staff_records: staffMembers.length
+      ? { label: getFixedCountLabel(staffMembers.length, "Empleados"), tone: "success" }
+      : { label: "Sin personal" },
+  };
+
+  useEffect(() => {
+    const showDocumentsMenu = () => setActiveSection(null);
+
+    window.addEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
+
+    return () => window.removeEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
+  }, []);
 
   const updateChemicalProduct = (productId: string, update: (product: ChemicalProduct) => ChemicalProduct) => {
     setChemicalProducts((currentProducts) =>
@@ -537,10 +651,6 @@ export function CompanyAdminDocumentsView() {
     setStaffMembers((currentMembers) =>
       currentMembers.map((member) => (member.id === memberId ? update(member) : member)),
     );
-  };
-
-  const toggleAccordion = (accordionKey: DocumentsAccordionKey) => {
-    setActiveAccordion((currentAccordion) => (currentAccordion === accordionKey ? null : accordionKey));
   };
 
   const saveAcuCertificate = () => {
@@ -567,16 +677,9 @@ export function CompanyAdminDocumentsView() {
     );
   };
 
-  return (
-    <section className="grid gap-5">
-      <DocumentsAccordionCard
-        accordionKey="sanitation_plan"
-        title="Plan de saneamiento básico"
-        description="Contiene 1 documento unificado obligatorio para los cuatro programas de control sanitario (limpieza, plagas, residuos y agua potable)."
-        statusIndicator={getSingleFileIndicator(sanitationPlan)}
-        isOpen={activeAccordion === "sanitation_plan"}
-        onToggle={toggleAccordion}
-      >
+  const renderActiveSection = (sectionId: DocumentSectionId) => {
+    if (sectionId === "sanitation_plan") {
+      return (
         <PdfDropzone
           id="sanitation-plan-pdf"
           label="Plan de saneamiento básico"
@@ -585,25 +688,11 @@ export function CompanyAdminDocumentsView() {
           onChange={setSanitationPlan}
           helper="Sube un solo PDF con los 4 programas: Limpieza, Plagas, Residuos y Agua Potable."
         />
-      </DocumentsAccordionCard>
+      );
+    }
 
-      <DocumentsAccordionCard
-        accordionKey="chemical_products"
-        title="Fichas técnicas y hojas de seguridad"
-        description="Contiene 2 documentos obligatorios por cada producto químico usado en la operación (ficha técnica y hoja de seguridad)."
-        statusIndicator={
-          chemicalProducts.length ? (
-            <DocumentStatusIndicator
-              label={`🧪 ${getCountLabel(chemicalProducts.length, "Químico", "Químicos")}`}
-              tone="success"
-            />
-          ) : (
-            <DocumentStatusIndicator label="0 Productos" />
-          )
-        }
-        isOpen={activeAccordion === "chemical_products"}
-        onToggle={toggleAccordion}
-      >
+    if (sectionId === "chemical_products") {
+      return (
         <div className="grid gap-4">
           <button
             type="button"
@@ -620,7 +709,7 @@ export function CompanyAdminDocumentsView() {
           ) : null}
 
           {chemicalProducts.map((product, index) => (
-            <article key={product.id} className="grid gap-4 rounded-2xl bg-white/54 p-4">
+            <article key={product.id} className="grid gap-4 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <label className="grid flex-1 gap-2">
                   <span className="ui-document-form-label">Nombre del producto</span>
@@ -678,16 +767,11 @@ export function CompanyAdminDocumentsView() {
             </article>
           ))}
         </div>
-      </DocumentsAccordionCard>
+      );
+    }
 
-      <DocumentsAccordionCard
-        accordionKey="pest_control"
-        title="Control de plagas (Fumigación)"
-        description="Contiene 1 documento obligatorio con vigencia mensual o trimestral."
-        statusIndicator={getSingleFileIndicator(pestControlCertificate, pestControlCertificate.expiresAt)}
-        isOpen={activeAccordion === "pest_control"}
-        onToggle={toggleAccordion}
-      >
+    if (sectionId === "pest_control") {
+      return (
         <ExpiringPdfDropzone
           id="pest-control-certificate"
           label="Certificado de control de plagas"
@@ -695,16 +779,11 @@ export function CompanyAdminDocumentsView() {
           state={pestControlCertificate}
           onChange={setPestControlCertificate}
         />
-      </DocumentsAccordionCard>
+      );
+    }
 
-      <DocumentsAccordionCard
-        accordionKey="water_tank_cleaning"
-        title="Lavado y desinfección de tanques"
-        description="Contiene 1 documento obligatorio con vigencia semestral."
-        statusIndicator={getSingleFileIndicator(waterTankCertificate, waterTankCertificate.expiresAt)}
-        isOpen={activeAccordion === "water_tank_cleaning"}
-        onToggle={toggleAccordion}
-      >
+    if (sectionId === "water_tank_cleaning") {
+      return (
         <ExpiringPdfDropzone
           id="water-tank-cleaning-certificate"
           label="Certificado de lavado y desinfección de tanques"
@@ -712,27 +791,13 @@ export function CompanyAdminDocumentsView() {
           state={waterTankCertificate}
           onChange={setWaterTankCertificate}
         />
-      </DocumentsAccordionCard>
+      );
+    }
 
-      <DocumentsAccordionCard
-        accordionKey="acu_final_disposal"
-        title="Disposición final de aceites (ACU)"
-        description="Contiene el historial de certificados por cada entrega realizada."
-        statusIndicator={
-          activeAcuRecords.length ? (
-            <DocumentStatusIndicator
-              label={`📄 ${getCountLabel(activeAcuRecords.length, "Entrega", "Entregas")}`}
-              tone="success"
-            />
-          ) : (
-            <DocumentStatusIndicator label="Sin registros" />
-          )
-        }
-        isOpen={activeAccordion === "acu_final_disposal"}
-        onToggle={toggleAccordion}
-      >
+    if (sectionId === "acu_final_disposal") {
+      return (
         <div className="grid gap-4">
-          <div className="grid gap-3 rounded-2xl bg-white/54 p-4">
+          <div className="grid gap-3 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
             <PdfDropzone
               id="acu-certificate-upload"
               label="Certificado de la entrega del día"
@@ -754,138 +819,156 @@ export function CompanyAdminDocumentsView() {
           </div>
 
           <div className="grid gap-3">
-            <p className="text-sm font-semibold text-[#12110f]">Historial de entregas</p>
+            <p className="text-sm font-semibold text-[#12110f]">Historial de certificados</p>
 
             {activeAcuRecords.length === 0 ? (
               <p className="ui-empty-state-block">Todavía no hay certificados ACU cargados.</p>
             ) : null}
 
             {activeAcuRecords.map((record) => (
-                <article key={record.id} className="grid gap-3 rounded-2xl bg-white/54 p-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#12110f]">{record.name}</p>
-                    <p className="mt-1 text-xs leading-5 text-[#6d777d]">
-                      {formatFileSize(record.size)} · cargado {formatDateTime(record.uploadedAt)}
-                    </p>
-                  </div>
+              <article key={record.id} className="grid gap-3 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#12110f]">{record.name}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6d777d]">
+                    {formatFileSize(record.size)} · cargado {formatDateTime(record.uploadedAt)}
+                  </p>
+                </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {record.previewUrl ? (
-                      <a
-                        href={record.previewUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ui-pill-button-secondary min-h-11 px-4"
-                      >
-                        Ver PDF
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => deactivateAcuCertificate(record.id)}
-                      className="ui-pill-button-secondary min-h-11 px-4 text-[#7b5750]"
+                <div className="flex flex-wrap gap-2">
+                  {record.previewUrl ? (
+                    <a
+                      href={record.previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ui-pill-button-secondary min-h-11 px-4"
                     >
-                      Eliminar
-                    </button>
-                  </div>
-                </article>
-              ))}
+                      Ver PDF
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => deactivateAcuCertificate(record.id)}
+                    className="ui-pill-button-secondary min-h-11 px-4 text-[#7b5750]"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         </div>
-      </DocumentsAccordionCard>
+      );
+    }
 
-      <DocumentsAccordionCard
-        accordionKey="staff_records"
-        title="Fichas del personal"
-        description="Contiene 2 documentos obligatorios por cada empleado (manipulación de alimentos y exámenes de aptitud médica)."
-        statusIndicator={
-          staffMembers.length ? (
-            <DocumentStatusIndicator
-              label={`👤 ${getCountLabel(staffMembers.length, "Empleado", "Empleados")}`}
-              tone="success"
-            />
-          ) : (
-            <DocumentStatusIndicator label="0 Empleados" />
-          )
-        }
-        isOpen={activeAccordion === "staff_records"}
-        onToggle={toggleAccordion}
-      >
-        <div className="grid gap-4">
-          <button
-            type="button"
-            onClick={() => setStaffMembers((currentMembers) => [createStaffMember(), ...currentMembers])}
-            className="ui-pill-button-primary min-h-12 w-full px-5 sm:w-fit"
-          >
-            + Agregar empleado
-          </button>
+    return (
+      <div className="grid gap-4">
+        <button
+          type="button"
+          onClick={() => setStaffMembers((currentMembers) => [createStaffMember(), ...currentMembers])}
+          className="ui-pill-button-primary min-h-12 w-full px-5 sm:w-fit"
+        >
+          + Agregar empleado
+        </button>
 
-          {staffMembers.length === 0 ? (
-            <p className="ui-empty-state-block">
-              Agrega un empleado para cargar su curso de manipulación y su examen médico de aptitud.
-            </p>
-          ) : null}
+        {staffMembers.length === 0 ? (
+          <p className="ui-empty-state-block">
+            Agrega un empleado para cargar su curso de manipulación y su examen médico de aptitud.
+          </p>
+        ) : null}
 
-          {staffMembers.map((member, index) => (
-            <article key={member.id} className="grid gap-4 rounded-2xl bg-white/54 p-4">
-              <label className="grid gap-2">
-                <span className="ui-document-form-label">Nombre del empleado</span>
-                <input
-                  value={member.fullName}
-                  onChange={(event) => {
-                    const nextFullName = event.currentTarget.value;
+        {staffMembers.map((member, index) => (
+          <article key={member.id} className="grid gap-4 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
+            <label className="grid gap-2">
+              <span className="ui-document-form-label">Nombre del empleado</span>
+              <input
+                value={member.fullName}
+                onChange={(event) => {
+                  const nextFullName = event.currentTarget.value;
 
+                  updateStaffMember(member.id, (currentMember) => ({
+                    ...currentMember,
+                    fullName: nextFullName,
+                  }));
+                }}
+                placeholder={`Empleado ${index + 1}`}
+                className="ui-document-form-control"
+              />
+            </label>
+
+            <div className="grid gap-4">
+              {Object.values(member.documents).map((documentItem) => (
+                <ExpiringPdfDropzone
+                  key={documentItem.key}
+                  id={`staff-${member.id}-${documentItem.key}`}
+                  label={documentItem.title}
+                  legalText={documentItem.legalText}
+                  state={documentItem.fileState}
+                  selectLabel="Subir"
+                  replaceLabel="Cambiar"
+                  onChange={(nextState) =>
                     updateStaffMember(member.id, (currentMember) => ({
                       ...currentMember,
-                      fullName: nextFullName,
-                    }));
-                  }}
-                  placeholder={`Empleado ${index + 1}`}
-                  className="ui-document-form-control"
-                />
-              </label>
-
-              <div className="grid gap-4">
-                {Object.values(member.documents).map((documentItem) => (
-                  <ExpiringPdfDropzone
-                    key={documentItem.key}
-                    id={`staff-${member.id}-${documentItem.key}`}
-                    label={documentItem.title}
-                    legalText={documentItem.legalText}
-                    state={documentItem.fileState}
-                    selectLabel="Subir"
-                    replaceLabel="Cambiar"
-                    onChange={(nextState) =>
-                      updateStaffMember(member.id, (currentMember) => ({
-                        ...currentMember,
-                        documents: {
-                          ...currentMember.documents,
-                          [documentItem.key]: {
-                            ...currentMember.documents[documentItem.key],
-                            fileState: nextState,
-                          },
+                      documents: {
+                        ...currentMember.documents,
+                        [documentItem.key]: {
+                          ...currentMember.documents[documentItem.key],
+                          fileState: nextState,
                         },
-                      }))
-                    }
-                  />
-                ))}
-              </div>
+                      },
+                    }))
+                  }
+                />
+              ))}
+            </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setStaffMembers((currentMembers) =>
-                    currentMembers.filter((currentMember) => currentMember.id !== member.id),
-                  )
-                }
-                className="ui-pill-button-secondary min-h-12 w-full px-5 text-[#7b5750]"
-              >
-                Eliminar empleado
-              </button>
-            </article>
-          ))}
+            <button
+              type="button"
+              onClick={() =>
+                setStaffMembers((currentMembers) =>
+                  currentMembers.filter((currentMember) => currentMember.id !== member.id),
+                )
+              }
+              className="ui-pill-button-secondary min-h-12 w-full px-5 text-[#7b5750]"
+            >
+              Eliminar empleado
+            </button>
+          </article>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <section className="grid gap-5 transition-all duration-300 ease-in-out">
+      {activeSectionConfig ? (
+        <DocumentsToolbar activeSectionConfig={activeSectionConfig} onBack={() => setActiveSection(null)} />
+      ) : null}
+
+      {activeSectionConfig ? (
+        <DedicatedSectionScreen>{renderActiveSection(activeSectionConfig.id)}</DedicatedSectionScreen>
+      ) : (
+        <div className="mx-auto mt-6 w-full max-w-3xl px-4">
+          <article className="rounded-[1.45rem] p-5 text-left dashboard-card-surface dashboard-card-surface-operational">
+            <h2 className="mb-4 text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#2a7f86]">
+              Seleccione
+            </h2>
+            <div>
+              {DOCUMENT_MENU_ITEMS.map((item, index) => (
+                <div key={item.sectionId}>
+                  <DocumentMenuCard
+                    item={item}
+                    badge={sectionStatusBadges[item.sectionId]}
+                    onSelect={(sectionId) => setActiveSection(sectionId)}
+                  />
+                  {index < DOCUMENT_MENU_ITEMS.length - 1 ? (
+                    <div className="my-1 border-b border-gray-100" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </article>
         </div>
-      </DocumentsAccordionCard>
+      )}
     </section>
   );
 }

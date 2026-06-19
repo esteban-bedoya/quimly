@@ -60,6 +60,13 @@ type BranchSectionMeta = {
 
 type BranchSectionKey = "home" | "operational" | "compliance";
 
+const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
+  home: null,
+  operational: "Diligencia los formatos obligatorios y gestiona los puntos de acceso QR para la operación.",
+  compliance: "Monitorea vencimientos, visualiza y gestiona los archivos de soporte del establecimiento.",
+};
+const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
+
 const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
   manuals_protocols: {
     title: "Manuales y Protocolos",
@@ -109,6 +116,7 @@ function BranchLayout({
     { key: "operational", href: `${basePath}/operacion`, label: "Formularios" },
     { key: "compliance", href: `${basePath}/cumplimiento`, label: "Documentos" },
   ] as const;
+  const headerDescription = branchHeaderDescriptions[currentSection];
 
   useEffect(() => {
     const closeMenu = () => setIsMenuOpen(false);
@@ -179,7 +187,7 @@ function BranchLayout({
           </div>
 
           <div className="flex flex-col gap-4 lg:items-start">
-            <div className="space-y-3">
+            <div className="w-full space-y-3">
               <div>
                 <p className="text-sm uppercase tracking-[0.24em] text-[#8fe3d5]">{branch.name}</p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-[#e5ecec] sm:text-4xl">
@@ -187,12 +195,8 @@ function BranchLayout({
                 </h1>
               </div>
 
-              <p className="max-w-2xl text-sm leading-7 text-white/72 sm:text-base">
-                Elige la opción que deseas gestionar
-              </p>
-
-              <nav className="origin-left pr-14 max-[420px]:scale-[0.94] sm:pr-16 sm:scale-100">
-                <div className="relative grid min-h-12 grid-cols-3 rounded-[1.45rem] border border-white/10 bg-[rgba(68,66,62,0.72)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
+              <nav className="w-full max-w-xl">
+                <div className="relative grid h-12 w-full grid-cols-3 rounded-[1.45rem] border border-white/10 bg-[rgba(68,66,62,0.72)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
                   <span
                     aria-hidden="true"
                     className="absolute bottom-1 left-1 top-1 rounded-[1.05rem] bg-[#f1f1f1] shadow-[0_10px_24px_rgba(18,17,15,0.22)] transition-transform duration-300 ease-out"
@@ -209,7 +213,12 @@ function BranchLayout({
                       <Link
                         key={item.key}
                         href={item.href}
-                        className={`relative z-10 inline-flex min-h-10 min-w-0 items-center justify-center rounded-[1rem] px-3 text-center text-sm transition duration-300 hover:scale-[1.04] sm:px-4 ${
+                        onClick={() => {
+                          if (item.key === "compliance" && currentSection === "compliance") {
+                            window.dispatchEvent(new Event(DOCUMENTS_HOME_EVENT));
+                          }
+                        }}
+                        className={`relative z-10 inline-flex h-10 min-w-0 items-center justify-center rounded-[1rem] px-2 text-center text-sm transition duration-300 hover:scale-[1.04] sm:px-4 ${
                           isActive ? "font-semibold text-[#12110f]" : "font-medium text-white/68 hover:text-white"
                         }`}
                       >
@@ -219,6 +228,14 @@ function BranchLayout({
                   })}
                 </div>
               </nav>
+
+              <p
+                className={`h-[4.5rem] max-w-2xl overflow-hidden text-sm leading-6 text-white/72 sm:h-14 sm:text-base sm:leading-7 md:h-7 ${
+                  headerDescription ? "" : "invisible"
+                }`}
+              >
+                {headerDescription ?? "Sin descripción"}
+              </p>
             </div>
           </div>
         </section>
@@ -1245,13 +1262,7 @@ export function BranchOperationalView({
 
   return (
     <BranchLayout company={company} branch={branch} currentSection="operational">
-      <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-between gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
-        <p className="operational-toolbar-copy min-w-0">
-          Formularios de control sanitario para esta sede.
-          <br />
-          Configura, registra y descarga los códigos QR desde aquí.
-        </p>
-
+      <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-center gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
         {activeOperationalQrCodes.length ? (
           <a
             href={allOperationalFormsPdfPath}
