@@ -6,6 +6,7 @@ import {
   archiveBranchChemicalProductAction,
   archiveBranchSanitaryDocumentFileAction,
   archiveBranchStaffMemberAction,
+  loadBranchSanitaryDocumentsAction,
   saveBranchChemicalProductAction,
   saveBranchSanitaryDocumentFileAction,
   saveBranchStaffMemberAction,
@@ -944,6 +945,52 @@ export function CompanyAdminDocumentsView({
       nextFormData.set(key, fileState.file.sourceFile);
     }
   };
+
+  const hydrateStoredDocuments = ({
+    chemicalProductRows,
+    staffMemberRows,
+    sanitaryDocumentFileRows,
+  }: {
+    chemicalProductRows: BranchChemicalProductSummary[];
+    staffMemberRows: BranchStaffMemberSummary[];
+    sanitaryDocumentFileRows: BranchSanitaryDocumentFileSummary[];
+  }) => {
+    setSanitationPlan(buildSanitationPlanRecord(sanitaryDocumentFileRows));
+    setChemicalProducts(buildChemicalProductRecords(chemicalProductRows, sanitaryDocumentFileRows));
+    setPestControlRecords(buildDatedRecords(sanitaryDocumentFileRows, "pest_control_certificate"));
+    setWaterTankRecords(buildDatedRecords(sanitaryDocumentFileRows, "water_tank_cleaning_certificate"));
+    setAcuHistory(buildAcuHistory(sanitaryDocumentFileRows));
+    setStaffMembers(buildStaffRecords(staffMemberRows, sanitaryDocumentFileRows));
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const nextFormData = new FormData();
+    nextFormData.set("branchId", branchId);
+    nextFormData.set("companySlug", companySlug);
+    nextFormData.set("branchSlug", branchSlug);
+
+    loadBranchSanitaryDocumentsAction(nextFormData).then((result) => {
+      if (!isMounted) {
+        return;
+      }
+
+      if (result.error) {
+        setActionMessage({ tone: "error", text: result.error });
+        return;
+      }
+
+      hydrateStoredDocuments({
+        chemicalProductRows: result.chemicalProducts ?? [],
+        staffMemberRows: result.staffMembers ?? [],
+        sanitaryDocumentFileRows: result.sanitaryDocumentFiles ?? [],
+      });
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [branchId, branchSlug, companySlug]);
 
   const replaceSanitationPlan = (file: File | null) => {
     if (!file) {

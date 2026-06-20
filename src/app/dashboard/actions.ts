@@ -35,6 +35,12 @@ type SanitaryDocumentActionState = AdminActionState & {
   id?: string;
 };
 
+type BranchSanitaryDocumentsLoadState = AdminActionState & {
+  chemicalProducts?: BranchChemicalProductSummary[];
+  staffMembers?: BranchStaffMemberSummary[];
+  sanitaryDocumentFiles?: BranchSanitaryDocumentFileSummary[];
+};
+
 type BranchSanitaryDocumentFileRow = {
   id: string;
   branch_id: string;
@@ -681,6 +687,74 @@ export async function updateBranchDocumentAction(formData: FormData) {
 
 export async function deleteBranchDocumentAction(formData: FormData) {
   await deleteBranchDocument(undefined, formData);
+}
+
+export async function loadBranchSanitaryDocumentsAction(
+  formData: FormData,
+): Promise<BranchSanitaryDocumentsLoadState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+
+  if (!branchId || !companySlug || !branchSlug) {
+    return { error: "No fue posible identificar la sede." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const [chemicalProductsResult, staffMembersResult, sanitaryDocumentFilesResult] = await Promise.all([
+    supabase
+      .from("branch_chemical_products")
+      .select("id, branch_id, company_id, name, is_active, updated_at")
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .returns<BranchChemicalProductRow[]>(),
+    supabase
+      .from("branch_staff_members")
+      .select("id, branch_id, company_id, full_name, is_active, updated_at")
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("full_name", { ascending: true })
+      .returns<BranchStaffMemberRow[]>(),
+    supabase
+      .from("branch_sanitary_document_files")
+      .select(getSanitaryDocumentFileSelect())
+      .eq("branch_id", branchId)
+      .eq("is_active", true)
+      .order("uploaded_at", { ascending: false })
+      .returns<BranchSanitaryDocumentFileRow[]>(),
+  ]);
+
+  if (chemicalProductsResult.error) {
+    return { error: formatDatabaseError(chemicalProductsResult.error, "No fue posible cargar productos químicos.") };
+  }
+
+  if (staffMembersResult.error) {
+    return { error: formatDatabaseError(staffMembersResult.error, "No fue posible cargar personal.") };
+  }
+
+  if (sanitaryDocumentFilesResult.error) {
+    return {
+      error: formatDatabaseError(sanitaryDocumentFilesResult.error, "No fue posible cargar documentos sanitarios."),
+    };
+  }
+
+  return {
+    chemicalProducts: chemicalProductsResult.data?.map(mapChemicalProductRow) ?? [],
+    staffMembers: staffMembersResult.data?.map(mapStaffMemberRow) ?? [],
+    sanitaryDocumentFiles: sanitaryDocumentFilesResult.data?.map(mapSanitaryDocumentFileRow) ?? [],
+  };
 }
 
 export async function saveBranchSanitaryDocumentFileAction(
