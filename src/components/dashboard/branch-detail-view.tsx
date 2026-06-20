@@ -438,6 +438,12 @@ function InlineCatalogManager({
       ? "Ej. Trampa de grasa"
       : "Agregar opción";
   const creationButtonLabel = isEquipmentManager ? "+ Agregar equipo" : "+ Agregar elemento";
+  const listClassName = [
+    "grid gap-2",
+    sortedItems.length > 4 ? "catalog-scroll-list" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     if (!createState?.success) {
@@ -504,7 +510,7 @@ function InlineCatalogManager({
           </p>
         ) : null}
 
-        <div className="grid gap-2">
+        <div className={listClassName}>
           {items.length ? (
             sortedItems.map((item) => {
               const statusFormId = `catalog-status-${item.id}`;

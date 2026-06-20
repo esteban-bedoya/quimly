@@ -617,6 +617,14 @@ function RegisterControl({
   );
 }
 
+function UploadPolicyNote({ maxSizeLabel }: { maxSizeLabel: string }) {
+  return (
+    <p className="text-right text-xs font-medium leading-5 text-gray-400">
+      Archivo permitido: PDF · Peso máximo: {maxSizeLabel}
+    </p>
+  );
+}
+
 function RecordsList({
   children,
   emptyLabel = "No hay registros cargados.",
@@ -913,6 +921,7 @@ export function CompanyAdminDocumentsView() {
           {sanitationPlan ? "Reemplazar documento" : "Subir documento"}
         </button>
       </div>
+      <UploadPolicyNote maxSizeLabel="6 MB" />
 
       {formData.pdf.error ? <p className="text-right text-xs font-medium text-rose-600">{formData.pdf.error}</p> : null}
 
@@ -960,6 +969,7 @@ export function CompanyAdminDocumentsView() {
         onStart={() => startRegistration()}
         onCancel={resetRegistration}
       />
+      <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
         <InlineDocumentForm
@@ -1044,6 +1054,7 @@ export function CompanyAdminDocumentsView() {
         onStart={() => startRegistration()}
         onCancel={resetRegistration}
       />
+      <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
         <InlineDocumentForm
@@ -1161,6 +1172,7 @@ export function CompanyAdminDocumentsView() {
           onStart={() => startRegistration()}
           onCancel={resetRegistration}
         />
+        <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
           <InlineDocumentForm
@@ -1259,6 +1271,7 @@ export function CompanyAdminDocumentsView() {
           onStart={() => startRegistration()}
           onCancel={resetRegistration}
         />
+        <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
           <InlineDocumentForm
