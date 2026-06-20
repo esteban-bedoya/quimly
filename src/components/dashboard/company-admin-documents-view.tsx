@@ -19,37 +19,6 @@ type FileInputState = {
   error: string | null;
 };
 
-type ChemicalProduct = {
-  id: string;
-  name: string;
-  technicalSheet: FileInputState;
-  safetySheet: FileInputState;
-};
-
-type ExpiringDocumentState = FileInputState & {
-  expiresAt: string;
-};
-
-type StaffDocumentKey = "food_handling_course" | "medical_fitness_exam";
-
-type StaffDocument = {
-  key: StaffDocumentKey;
-  title: string;
-  legalText: string;
-  fileState: ExpiringDocumentState;
-};
-
-type StaffMember = {
-  id: string;
-  fullName: string;
-  documents: Record<StaffDocumentKey, StaffDocument>;
-};
-
-type AcuCertificateRecord = UploadedPdf & {
-  uploadedAt: string;
-  isActive: boolean;
-};
-
 type DocumentSectionId =
   | "sanitation_plan"
   | "chemical_products"
@@ -74,16 +43,67 @@ type DocumentMenuBadgeState = {
   tone?: "neutral" | "success" | "warning" | "danger";
 };
 
-type PdfDropzoneProps = {
+type DocumentStatus = "Al día" | "Vencido" | "Incompleto" | "Sin registro" | "Completo";
+
+type SanitationPlanRecord = {
   id: string;
-  label: string;
-  state: FileInputState;
-  maxSizeBytes?: number;
-  onChange: (state: FileInputState) => void;
-  helper?: ReactNode;
-  selectLabel?: string;
-  replaceLabel?: string;
-  showRemove?: boolean;
+  name: string;
+  pdf: UploadedPdf;
+  updatedAt: string;
+};
+
+type DatedDocumentRecord = {
+  id: string;
+  issuedAt: string;
+  expiresAt: string;
+  updatedAt: string;
+  pdf: UploadedPdf | null;
+};
+
+type AcuCollectionRecord = {
+  id: string;
+  collectedAt: string;
+  quantity: string;
+  unit: "Galones" | "Litros";
+  pdf: UploadedPdf;
+  updatedAt: string;
+};
+
+type ChemicalProductRecord = {
+  id: string;
+  name: string;
+  technicalSheet: FileInputState;
+  safetySheet: FileInputState;
+  updatedAt: string;
+};
+
+type StaffRecord = {
+  id: string;
+  fullName: string;
+  foodHandlingIssuedAt: string;
+  foodHandlingExpiresAt: string;
+  foodHandlingPdf: FileInputState;
+  medicalExamIssuedAt: string;
+  medicalExamExpiresAt: string;
+  medicalExamPdf: FileInputState;
+  updatedAt: string;
+};
+
+type DocumentFormData = {
+  editingId: string | null;
+  pdf: FileInputState;
+  issuedAt: string;
+  collectedAt: string;
+  quantity: string;
+  unit: "Galones" | "Litros";
+  productName: string;
+  technicalSheet: FileInputState;
+  safetySheet: FileInputState;
+  fullName: string;
+  foodHandlingIssuedAt: string;
+  foodHandlingPdf: FileInputState;
+  medicalExamIssuedAt: string;
+  medicalExamPdf: FileInputState;
 };
 
 const DOCUMENT_SECTIONS: DocumentSectionMeta[] = [
@@ -192,20 +212,6 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function formatShortDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Sin fecha";
-  }
-
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
-
 function createEmptyFileState(): FileInputState {
   return {
     file: null,
@@ -213,10 +219,22 @@ function createEmptyFileState(): FileInputState {
   };
 }
 
-function createEmptyExpiringFileState(): ExpiringDocumentState {
+function createEmptyDocumentFormData(): DocumentFormData {
   return {
-    ...createEmptyFileState(),
-    expiresAt: "",
+    editingId: null,
+    pdf: createEmptyFileState(),
+    issuedAt: "",
+    collectedAt: "",
+    quantity: "",
+    unit: "Galones",
+    productName: "",
+    technicalSheet: createEmptyFileState(),
+    safetySheet: createEmptyFileState(),
+    fullName: "",
+    foodHandlingIssuedAt: "",
+    foodHandlingPdf: createEmptyFileState(),
+    medicalExamIssuedAt: "",
+    medicalExamPdf: createEmptyFileState(),
   };
 }
 
@@ -228,33 +246,105 @@ function revokeUploadedPdf(file: UploadedPdf | null) {
   URL.revokeObjectURL(file.previewUrl);
 }
 
-function createChemicalProduct(): ChemicalProduct {
-  return {
-    id: createId("chemical-product"),
-    name: "",
-    technicalSheet: createEmptyFileState(),
-    safetySheet: createEmptyFileState(),
-  };
+function addMonthsToDate(value: string, months: number) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  date.setMonth(date.getMonth() + months);
+
+  return date.toISOString().slice(0, 10);
 }
 
-function createStaffMember(): StaffMember {
+function getDateStatus(expiresAt: string): DocumentStatus {
+  if (!expiresAt) {
+    return "Sin registro";
+  }
+
+  return isExpired(expiresAt) ? "Vencido" : "Al día";
+}
+
+function getDatedRecordStatus(record: DatedDocumentRecord): DocumentStatus {
+  if (!record.pdf) {
+    return "Sin registro";
+  }
+
+  return getDateStatus(record.expiresAt);
+}
+
+function getProductStatus(product: ChemicalProductRecord): DocumentStatus {
+  return product.technicalSheet.file && product.safetySheet.file ? "Completo" : "Incompleto";
+}
+
+function getStaffStatus(record: StaffRecord): DocumentStatus {
+  const hasCourse = Boolean(record.foodHandlingPdf.file);
+  const hasMedicalExam = Boolean(record.medicalExamPdf.file);
+  const courseExpired = hasCourse && isExpired(record.foodHandlingExpiresAt);
+  const medicalExamExpired = hasMedicalExam && isExpired(record.medicalExamExpiresAt);
+
+  if (!hasCourse && !hasMedicalExam) {
+    return "Sin registro";
+  }
+
+  if (courseExpired || medicalExamExpired) {
+    return "Vencido";
+  }
+
+  if (!hasCourse || !hasMedicalExam || !record.foodHandlingIssuedAt || !record.medicalExamIssuedAt) {
+    return "Incompleto";
+  }
+
+  return "Al día";
+}
+
+function getLatestDatedRecord(records: DatedDocumentRecord[]) {
+  return records[0] ?? null;
+}
+
+function getAggregatedProductStatus(products: ChemicalProductRecord[]): DocumentStatus {
+  if (products.length === 0) {
+    return "Sin registro";
+  }
+
+  return products.every((product) => getProductStatus(product) === "Completo") ? "Completo" : "Incompleto";
+}
+
+function getAggregatedStaffStatus(records: StaffRecord[]): DocumentStatus {
+  if (records.length === 0) {
+    return "Sin registro";
+  }
+
+  const statuses = records.map(getStaffStatus);
+
+  if (statuses.includes("Vencido")) {
+    return "Vencido";
+  }
+
+  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
+    return "Incompleto";
+  }
+
+  return "Al día";
+}
+
+function getMenuBadgeFromStatus(status: DocumentStatus): DocumentMenuBadgeState {
+  const tone = {
+    "Al día": "success",
+    Completo: "success",
+    Vencido: "danger",
+    Incompleto: "warning",
+    "Sin registro": "neutral",
+  } satisfies Record<DocumentStatus, NonNullable<DocumentMenuBadgeState["tone"]>>;
+
   return {
-    id: createId("staff-member"),
-    fullName: "",
-    documents: {
-      food_handling_course: {
-        key: "food_handling_course",
-        title: "Curso de manipulación",
-        legalText: "Vigencia Legal: 1 año (Anual).",
-        fileState: createEmptyExpiringFileState(),
-      },
-      medical_fitness_exam: {
-        key: "medical_fitness_exam",
-        title: "Examen médico de aptitud",
-        legalText: "Vigencia Legal: 1 año (Anual) o antes si es necesario.",
-        fileState: createEmptyExpiringFileState(),
-      },
-    },
+    label: status,
+    tone: tone[status],
   };
 }
 
@@ -287,39 +377,6 @@ function validatePdfFile(file: File, maxSizeBytes: number): FileInputState {
   };
 }
 
-function getExpirationStatus(expiresAt: string) {
-  if (!expiresAt) {
-    return {
-      label: "Sin fecha de vencimiento",
-      className: "border-[#d8e5e6] bg-white text-[#66727a]",
-    };
-  }
-
-  const expirationDate = new Date(`${expiresAt}T00:00:00`);
-  const today = new Date();
-  const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const diffInDays = Math.ceil((expirationDate.getTime() - todayAtMidnight) / (1000 * 60 * 60 * 24));
-
-  if (diffInDays < 0) {
-    return {
-      label: `Vencido desde ${formatDate(expiresAt)}`,
-      className: "border-rose-200 bg-rose-50 text-rose-700",
-    };
-  }
-
-  if (diffInDays <= 30) {
-    return {
-      label: `Vence ${formatDate(expiresAt)}`,
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    };
-  }
-
-  return {
-    label: `Vence ${formatDate(expiresAt)}`,
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  };
-}
-
 function isExpired(expiresAt: string) {
   if (!expiresAt) {
     return false;
@@ -341,185 +398,6 @@ function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
   }[badge.tone ?? "neutral"];
 
   return <span className={`text-xs font-medium ${toneClassName}`}>{badge.label}</span>;
-}
-
-function getSanitationPlanBadge(fileState: FileInputState): DocumentMenuBadgeState {
-  return fileState.file ? { label: "Activo", tone: "success" } : { label: "Pendiente", tone: "warning" };
-}
-
-function getExpiringDocumentBadge(state: ExpiringDocumentState): DocumentMenuBadgeState {
-  if (!state.file) {
-    return { label: "Sin cargar" };
-  }
-
-  if (!state.expiresAt) {
-    return { label: "Sin fecha", tone: "warning" };
-  }
-
-  if (isExpired(state.expiresAt)) {
-    return { label: "Vencido", tone: "danger" };
-  }
-
-  return { label: `Vence: ${formatShortDate(state.expiresAt)}`, tone: "success" };
-}
-
-function getFixedCountLabel(count: number, label: string) {
-  return `${count} ${label}`;
-}
-
-function PdfDropzone({
-  id,
-  label,
-  state,
-  maxSizeBytes = BASE_MAX_FILE_SIZE_BYTES,
-  onChange,
-  helper,
-  selectLabel = "Seleccionar archivo",
-  replaceLabel = "Cambiar",
-  showRemove = true,
-}: PdfDropzoneProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const maxSizeLabel = formatFileSize(maxSizeBytes);
-  const actionLabel = state.file ? replaceLabel : selectLabel;
-  const clearFile = () => {
-    revokeUploadedPdf(state.file);
-    onChange(createEmptyFileState());
-  };
-
-  return (
-    <div className="grid gap-2">
-      <span className="ui-document-form-label">{label}</span>
-      <div className="rounded-[1.15rem] border border-dashed border-[#b8c4c8] bg-white/72 p-3 shadow-[0_10px_24px_rgba(18,17,15,0.045)]">
-        <input
-          ref={fileInputRef}
-          id={id}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          tabIndex={-1}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0] ?? null;
-
-            if (!file) {
-              clearFile();
-              return;
-            }
-
-            revokeUploadedPdf(state.file);
-            onChange(validatePdfFile(file, maxSizeBytes));
-            event.currentTarget.value = "";
-          }}
-        />
-
-        <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          {state.file ? (
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-[#12110f]">{state.file.name}</p>
-              <p className="text-xs leading-5 text-[#6f7a80]">
-                {formatFileSize(state.file.size)} · {formatDateTime(state.file.selectedAt)}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm font-medium text-[#7f878d]">PDF requerido · Máx. {maxSizeLabel}</p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            {state.file?.previewUrl ? (
-              <a
-                href={state.file.previewUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="ui-pill-button-secondary min-h-11 px-4"
-              >
-                Ver PDF
-              </a>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="ui-pill-button-primary min-h-11 px-4"
-            >
-              {actionLabel}
-            </button>
-
-            {showRemove && state.file ? (
-              <button
-                type="button"
-                onClick={clearFile}
-                className="ui-pill-button-secondary min-h-11 px-4 text-[#7b5750]"
-              >
-                Quitar
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {helper ? <div className="text-xs leading-5 text-[#6d777d]">{helper}</div> : null}
-      {state.error ? <p className="ui-inline-alert ui-inline-alert-error">{state.error}</p> : null}
-    </div>
-  );
-}
-
-function ExpiringPdfDropzone({
-  id,
-  label,
-  legalText,
-  state,
-  onChange,
-  selectLabel,
-  replaceLabel,
-}: {
-  id: string;
-  label: string;
-  legalText: string;
-  state: ExpiringDocumentState;
-  onChange: (state: ExpiringDocumentState) => void;
-  selectLabel?: string;
-  replaceLabel?: string;
-}) {
-  const expirationStatus = getExpirationStatus(state.expiresAt);
-
-  return (
-    <div className="grid gap-3 rounded-[1.25rem] bg-white/54 p-4">
-      <PdfDropzone
-        id={id}
-        label={label}
-        state={state}
-        onChange={(nextState) => {
-          onChange({
-            ...nextState,
-            expiresAt: nextState.file ? "" : state.expiresAt,
-          });
-        }}
-        helper={<span>{legalText}</span>}
-        selectLabel={selectLabel}
-        replaceLabel={replaceLabel}
-      />
-
-      {state.file ? (
-        <div className="grid gap-3">
-          <label className="grid gap-2">
-            <span className="ui-document-form-label">Fecha de vencimiento</span>
-            <input
-              type="date"
-              required
-              value={state.expiresAt}
-              onChange={(event) => onChange({ ...state, expiresAt: event.currentTarget.value })}
-              className="ui-document-form-control"
-            />
-          </label>
-
-          <span
-            className={`w-fit rounded-full border px-3 py-1.5 text-xs font-semibold ${expirationStatus.className}`}
-          >
-            {expirationStatus.label}
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function DocumentMenuCard({
@@ -602,346 +480,929 @@ function DedicatedSectionScreen({
   );
 }
 
+function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
+  const className = {
+    "Al día": "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    Completo: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    Vencido: "bg-rose-50 text-rose-700 ring-rose-100",
+    Incompleto: "bg-amber-50 text-amber-700 ring-amber-100",
+    "Sin registro": "bg-gray-50 text-gray-500 ring-gray-100",
+  }[status];
+
+  return (
+    <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${className}`}>
+      {status}
+    </span>
+  );
+}
+
+function CompactPdfInput({
+  id,
+  label,
+  state,
+  onChange,
+  maxSizeBytes = BASE_MAX_FILE_SIZE_BYTES,
+}: {
+  id: string;
+  label: string;
+  state: FileInputState;
+  onChange: (state: FileInputState) => void;
+  maxSizeBytes?: number;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <div className="grid gap-2">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">{label}</span>
+      <input
+        ref={fileInputRef}
+        id={id}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        tabIndex={-1}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] ?? null;
+
+          if (!file) {
+            return;
+          }
+
+          onChange(validatePdfFile(file, maxSizeBytes));
+          event.currentTarget.value = "";
+        }}
+      />
+      <div className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-4 py-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-gray-800">
+            {state.file ? state.file.name : "Selecciona un PDF"}
+          </p>
+          <p className="text-xs text-gray-400">
+            {state.file ? `${formatFileSize(state.file.size)} · ${formatDateTime(state.file.selectedAt)}` : "PDF"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="shrink-0 rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold text-white transition hover:scale-[1.02]"
+        >
+          {state.file ? "Cambiar" : "Subir"}
+        </button>
+      </div>
+      {state.error ? <p className="text-xs font-medium text-rose-600">{state.error}</p> : null}
+    </div>
+  );
+}
+
+function InlineDocumentForm({
+  children,
+  onSubmit,
+  disabled,
+  submitLabel = "Guardar registro",
+}: {
+  children: ReactNode;
+  onSubmit: () => void;
+  disabled?: boolean;
+  submitLabel?: string;
+}) {
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+      className="bg-gray-50/60 border border-gray-100 rounded-2xl p-6 mb-6 text-left transition-all duration-300 ease-in-out animate-fadeIn"
+    >
+      <div className="grid gap-4">{children}</div>
+      <div className="mt-5 flex justify-end">
+        <button
+          type="submit"
+          disabled={disabled}
+          className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RegisterControl({
+  isRegistering,
+  actionLabel,
+  onStart,
+  onCancel,
+}: {
+  isRegistering: boolean;
+  actionLabel: string;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex justify-end">
+      {isRegistering ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-gray-400 hover:text-gray-600 text-sm font-medium transition-colors"
+        >
+          - Cancelar registro
+        </button>
+      ) : (
+        <button type="button" onClick={onStart} className="ui-pill-button-primary min-h-11 px-5">
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RecordsList({
+  children,
+  emptyLabel = "No hay registros cargados.",
+}: {
+  children: ReactNode;
+  emptyLabel?: string;
+}) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+      {children ? (
+        children
+      ) : (
+        <div className="flex items-center justify-between py-4 px-6 border-b border-gray-50 last:border-none hover:bg-gray-50/50 transition-colors">
+          <span className="text-sm text-gray-500">{emptyLabel}</span>
+          <DocumentStatusBadge status="Sin registro" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecordRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-4 px-6 border-b border-gray-50 last:border-none hover:bg-gray-50/50 transition-colors">
+      {children}
+    </div>
+  );
+}
+
+function PdfViewButton({ file }: { file: UploadedPdf | null }) {
+  if (!file?.previewUrl) {
+    return (
+      <button type="button" disabled className="text-xs font-medium text-gray-300">
+        Ver PDF
+      </button>
+    );
+  }
+
+  return (
+    <a href={file.previewUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-[#2a7f86]">
+      Ver PDF
+    </a>
+  );
+}
+
 export function CompanyAdminDocumentsView() {
-  const [activeSection, setActiveSection] = useState<string | null>(null);
-  const [sanitationPlan, setSanitationPlan] = useState<FileInputState>(createEmptyFileState);
-  const [chemicalProducts, setChemicalProducts] = useState<ChemicalProduct[]>([]);
-  const [pestControlCertificate, setPestControlCertificate] = useState<ExpiringDocumentState>(
-    createEmptyExpiringFileState,
-  );
-  const [waterTankCertificate, setWaterTankCertificate] = useState<ExpiringDocumentState>(
-    createEmptyExpiringFileState,
-  );
-  const [acuUpload, setAcuUpload] = useState<FileInputState>(createEmptyFileState);
-  const [acuHistory, setAcuHistory] = useState<AcuCertificateRecord[]>([]);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const activeAcuRecords = acuHistory.filter((record) => record.isActive);
+  const sanitationPlanInputRef = useRef<HTMLInputElement | null>(null);
+  const [activeSection, setActiveSection] = useState<DocumentSectionId | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [formData, setFormData] = useState<DocumentFormData>(createEmptyDocumentFormData);
+  const [sanitationPlan, setSanitationPlan] = useState<SanitationPlanRecord | null>(null);
+  const [chemicalProducts, setChemicalProducts] = useState<ChemicalProductRecord[]>([]);
+  const [pestControlRecords, setPestControlRecords] = useState<DatedDocumentRecord[]>([]);
+  const [waterTankRecords, setWaterTankRecords] = useState<DatedDocumentRecord[]>([]);
+  const [acuHistory, setAcuHistory] = useState<AcuCollectionRecord[]>([]);
+  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>([]);
   const activeSectionConfig = DOCUMENT_SECTIONS.find((section) => section.id === activeSection) ?? null;
+  const latestPestControl = getLatestDatedRecord(pestControlRecords);
+  const latestWaterTank = getLatestDatedRecord(waterTankRecords);
   const sectionStatusBadges: Record<DocumentSectionId, DocumentMenuBadgeState> = {
-    sanitation_plan: getSanitationPlanBadge(sanitationPlan),
-    chemical_products: {
-      label: getFixedCountLabel(chemicalProducts.length, "Productos"),
-      tone: chemicalProducts.length ? "success" : "neutral",
-    },
-    pest_control: getExpiringDocumentBadge(pestControlCertificate),
-    water_tank_cleaning: getExpiringDocumentBadge(waterTankCertificate),
-    acu_final_disposal: activeAcuRecords.length
-      ? { label: getFixedCountLabel(activeAcuRecords.length, "Certificados"), tone: "success" }
-      : { label: "Sin registros" },
-    staff_records: staffMembers.length
-      ? { label: getFixedCountLabel(staffMembers.length, "Empleados"), tone: "success" }
-      : { label: "Sin personal" },
+    sanitation_plan: getMenuBadgeFromStatus(sanitationPlan ? "Al día" : "Sin registro"),
+    chemical_products: getMenuBadgeFromStatus(getAggregatedProductStatus(chemicalProducts)),
+    pest_control: getMenuBadgeFromStatus(latestPestControl ? getDatedRecordStatus(latestPestControl) : "Sin registro"),
+    water_tank_cleaning: getMenuBadgeFromStatus(latestWaterTank ? getDatedRecordStatus(latestWaterTank) : "Sin registro"),
+    acu_final_disposal: getMenuBadgeFromStatus(acuHistory.length ? "Al día" : "Sin registro"),
+    staff_records: getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
+  };
+
+  const resetRegistration = () => {
+    setIsRegistering(false);
+    setFormData(createEmptyDocumentFormData());
   };
 
   useEffect(() => {
-    const showDocumentsMenu = () => setActiveSection(null);
+    const showDocumentsMenu = () => {
+      setActiveSection(null);
+      resetRegistration();
+    };
 
     window.addEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
 
     return () => window.removeEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
   }, []);
 
-  const updateChemicalProduct = (productId: string, update: (product: ChemicalProduct) => ChemicalProduct) => {
-    setChemicalProducts((currentProducts) =>
-      currentProducts.map((product) => (product.id === productId ? update(product) : product)),
-    );
+  const updateFormData = (nextData: Partial<DocumentFormData>) => {
+    setFormData((currentData) => ({ ...currentData, ...nextData }));
   };
 
-  const updateStaffMember = (memberId: string, update: (member: StaffMember) => StaffMember) => {
-    setStaffMembers((currentMembers) =>
-      currentMembers.map((member) => (member.id === memberId ? update(member) : member)),
-    );
+  const startRegistration = (nextData?: Partial<DocumentFormData>) => {
+    setFormData({ ...createEmptyDocumentFormData(), ...nextData });
+    setIsRegistering(true);
   };
 
-  const saveAcuCertificate = () => {
-    const currentFile = acuUpload.file;
-
-    if (!currentFile) {
+  const replaceSanitationPlan = (file: File | null) => {
+    if (!file) {
       return;
     }
 
-    setAcuHistory((currentHistory) => [
-      {
-        ...currentFile,
-        uploadedAt: currentFile.selectedAt,
-        isActive: true,
-      },
-      ...currentHistory,
-    ]);
-    setAcuUpload(createEmptyFileState());
+    const nextFileState = validatePdfFile(file, SANITATION_PLAN_MAX_FILE_SIZE_BYTES);
+
+    if (!nextFileState.file) {
+      updateFormData({ pdf: nextFileState });
+      return;
+    }
+
+    revokeUploadedPdf(sanitationPlan?.pdf ?? null);
+    setSanitationPlan({
+      id: createId("sanitation-plan"),
+      name: "Plan de Saneamiento Básico",
+      pdf: nextFileState.file,
+      updatedAt: new Date().toISOString(),
+    });
+    updateFormData({ pdf: createEmptyFileState() });
   };
 
-  const deactivateAcuCertificate = (recordId: string) => {
-    setAcuHistory((currentHistory) =>
-      currentHistory.map((record) => (record.id === recordId ? { ...record, isActive: false } : record)),
+  const saveDatedRecord = (
+    records: DatedDocumentRecord[],
+    setRecords: (records: DatedDocumentRecord[]) => void,
+    monthsToExpire: number,
+    prefix: string,
+  ) => {
+    const existingRecord = formData.editingId
+      ? records.find((record) => record.id === formData.editingId) ?? null
+      : null;
+    const selectedPdf = formData.pdf.file ?? existingRecord?.pdf ?? null;
+
+    if (!formData.issuedAt || !selectedPdf) {
+      return;
+    }
+
+    if (existingRecord?.pdf && formData.pdf.file && existingRecord.pdf.id !== formData.pdf.file.id) {
+      revokeUploadedPdf(existingRecord.pdf);
+    }
+
+    const nextRecord: DatedDocumentRecord = {
+      id: formData.editingId ?? createId(prefix),
+      issuedAt: formData.issuedAt,
+      expiresAt: addMonthsToDate(formData.issuedAt, monthsToExpire),
+      updatedAt: new Date().toISOString(),
+      pdf: selectedPdf,
+    };
+
+    setRecords(
+      formData.editingId
+        ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
+        : [nextRecord, ...records],
+    );
+    resetRegistration();
+  };
+
+  const saveAcuRecord = () => {
+    const existingRecord = formData.editingId
+      ? acuHistory.find((record) => record.id === formData.editingId) ?? null
+      : null;
+    const selectedPdf = formData.pdf.file ?? existingRecord?.pdf ?? null;
+
+    if (!formData.collectedAt || !formData.quantity || !selectedPdf) {
+      return;
+    }
+
+    if (existingRecord?.pdf && formData.pdf.file && existingRecord.pdf.id !== formData.pdf.file.id) {
+      revokeUploadedPdf(existingRecord.pdf);
+    }
+
+    const nextRecord: AcuCollectionRecord = {
+      id: formData.editingId ?? createId("acu-record"),
+      collectedAt: formData.collectedAt,
+      quantity: formData.quantity,
+      unit: formData.unit,
+      pdf: selectedPdf,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAcuHistory((currentRecords) =>
+      formData.editingId
+        ? currentRecords.map((record) => (record.id === formData.editingId ? nextRecord : record))
+        : [nextRecord, ...currentRecords],
+    );
+    resetRegistration();
+  };
+
+  const saveChemicalProduct = () => {
+    const existingProduct = formData.editingId
+      ? chemicalProducts.find((product) => product.id === formData.editingId) ?? null
+      : null;
+    const technicalSheet = formData.technicalSheet.file
+      ? formData.technicalSheet
+      : existingProduct?.technicalSheet ?? formData.technicalSheet;
+    const safetySheet = formData.safetySheet.file
+      ? formData.safetySheet
+      : existingProduct?.safetySheet ?? formData.safetySheet;
+
+    if (!formData.productName.trim() || (!technicalSheet.file && !safetySheet.file)) {
+      return;
+    }
+
+    if (
+      existingProduct?.technicalSheet.file &&
+      formData.technicalSheet.file &&
+      existingProduct.technicalSheet.file.id !== formData.technicalSheet.file.id
+    ) {
+      revokeUploadedPdf(existingProduct.technicalSheet.file);
+    }
+
+    if (
+      existingProduct?.safetySheet.file &&
+      formData.safetySheet.file &&
+      existingProduct.safetySheet.file.id !== formData.safetySheet.file.id
+    ) {
+      revokeUploadedPdf(existingProduct.safetySheet.file);
+    }
+
+    const nextProduct: ChemicalProductRecord = {
+      id: formData.editingId ?? createId("chemical-product"),
+      name: formData.productName.trim(),
+      technicalSheet,
+      safetySheet,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setChemicalProducts((currentProducts) =>
+      formData.editingId
+        ? currentProducts.map((product) => (product.id === formData.editingId ? nextProduct : product))
+        : [nextProduct, ...currentProducts],
+    );
+    resetRegistration();
+  };
+
+  const saveStaffRecord = () => {
+    const existingMember = formData.editingId
+      ? staffMembers.find((member) => member.id === formData.editingId) ?? null
+      : null;
+    const hasAtLeastOnePdf = Boolean(formData.foodHandlingPdf.file || formData.medicalExamPdf.file);
+
+    if (!formData.fullName.trim() || !hasAtLeastOnePdf) {
+      return;
+    }
+
+    if (
+      existingMember?.foodHandlingPdf.file &&
+      formData.foodHandlingPdf.file &&
+      existingMember.foodHandlingPdf.file.id !== formData.foodHandlingPdf.file.id
+    ) {
+      revokeUploadedPdf(existingMember.foodHandlingPdf.file);
+    }
+
+    if (
+      existingMember?.medicalExamPdf.file &&
+      formData.medicalExamPdf.file &&
+      existingMember.medicalExamPdf.file.id !== formData.medicalExamPdf.file.id
+    ) {
+      revokeUploadedPdf(existingMember.medicalExamPdf.file);
+    }
+
+    const nextMember: StaffRecord = {
+      id: formData.editingId ?? createId("staff-member"),
+      fullName: formData.fullName.trim(),
+      foodHandlingIssuedAt: formData.foodHandlingIssuedAt,
+      foodHandlingExpiresAt: addMonthsToDate(formData.foodHandlingIssuedAt, 12),
+      foodHandlingPdf: formData.foodHandlingPdf,
+      medicalExamIssuedAt: formData.medicalExamIssuedAt,
+      medicalExamExpiresAt: addMonthsToDate(formData.medicalExamIssuedAt, 12),
+      medicalExamPdf: formData.medicalExamPdf,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setStaffMembers((currentMembers) =>
+      formData.editingId
+        ? currentMembers.map((member) => (member.id === formData.editingId ? nextMember : member))
+        : [nextMember, ...currentMembers],
+    );
+    resetRegistration();
+  };
+
+  const renderPlanSection = () => (
+    <div className="grid gap-4">
+      <div className="flex justify-end">
+        <input
+          ref={sanitationPlanInputRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          tabIndex={-1}
+          onChange={(event) => {
+            replaceSanitationPlan(event.currentTarget.files?.[0] ?? null);
+            event.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => sanitationPlanInputRef.current?.click()}
+          className="ui-pill-button-primary min-h-11 px-5"
+        >
+          {sanitationPlan ? "Reemplazar documento" : "Subir documento"}
+        </button>
+      </div>
+
+      {formData.pdf.error ? <p className="text-right text-xs font-medium text-rose-600">{formData.pdf.error}</p> : null}
+
+      <RecordsList>
+        <RecordRow>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-gray-800">
+              {sanitationPlan?.name ?? "Plan de Saneamiento Básico"}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              Última actualización: {sanitationPlan ? formatDate(sanitationPlan.updatedAt.slice(0, 10)) : "—"}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+            <DocumentStatusBadge status={sanitationPlan ? "Al día" : "Sin registro"} />
+            {sanitationPlan ? <PdfViewButton file={sanitationPlan.pdf} /> : null}
+            <button
+              type="button"
+              disabled={!sanitationPlan}
+              onClick={() => {
+                revokeUploadedPdf(sanitationPlan?.pdf ?? null);
+                setSanitationPlan(null);
+              }}
+              className="text-xs font-medium text-rose-500 transition hover:text-rose-700 disabled:text-gray-300"
+            >
+              Eliminar
+            </button>
+          </div>
+        </RecordRow>
+      </RecordsList>
+    </div>
+  );
+
+  const renderDatedSection = (
+    records: DatedDocumentRecord[],
+    setRecords: (records: DatedDocumentRecord[]) => void,
+    monthsToExpire: number,
+    prefix: string,
+    dateLabel: string,
+  ) => (
+    <div className="grid gap-4">
+      <RegisterControl
+        isRegistering={isRegistering}
+        actionLabel="+ Registrar dato"
+        onStart={() => startRegistration()}
+        onCancel={resetRegistration}
+      />
+
+      {isRegistering ? (
+        <InlineDocumentForm
+          onSubmit={() => saveDatedRecord(records, setRecords, monthsToExpire, prefix)}
+          disabled={!formData.issuedAt || !formData.pdf.file}
+        >
+          <label className="grid gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              {dateLabel}
+            </span>
+            <input
+              type="date"
+              value={formData.issuedAt}
+              onChange={(event) => updateFormData({ issuedAt: event.currentTarget.value })}
+              className="ui-document-form-control"
+            />
+          </label>
+          {formData.issuedAt ? (
+            <p className="text-xs font-medium text-gray-400">
+              Vencimiento: {formatDate(addMonthsToDate(formData.issuedAt, monthsToExpire))}
+            </p>
+          ) : null}
+          <CompactPdfInput
+            id={`${prefix}-pdf`}
+            label="Certificado PDF"
+            state={formData.pdf}
+            onChange={(pdf) => updateFormData({ pdf })}
+          />
+        </InlineDocumentForm>
+      ) : null}
+
+      <RecordsList>
+        {records.length
+          ? records.map((record) => (
+              <RecordRow key={record.id}>
+                <div className="grid min-w-0 gap-1 sm:grid-cols-2 sm:gap-8">
+                  <p className="text-sm text-gray-700">
+                    <span className="block text-xs text-gray-400">{dateLabel}</span>
+                    {formatDate(record.issuedAt)}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    <span className="block text-xs text-gray-400">Vencimiento</span>
+                    {formatDate(record.expiresAt)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                  <DocumentStatusBadge status={getDatedRecordStatus(record)} />
+                  <PdfViewButton file={record.pdf} />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startRegistration({
+                        editingId: record.id,
+                        issuedAt: record.issuedAt,
+                        pdf: record.pdf ? { file: record.pdf, error: null } : createEmptyFileState(),
+                      })
+                    }
+                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecords(records.filter((currentRecord) => currentRecord.id !== record.id))}
+                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </RecordRow>
+            ))
+          : null}
+      </RecordsList>
+    </div>
+  );
+
+  const renderAcuSection = () => (
+    <div className="grid gap-4">
+      <RegisterControl
+        isRegistering={isRegistering}
+        actionLabel="+ Registrar dato"
+        onStart={() => startRegistration()}
+        onCancel={resetRegistration}
+      />
+
+      {isRegistering ? (
+        <InlineDocumentForm
+          onSubmit={saveAcuRecord}
+          disabled={!formData.collectedAt || !formData.quantity || !formData.pdf.file}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                Fecha recolección
+              </span>
+              <input
+                type="date"
+                value={formData.collectedAt}
+                onChange={(event) => updateFormData({ collectedAt: event.currentTarget.value })}
+                className="ui-document-form-control"
+              />
+            </label>
+            <div className="grid gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Cantidad</span>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.quantity}
+                  onChange={(event) => updateFormData({ quantity: event.currentTarget.value })}
+                  className="ui-document-form-control"
+                />
+                <select
+                  value={formData.unit}
+                  onChange={(event) => updateFormData({ unit: event.currentTarget.value as "Galones" | "Litros" })}
+                  className="ui-document-form-control"
+                >
+                  <option>Galones</option>
+                  <option>Litros</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <CompactPdfInput id="acu-pdf" label="Certificado PDF" state={formData.pdf} onChange={(pdf) => updateFormData({ pdf })} />
+        </InlineDocumentForm>
+      ) : null}
+
+      <RecordsList>
+        {acuHistory.length
+          ? acuHistory.map((record) => (
+              <RecordRow key={record.id}>
+                <div className="grid min-w-0 gap-1 sm:grid-cols-3 sm:gap-6">
+                  <p className="text-sm text-gray-700">
+                    <span className="block text-xs text-gray-400">Recolección</span>
+                    {formatDate(record.collectedAt)}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    <span className="block text-xs text-gray-400">Cantidad</span>
+                    {record.quantity} {record.unit}
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    <span className="block text-xs text-gray-400">Vencimiento</span>
+                    Hasta la próxima recolección
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                  <DocumentStatusBadge status="Al día" />
+                  <PdfViewButton file={record.pdf} />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startRegistration({
+                        editingId: record.id,
+                        collectedAt: record.collectedAt,
+                        quantity: record.quantity,
+                        unit: record.unit,
+                        pdf: { file: record.pdf, error: null },
+                      })
+                    }
+                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      revokeUploadedPdf(record.pdf);
+                      setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id));
+                    }}
+                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </RecordRow>
+            ))
+          : null}
+      </RecordsList>
+    </div>
+  );
+
+  const renderChemicalProductsSection = () => {
+    const existingProduct = formData.editingId
+      ? chemicalProducts.find((product) => product.id === formData.editingId) ?? null
+      : null;
+    const hasChemicalPdf = Boolean(
+      formData.technicalSheet.file ||
+        formData.safetySheet.file ||
+        existingProduct?.technicalSheet.file ||
+        existingProduct?.safetySheet.file,
+    );
+
+    return (
+      <div className="grid gap-4">
+        <RegisterControl
+          isRegistering={isRegistering}
+          actionLabel="+ Registrar dato"
+          onStart={() => startRegistration()}
+          onCancel={resetRegistration}
+        />
+
+        {isRegistering ? (
+          <InlineDocumentForm
+            onSubmit={saveChemicalProduct}
+            disabled={!formData.productName.trim() || !hasChemicalPdf}
+            submitLabel={formData.editingId ? "Guardar producto" : "Registrar producto"}
+          >
+          <label className="grid gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              Nombre del producto
+            </span>
+            <input
+              value={formData.productName}
+              onChange={(event) => updateFormData({ productName: event.currentTarget.value })}
+              placeholder="Ej. Amonio cuaternario"
+              className="ui-document-form-control"
+            />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CompactPdfInput
+              id="chemical-technical-sheet"
+              label="Ficha técnica PDF"
+              state={formData.technicalSheet}
+              onChange={(technicalSheet) => updateFormData({ technicalSheet })}
+            />
+            <CompactPdfInput
+              id="chemical-safety-sheet"
+              label="Hoja de seguridad PDF"
+              state={formData.safetySheet}
+              onChange={(safetySheet) => updateFormData({ safetySheet })}
+            />
+          </div>
+          </InlineDocumentForm>
+        ) : null}
+
+        <RecordsList>
+          {chemicalProducts.length
+            ? chemicalProducts.map((product) => (
+              <RecordRow key={product.id}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-800">{product.name}</p>
+                  <p className="mt-1 text-xs text-gray-400">Actualizado {formatDateTime(product.updatedAt)}</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                  <DocumentStatusBadge status={getProductStatus(product)} />
+                  <span className="text-xs text-gray-500">
+                    Ficha: {product.technicalSheet.file ? "Cargado" : "Faltante"}
+                  </span>
+                  <PdfViewButton file={product.technicalSheet.file} />
+                  <span className="text-xs text-gray-500">
+                    Seguridad: {product.safetySheet.file ? "Cargado" : "Faltante"}
+                  </span>
+                  <PdfViewButton file={product.safetySheet.file} />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startRegistration({
+                        editingId: product.id,
+                        productName: product.name,
+                        technicalSheet: product.technicalSheet,
+                        safetySheet: product.safetySheet,
+                      })
+                    }
+                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      revokeUploadedPdf(product.technicalSheet.file);
+                      revokeUploadedPdf(product.safetySheet.file);
+                      setChemicalProducts(chemicalProducts.filter((currentProduct) => currentProduct.id !== product.id));
+                    }}
+                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </RecordRow>
+              ))
+            : null}
+        </RecordsList>
+      </div>
+    );
+  };
+
+  const renderStaffSection = () => {
+    const canSaveStaff = Boolean(formData.fullName.trim() && (formData.foodHandlingPdf.file || formData.medicalExamPdf.file));
+
+    return (
+      <div className="grid gap-4">
+        <RegisterControl
+          isRegistering={isRegistering}
+          actionLabel="+ Registrar dato"
+          onStart={() => startRegistration()}
+          onCancel={resetRegistration}
+        />
+
+        {isRegistering ? (
+          <InlineDocumentForm
+            onSubmit={saveStaffRecord}
+            disabled={!canSaveStaff}
+            submitLabel={formData.editingId ? "Guardar empleado" : "Registrar empleado"}
+          >
+            <label className="grid gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Nombre</span>
+              <input
+                value={formData.fullName}
+                onChange={(event) => updateFormData({ fullName: event.currentTarget.value })}
+                placeholder="Nombre del empleado"
+                className="ui-document-form-control"
+              />
+            </label>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-3">
+                <label className="grid gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                    Fecha curso manipulación
+                  </span>
+                  <input
+                    type="date"
+                    value={formData.foodHandlingIssuedAt}
+                    onChange={(event) => updateFormData({ foodHandlingIssuedAt: event.currentTarget.value })}
+                    className="ui-document-form-control"
+                  />
+                </label>
+                <CompactPdfInput
+                  id="staff-food-handling-pdf"
+                  label="PDF curso manipulación"
+                  state={formData.foodHandlingPdf}
+                  onChange={(foodHandlingPdf) => updateFormData({ foodHandlingPdf })}
+                />
+              </div>
+              <div className="grid gap-3">
+                <label className="grid gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                    Fecha examen médico
+                  </span>
+                  <input
+                    type="date"
+                    value={formData.medicalExamIssuedAt}
+                    onChange={(event) => updateFormData({ medicalExamIssuedAt: event.currentTarget.value })}
+                    className="ui-document-form-control"
+                  />
+                </label>
+                <CompactPdfInput
+                  id="staff-medical-exam-pdf"
+                  label="PDF examen médico"
+                  state={formData.medicalExamPdf}
+                  onChange={(medicalExamPdf) => updateFormData({ medicalExamPdf })}
+                />
+              </div>
+            </div>
+          </InlineDocumentForm>
+        ) : null}
+
+        <RecordsList>
+          {staffMembers.length
+            ? staffMembers.map((member) => (
+                <RecordRow key={member.id}>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-800">{member.fullName}</p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Curso vence {member.foodHandlingExpiresAt ? formatDate(member.foodHandlingExpiresAt) : "sin fecha"} ·
+                      Examen vence {member.medicalExamExpiresAt ? formatDate(member.medicalExamExpiresAt) : " sin fecha"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                    <DocumentStatusBadge status={getStaffStatus(member)} />
+                    <PdfViewButton file={member.foodHandlingPdf.file} />
+                    <PdfViewButton file={member.medicalExamPdf.file} />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        startRegistration({
+                          editingId: member.id,
+                          fullName: member.fullName,
+                          foodHandlingIssuedAt: member.foodHandlingIssuedAt,
+                          foodHandlingPdf: member.foodHandlingPdf,
+                          medicalExamIssuedAt: member.medicalExamIssuedAt,
+                          medicalExamPdf: member.medicalExamPdf,
+                        })
+                      }
+                      className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        revokeUploadedPdf(member.foodHandlingPdf.file);
+                        revokeUploadedPdf(member.medicalExamPdf.file);
+                        setStaffMembers(staffMembers.filter((currentMember) => currentMember.id !== member.id));
+                      }}
+                      className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </RecordRow>
+              ))
+            : null}
+        </RecordsList>
+      </div>
     );
   };
 
   const renderActiveSection = (sectionId: DocumentSectionId) => {
     if (sectionId === "sanitation_plan") {
-      return (
-        <PdfDropzone
-          id="sanitation-plan-pdf"
-          label="Plan de saneamiento básico"
-          state={sanitationPlan}
-          maxSizeBytes={SANITATION_PLAN_MAX_FILE_SIZE_BYTES}
-          onChange={setSanitationPlan}
-          helper="Sube un solo PDF con los 4 programas: Limpieza, Plagas, Residuos y Agua Potable."
-        />
-      );
-    }
-
-    if (sectionId === "chemical_products") {
-      return (
-        <div className="grid gap-4">
-          <button
-            type="button"
-            onClick={() => setChemicalProducts((currentProducts) => [createChemicalProduct(), ...currentProducts])}
-            className="ui-pill-button-primary min-h-12 w-full px-5 sm:w-fit"
-          >
-            + Agregar producto químico
-          </button>
-
-          {chemicalProducts.length === 0 ? (
-            <p className="ui-empty-state-block">
-              Agrega un producto químico para cargar su ficha técnica y su hoja de seguridad.
-            </p>
-          ) : null}
-
-          {chemicalProducts.map((product, index) => (
-            <article key={product.id} className="grid gap-4 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <label className="grid flex-1 gap-2">
-                  <span className="ui-document-form-label">Nombre del producto</span>
-                  <input
-                    value={product.name}
-                    onChange={(event) => {
-                      const nextName = event.currentTarget.value;
-
-                      updateChemicalProduct(product.id, (currentProduct) => ({
-                        ...currentProduct,
-                        name: nextName,
-                      }));
-                    }}
-                    placeholder="Ej. Amonio cuaternario"
-                    className="ui-document-form-control"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setChemicalProducts((currentProducts) =>
-                      currentProducts.filter((currentProduct) => currentProduct.id !== product.id),
-                    )
-                  }
-                  className="ui-pill-button-secondary min-h-11 px-5 text-[#7b5750]"
-                >
-                  Eliminar
-                </button>
-              </div>
-
-              <div className="grid gap-4">
-                <PdfDropzone
-                  id={`technical-sheet-${product.id}`}
-                  label={`Ficha técnica ${index + 1}`}
-                  state={product.technicalSheet}
-                  onChange={(nextState) =>
-                    updateChemicalProduct(product.id, (currentProduct) => ({
-                      ...currentProduct,
-                      technicalSheet: nextState,
-                    }))
-                  }
-                />
-                <PdfDropzone
-                  id={`safety-sheet-${product.id}`}
-                  label="Hoja de seguridad - MSDS"
-                  state={product.safetySheet}
-                  onChange={(nextState) =>
-                    updateChemicalProduct(product.id, (currentProduct) => ({
-                      ...currentProduct,
-                      safetySheet: nextState,
-                    }))
-                  }
-                />
-              </div>
-            </article>
-          ))}
-        </div>
-      );
+      return renderPlanSection();
     }
 
     if (sectionId === "pest_control") {
-      return (
-        <ExpiringPdfDropzone
-          id="pest-control-certificate"
-          label="Certificado de control de plagas"
-          legalText="Vigencia legal: máximo 1 mes (mensual) o 3 meses (trimestral), según el riesgo."
-          state={pestControlCertificate}
-          onChange={setPestControlCertificate}
-        />
-      );
+      return renderDatedSection(pestControlRecords, setPestControlRecords, 3, "pest-control", "Fecha del control");
     }
 
     if (sectionId === "water_tank_cleaning") {
-      return (
-        <ExpiringPdfDropzone
-          id="water-tank-cleaning-certificate"
-          label="Certificado de lavado y desinfección de tanques"
-          legalText="Vigencia legal: máximo 6 meses (semestral)."
-          state={waterTankCertificate}
-          onChange={setWaterTankCertificate}
-        />
-      );
+      return renderDatedSection(waterTankRecords, setWaterTankRecords, 6, "water-tank", "Fecha de lavado");
     }
 
     if (sectionId === "acu_final_disposal") {
-      return (
-        <div className="grid gap-4">
-          <div className="grid gap-3 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
-            <PdfDropzone
-              id="acu-certificate-upload"
-              label="Certificado de la entrega del día"
-              state={acuUpload}
-              onChange={setAcuUpload}
-              helper="Registra un PDF por cada entrega de aceite usado."
-              showRemove={false}
-            />
-
-            {acuUpload.file ? (
-              <button
-                type="button"
-                onClick={saveAcuCertificate}
-                className="ui-pill-button-primary min-h-12 w-full px-5"
-              >
-                Guardar entrega del día
-              </button>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3">
-            <p className="text-sm font-semibold text-[#12110f]">Historial de certificados</p>
-
-            {activeAcuRecords.length === 0 ? (
-              <p className="ui-empty-state-block">Todavía no hay certificados ACU cargados.</p>
-            ) : null}
-
-            {activeAcuRecords.map((record) => (
-              <article key={record.id} className="grid gap-3 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#12110f]">{record.name}</p>
-                  <p className="mt-1 text-xs leading-5 text-[#6d777d]">
-                    {formatFileSize(record.size)} · cargado {formatDateTime(record.uploadedAt)}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {record.previewUrl ? (
-                    <a
-                      href={record.previewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ui-pill-button-secondary min-h-11 px-4"
-                    >
-                      Ver PDF
-                    </a>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => deactivateAcuCertificate(record.id)}
-                    className="ui-pill-button-secondary min-h-11 px-4 text-[#7b5750]"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      );
+      return renderAcuSection();
     }
 
-    return (
-      <div className="grid gap-4">
-        <button
-          type="button"
-          onClick={() => setStaffMembers((currentMembers) => [createStaffMember(), ...currentMembers])}
-          className="ui-pill-button-primary min-h-12 w-full px-5 sm:w-fit"
-        >
-          + Agregar empleado
-        </button>
+    if (sectionId === "chemical_products") {
+      return renderChemicalProductsSection();
+    }
 
-        {staffMembers.length === 0 ? (
-          <p className="ui-empty-state-block">
-            Agrega un empleado para cargar su curso de manipulación y su examen médico de aptitud.
-          </p>
-        ) : null}
-
-        {staffMembers.map((member, index) => (
-          <article key={member.id} className="grid gap-4 rounded-2xl border border-[#d8e5e6] bg-white/72 p-4">
-            <label className="grid gap-2">
-              <span className="ui-document-form-label">Nombre del empleado</span>
-              <input
-                value={member.fullName}
-                onChange={(event) => {
-                  const nextFullName = event.currentTarget.value;
-
-                  updateStaffMember(member.id, (currentMember) => ({
-                    ...currentMember,
-                    fullName: nextFullName,
-                  }));
-                }}
-                placeholder={`Empleado ${index + 1}`}
-                className="ui-document-form-control"
-              />
-            </label>
-
-            <div className="grid gap-4">
-              {Object.values(member.documents).map((documentItem) => (
-                <ExpiringPdfDropzone
-                  key={documentItem.key}
-                  id={`staff-${member.id}-${documentItem.key}`}
-                  label={documentItem.title}
-                  legalText={documentItem.legalText}
-                  state={documentItem.fileState}
-                  selectLabel="Subir"
-                  replaceLabel="Cambiar"
-                  onChange={(nextState) =>
-                    updateStaffMember(member.id, (currentMember) => ({
-                      ...currentMember,
-                      documents: {
-                        ...currentMember.documents,
-                        [documentItem.key]: {
-                          ...currentMember.documents[documentItem.key],
-                          fileState: nextState,
-                        },
-                      },
-                    }))
-                  }
-                />
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setStaffMembers((currentMembers) =>
-                  currentMembers.filter((currentMember) => currentMember.id !== member.id),
-                )
-              }
-              className="ui-pill-button-secondary min-h-12 w-full px-5 text-[#7b5750]"
-            >
-              Eliminar empleado
-            </button>
-          </article>
-        ))}
-      </div>
-    );
+    return renderStaffSection();
   };
 
   return (
     <section className="grid gap-5 transition-all duration-300 ease-in-out">
       {activeSectionConfig ? (
-        <DocumentsToolbar activeSectionConfig={activeSectionConfig} onBack={() => setActiveSection(null)} />
+        <DocumentsToolbar
+          activeSectionConfig={activeSectionConfig}
+          onBack={() => {
+            resetRegistration();
+            setActiveSection(null);
+          }}
+        />
       ) : null}
 
       {activeSectionConfig ? (
@@ -958,7 +1419,10 @@ export function CompanyAdminDocumentsView() {
                   <DocumentMenuCard
                     item={item}
                     badge={sectionStatusBadges[item.sectionId]}
-                    onSelect={(sectionId) => setActiveSection(sectionId)}
+                    onSelect={(sectionId) => {
+                      resetRegistration();
+                      setActiveSection(sectionId);
+                    }}
                   />
                   {index < DOCUMENT_MENU_ITEMS.length - 1 ? (
                     <div className="my-1 border-b border-gray-100" />

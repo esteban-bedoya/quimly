@@ -234,7 +234,7 @@ function BranchLayout({
                   headerDescription ? "" : "invisible"
                 }`}
               >
-                {headerDescription ?? "Sin descripción"}
+                {headerDescription}
               </p>
             </div>
           </div>
