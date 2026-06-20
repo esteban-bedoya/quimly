@@ -186,6 +186,7 @@ create table if not exists public.branch_sanitary_document_files (
   file_name text not null,
   file_size_bytes integer not null,
   mime_type text not null default 'application/pdf',
+  metadata jsonb not null default '{}'::jsonb,
   expires_at date,
   is_active boolean not null default true,
   replaced_by_file_id uuid references public.branch_sanitary_document_files (id) on delete set null,
@@ -237,6 +238,9 @@ create table if not exists public.branch_sanitary_document_files (
     or expires_at is not null
   )
 );
+
+alter table public.branch_sanitary_document_files
+add column if not exists metadata jsonb not null default '{}'::jsonb;
 
 create unique index if not exists branch_chemical_products_active_name_idx
 on public.branch_chemical_products (branch_id, lower(name))

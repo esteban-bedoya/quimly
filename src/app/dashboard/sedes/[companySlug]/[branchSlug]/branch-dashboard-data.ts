@@ -2,12 +2,17 @@ import { requireBranchAccess } from "@/lib/auth/authorization";
 import { operationalFormTypes } from "@/lib/operational-forms";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   BranchCatalogItemSummary,
   BranchCatalogItemStatus,
   BranchRefrigerationEquipmentType,
+  BranchChemicalProductSummary,
   BranchDocumentSummary,
   BranchFormQrSummary,
+  BranchSanitaryDocumentFileSummary,
+  BranchSanitaryDocumentKind,
+  BranchStaffMemberSummary,
   OperationalFormType,
 } from "@/types/auth";
 
@@ -48,6 +53,42 @@ type BranchCatalogRow = {
   equipment_type?: BranchRefrigerationEquipmentType | null;
   is_active: boolean;
   status: BranchCatalogItemStatus;
+};
+
+type BranchChemicalProductRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  name: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
+type BranchStaffMemberRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  full_name: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
+type BranchSanitaryDocumentFileRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  document_kind: BranchSanitaryDocumentKind;
+  chemical_product_id: string | null;
+  staff_member_id: string | null;
+  file_url: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  metadata: Record<string, unknown>;
+  expires_at: string | null;
+  is_active: boolean;
+  uploaded_at: string;
+  updated_at: string;
 };
 
 function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
@@ -161,8 +202,13 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   let qrCodes: BranchFormQrSummary[] = [];
   let refrigerationEquipment: BranchCatalogItemSummary[] = [];
   let sanitationAreas: BranchCatalogItemSummary[] = [];
+  let chemicalProducts: BranchChemicalProductSummary[] = [];
+  let staffMembers: BranchStaffMemberSummary[] = [];
+  let sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[] = [];
 
   if (supabase) {
+    const documentSupabase = getSupabaseServerClient() ?? supabase;
+
     logServerInfo("branch.view.load.start", {
       branchId: branch.id,
       companyId: company.id,
@@ -176,6 +222,9 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       branchQrCodesResult,
       equipmentRowsResult,
       sanitationAreaRowsResult,
+      chemicalProductRowsResult,
+      staffMemberRowsResult,
+      sanitaryDocumentFileRowsResult,
     ] = await Promise.all([
       supabase
         .from("branch_dashboard_items")
@@ -214,6 +263,29 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         .neq("status", "archived")
         .order("name", { ascending: true })
         .returns<BranchCatalogRow[]>(),
+      documentSupabase
+        .from("branch_chemical_products")
+        .select("id, branch_id, company_id, name, is_active, updated_at")
+        .eq("branch_id", branch.id)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .returns<BranchChemicalProductRow[]>(),
+      documentSupabase
+        .from("branch_staff_members")
+        .select("id, branch_id, company_id, full_name, is_active, updated_at")
+        .eq("branch_id", branch.id)
+        .eq("is_active", true)
+        .order("full_name", { ascending: true })
+        .returns<BranchStaffMemberRow[]>(),
+      documentSupabase
+        .from("branch_sanitary_document_files")
+        .select(
+          "id, branch_id, company_id, document_kind, chemical_product_id, staff_member_id, file_url, file_name, file_size_bytes, mime_type, metadata, expires_at, is_active, uploaded_at, updated_at",
+        )
+        .eq("branch_id", branch.id)
+        .eq("is_active", true)
+        .order("uploaded_at", { ascending: false })
+        .returns<BranchSanitaryDocumentFileRow[]>(),
     ]);
 
     const queryResults = {
@@ -222,6 +294,9 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       branchQrCodes: branchQrCodesResult,
       equipmentRows: equipmentRowsResult,
       sanitationAreaRows: sanitationAreaRowsResult,
+      chemicalProductRows: chemicalProductRowsResult,
+      staffMemberRows: staffMemberRowsResult,
+      sanitaryDocumentFileRows: sanitaryDocumentFileRowsResult,
     };
 
     for (const [queryName, result] of Object.entries(queryResults)) {
@@ -249,6 +324,9 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     const branchDocuments = branchDocumentsResult.data;
     const equipmentRows = equipmentRowsResult.data;
     const sanitationAreaRows = sanitationAreaRowsResult.data;
+    const chemicalProductRows = chemicalProductRowsResult.data;
+    const staffMemberRows = staffMemberRowsResult.data;
+    const sanitaryDocumentFileRows = sanitaryDocumentFileRowsResult.data;
 
     operationalItems =
       dashboardItems
@@ -304,6 +382,45 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         status: item.status,
       })) ?? [];
 
+    chemicalProducts =
+      chemicalProductRows?.map((item) => ({
+        id: item.id,
+        branchId: item.branch_id,
+        companyId: item.company_id,
+        name: item.name,
+        isActive: item.is_active,
+        updatedAt: item.updated_at,
+      })) ?? [];
+
+    staffMembers =
+      staffMemberRows?.map((item) => ({
+        id: item.id,
+        branchId: item.branch_id,
+        companyId: item.company_id,
+        fullName: item.full_name,
+        isActive: item.is_active,
+        updatedAt: item.updated_at,
+      })) ?? [];
+
+    sanitaryDocumentFiles =
+      sanitaryDocumentFileRows?.map((item) => ({
+        id: item.id,
+        branchId: item.branch_id,
+        companyId: item.company_id,
+        documentKind: item.document_kind,
+        chemicalProductId: item.chemical_product_id,
+        staffMemberId: item.staff_member_id,
+        fileUrl: item.file_url,
+        fileName: item.file_name,
+        fileSizeBytes: item.file_size_bytes,
+        mimeType: item.mime_type,
+        metadata: item.metadata,
+        expiresAt: item.expires_at,
+        isActive: item.is_active,
+        uploadedAt: item.uploaded_at,
+        updatedAt: item.updated_at,
+      })) ?? [];
+
     logServerInfo("branch.view.load.done", {
       branchId: branch.id,
       companyId: company.id,
@@ -311,6 +428,9 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       branchSlug,
       qrCount: qrCodes.length,
       documentCount: documents.length,
+      sanitaryDocumentFileCount: sanitaryDocumentFiles.length,
+      chemicalProductCount: chemicalProducts.length,
+      staffMemberCount: staffMembers.length,
       refrigerationEquipmentCount: refrigerationEquipment.length,
       sanitationAreaCount: sanitationAreas.length,
     });
@@ -332,5 +452,8 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     qrCodes,
     refrigerationEquipment,
     sanitationAreas,
+    chemicalProducts,
+    staffMembers,
+    sanitaryDocumentFiles,
   };
 }

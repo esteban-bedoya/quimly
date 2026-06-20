@@ -8,7 +8,14 @@ import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseServerConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { AppRole, BranchRefrigerationEquipmentType } from "@/types/auth";
+import type {
+  AppRole,
+  BranchChemicalProductSummary,
+  BranchRefrigerationEquipmentType,
+  BranchSanitaryDocumentFileSummary,
+  BranchSanitaryDocumentKind,
+  BranchStaffMemberSummary,
+} from "@/types/auth";
 
 export type AdminActionState = {
   error?: string;
@@ -19,6 +26,64 @@ type PostgrestErrorLike = {
   code?: string;
   message: string;
 };
+
+type SanitaryDocumentActionState = AdminActionState & {
+  file?: BranchSanitaryDocumentFileSummary;
+  files?: BranchSanitaryDocumentFileSummary[];
+  product?: BranchChemicalProductSummary;
+  staffMember?: BranchStaffMemberSummary;
+  id?: string;
+};
+
+type BranchSanitaryDocumentFileRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  document_kind: BranchSanitaryDocumentKind;
+  chemical_product_id: string | null;
+  staff_member_id: string | null;
+  file_url: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  metadata: Record<string, unknown>;
+  expires_at: string | null;
+  is_active: boolean;
+  uploaded_at: string;
+  updated_at: string;
+};
+
+type BranchChemicalProductRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  name: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
+type BranchStaffMemberRow = {
+  id: string;
+  branch_id: string;
+  company_id: string;
+  full_name: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
+const sanitaryDocumentKinds = [
+  "sanitation_plan",
+  "chemical_technical_sheet",
+  "chemical_safety_sheet",
+  "pest_control_certificate",
+  "water_tank_cleaning_certificate",
+  "acu_final_disposal_certificate",
+  "food_handling_course",
+  "medical_fitness_exam",
+] as const satisfies readonly BranchSanitaryDocumentKind[];
+
+const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
+const GENERAL_DOCUMENT_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -138,6 +203,99 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   }
 
   return error.message || fallback;
+}
+
+function readSanitaryDocumentKind(formData: FormData, key = "documentKind") {
+  const value = readString(formData, key);
+  return sanitaryDocumentKinds.find((kind) => kind === value) ?? null;
+}
+
+function readMetadata(formData: FormData) {
+  const rawMetadata = readString(formData, "metadata");
+
+  if (!rawMetadata) {
+    return {};
+  }
+
+  try {
+    const parsedMetadata = JSON.parse(rawMetadata);
+    return parsedMetadata && typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)
+      ? (parsedMetadata as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function getSanitaryDocumentMaxFileSize(documentKind: BranchSanitaryDocumentKind) {
+  return documentKind === "sanitation_plan"
+    ? SANITATION_PLAN_MAX_FILE_SIZE_BYTES
+    : GENERAL_DOCUMENT_MAX_FILE_SIZE_BYTES;
+}
+
+function formatMegabytes(bytes: number) {
+  return `${bytes / (1024 * 1024)} MB`;
+}
+
+function validateSanitaryPdfFile(file: File, documentKind: BranchSanitaryDocumentKind) {
+  const maxSizeBytes = getSanitaryDocumentMaxFileSize(documentKind);
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+  if (!isPdf) {
+    return "Solo se permiten archivos PDF.";
+  }
+
+  if (file.size > maxSizeBytes) {
+    return `El PDF no puede superar ${formatMegabytes(maxSizeBytes)}.`;
+  }
+
+  return null;
+}
+
+function mapSanitaryDocumentFileRow(row: BranchSanitaryDocumentFileRow): BranchSanitaryDocumentFileSummary {
+  return {
+    id: row.id,
+    branchId: row.branch_id,
+    companyId: row.company_id,
+    documentKind: row.document_kind,
+    chemicalProductId: row.chemical_product_id,
+    staffMemberId: row.staff_member_id,
+    fileUrl: row.file_url,
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    mimeType: row.mime_type,
+    metadata: row.metadata,
+    expiresAt: row.expires_at,
+    isActive: row.is_active,
+    uploadedAt: row.uploaded_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapChemicalProductRow(row: BranchChemicalProductRow): BranchChemicalProductSummary {
+  return {
+    id: row.id,
+    branchId: row.branch_id,
+    companyId: row.company_id,
+    name: row.name,
+    isActive: row.is_active,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapStaffMemberRow(row: BranchStaffMemberRow): BranchStaffMemberSummary {
+  return {
+    id: row.id,
+    branchId: row.branch_id,
+    companyId: row.company_id,
+    fullName: row.full_name,
+    isActive: row.is_active,
+    updatedAt: row.updated_at,
+  };
+}
+
+function getSanitaryDocumentFileSelect() {
+  return "id, branch_id, company_id, document_kind, chemical_product_id, staff_member_id, file_url, file_name, file_size_bytes, mime_type, metadata, expires_at, is_active, uploaded_at, updated_at";
 }
 
 function formatActionError(error: unknown, fallback: string) {
@@ -523,6 +681,551 @@ export async function updateBranchDocumentAction(formData: FormData) {
 
 export async function deleteBranchDocumentAction(formData: FormData) {
   await deleteBranchDocument(undefined, formData);
+}
+
+export async function saveBranchSanitaryDocumentFileAction(
+  formData: FormData,
+): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const documentId = readString(formData, "documentId") || null;
+  const documentKind = readSanitaryDocumentKind(formData);
+  const expiresAt = readString(formData, "expiresAt") || null;
+  const metadata = readMetadata(formData);
+  const pdfFile = readFile(formData, "pdfFile");
+
+  if (!branchId || !companySlug || !branchSlug || !documentKind) {
+    return { error: "No fue posible identificar la sede y el tipo de documento." };
+  }
+
+  if (pdfFile) {
+    const validationError = validateSanitaryPdfFile(pdfFile, documentKind);
+
+    if (validationError) {
+      return { error: validationError };
+    }
+  }
+
+  if (!documentId && !pdfFile) {
+    return { error: "Debes seleccionar un PDF para guardar el documento." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  try {
+    const nextFileValues: Partial<BranchSanitaryDocumentFileRow> = {};
+
+    if (pdfFile) {
+      const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+      nextFileValues.file_url = uploadedFile.fileUrl;
+      nextFileValues.file_name = pdfFile.name;
+      nextFileValues.file_size_bytes = pdfFile.size;
+      nextFileValues.mime_type = "application/pdf";
+    }
+
+    if (documentId) {
+      const { data: currentFile, error: currentFileError } = await supabase
+        .from("branch_sanitary_document_files")
+        .select("file_url")
+        .eq("id", documentId)
+        .eq("branch_id", branchId)
+        .maybeSingle<{ file_url: string | null }>();
+
+      if (currentFileError || !currentFile) {
+        return { error: currentFileError?.message ?? "No fue posible encontrar el documento actual." };
+      }
+
+      const { data, error } = await supabase
+        .from("branch_sanitary_document_files")
+        .update({
+          ...nextFileValues,
+          metadata,
+          expires_at: expiresAt,
+          is_active: true,
+        })
+        .eq("id", documentId)
+        .eq("branch_id", branchId)
+        .select(getSanitaryDocumentFileSelect())
+        .single<BranchSanitaryDocumentFileRow>();
+
+      if (error) {
+        return { error: formatDatabaseError(error, "No fue posible guardar el documento.") };
+      }
+
+      if (pdfFile) {
+        await deleteBranchDocumentFile(currentFile.file_url);
+      }
+
+      revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+      revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+      return { success: "Documento guardado correctamente.", file: mapSanitaryDocumentFileRow(data) };
+    }
+
+    if (
+      documentKind === "sanitation_plan" ||
+      documentKind === "pest_control_certificate" ||
+      documentKind === "water_tank_cleaning_certificate"
+    ) {
+      await supabase
+        .from("branch_sanitary_document_files")
+        .update({ is_active: false })
+        .eq("branch_id", branchId)
+        .eq("document_kind", documentKind)
+        .eq("is_active", true);
+    }
+
+    const { data, error } = await supabase
+      .from("branch_sanitary_document_files")
+      .insert({
+        branch_id: branchId,
+        company_id: branch.companyId,
+        document_kind: documentKind,
+        file_url: nextFileValues.file_url,
+        file_name: nextFileValues.file_name,
+        file_size_bytes: nextFileValues.file_size_bytes,
+        mime_type: "application/pdf",
+        metadata,
+        expires_at: expiresAt,
+        is_active: true,
+      })
+      .select(getSanitaryDocumentFileSelect())
+      .single<BranchSanitaryDocumentFileRow>();
+
+    if (error) {
+      return { error: formatDatabaseError(error, "No fue posible crear el documento.") };
+    }
+
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+    return { success: "Documento guardado correctamente.", file: mapSanitaryDocumentFileRow(data) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No fue posible guardar el documento." };
+  }
+}
+
+async function saveOwnedSanitaryDocumentFile({
+  branchId,
+  companyId,
+  documentKind,
+  file,
+  expiresAt = null,
+  metadata = {},
+  chemicalProductId = null,
+  staffMemberId = null,
+}: {
+  branchId: string;
+  companyId: string;
+  documentKind: BranchSanitaryDocumentKind;
+  file: File;
+  expiresAt?: string | null;
+  metadata?: Record<string, unknown>;
+  chemicalProductId?: string | null;
+  staffMemberId?: string | null;
+}) {
+  const validationError = validateSanitaryPdfFile(file, documentKind);
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const supabase = getSupabaseServerClientOrThrow({
+    operation: "saveOwnedSanitaryDocumentFile",
+    branchId,
+    documentKind,
+  });
+
+  await supabase
+    .from("branch_sanitary_document_files")
+    .update({ is_active: false })
+    .eq("branch_id", branchId)
+    .eq("document_kind", documentKind)
+    .eq("is_active", true)
+    .match({
+      ...(chemicalProductId ? { chemical_product_id: chemicalProductId } : {}),
+      ...(staffMemberId ? { staff_member_id: staffMemberId } : {}),
+    });
+
+  const uploadedFile = await uploadBranchDocumentFile({ branchId, file });
+  const { data, error } = await supabase
+    .from("branch_sanitary_document_files")
+    .insert({
+      branch_id: branchId,
+      company_id: companyId,
+      document_kind: documentKind,
+      chemical_product_id: chemicalProductId,
+      staff_member_id: staffMemberId,
+      file_url: uploadedFile.fileUrl,
+      file_name: file.name,
+      file_size_bytes: file.size,
+      mime_type: "application/pdf",
+      metadata,
+      expires_at: expiresAt,
+      is_active: true,
+    })
+    .select(getSanitaryDocumentFileSelect())
+    .single<BranchSanitaryDocumentFileRow>();
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible guardar el archivo."));
+  }
+
+  return mapSanitaryDocumentFileRow(data);
+}
+
+export async function saveBranchChemicalProductAction(
+  formData: FormData,
+): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const productId = readString(formData, "productId") || null;
+  const productName = readString(formData, "productName");
+  const technicalSheetPdf = readFile(formData, "technicalSheetPdf");
+  const safetySheetPdf = readFile(formData, "safetySheetPdf");
+
+  if (!branchId || !companySlug || !branchSlug || !productName) {
+    return { error: "Debes indicar la sede y el nombre del producto." };
+  }
+
+  if (!productId && !technicalSheetPdf && !safetySheetPdf) {
+    return { error: "Debes cargar al menos un PDF del producto." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  try {
+    const productQuery = productId
+      ? supabase
+          .from("branch_chemical_products")
+          .update({ name: productName, is_active: true })
+          .eq("id", productId)
+          .eq("branch_id", branchId)
+      : supabase.from("branch_chemical_products").insert({
+          branch_id: branchId,
+          company_id: branch.companyId,
+          name: productName,
+          is_active: true,
+        });
+
+    const { data: productRow, error: productError } = await productQuery
+      .select("id, branch_id, company_id, name, is_active, updated_at")
+      .single<BranchChemicalProductRow>();
+
+    if (productError) {
+      return { error: formatDatabaseError(productError, "No fue posible guardar el producto.") };
+    }
+
+    const savedFiles: BranchSanitaryDocumentFileSummary[] = [];
+
+    if (technicalSheetPdf) {
+      savedFiles.push(
+        await saveOwnedSanitaryDocumentFile({
+          branchId,
+          companyId: branch.companyId,
+          documentKind: "chemical_technical_sheet",
+          file: technicalSheetPdf,
+          chemicalProductId: productRow.id,
+        }),
+      );
+    }
+
+    if (safetySheetPdf) {
+      savedFiles.push(
+        await saveOwnedSanitaryDocumentFile({
+          branchId,
+          companyId: branch.companyId,
+          documentKind: "chemical_safety_sheet",
+          file: safetySheetPdf,
+          chemicalProductId: productRow.id,
+        }),
+      );
+    }
+
+    const { data: productFiles, error: filesError } = await supabase
+      .from("branch_sanitary_document_files")
+      .select(getSanitaryDocumentFileSelect())
+      .eq("branch_id", branchId)
+      .eq("chemical_product_id", productRow.id)
+      .eq("is_active", true)
+      .returns<BranchSanitaryDocumentFileRow[]>();
+
+    if (filesError) {
+      return { error: formatDatabaseError(filesError, "No fue posible leer los archivos del producto.") };
+    }
+
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+    return {
+      success: "Producto guardado correctamente.",
+      product: mapChemicalProductRow(productRow),
+      files: productFiles?.map(mapSanitaryDocumentFileRow) ?? savedFiles,
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No fue posible guardar el producto." };
+  }
+}
+
+export async function saveBranchStaffMemberAction(formData: FormData): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const staffMemberId = readString(formData, "staffMemberId") || null;
+  const fullName = readString(formData, "fullName");
+  const foodHandlingIssuedAt = readString(formData, "foodHandlingIssuedAt");
+  const foodHandlingExpiresAt = readString(formData, "foodHandlingExpiresAt") || null;
+  const medicalExamIssuedAt = readString(formData, "medicalExamIssuedAt");
+  const medicalExamExpiresAt = readString(formData, "medicalExamExpiresAt") || null;
+  const foodHandlingPdf = readFile(formData, "foodHandlingPdf");
+  const medicalExamPdf = readFile(formData, "medicalExamPdf");
+
+  if (!branchId || !companySlug || !branchSlug || !fullName) {
+    return { error: "Debes indicar la sede y el nombre del empleado." };
+  }
+
+  if (!staffMemberId && !foodHandlingPdf && !medicalExamPdf) {
+    return { error: "Debes cargar al menos un PDF del empleado." };
+  }
+
+  if ((foodHandlingPdf && !foodHandlingExpiresAt) || (medicalExamPdf && !medicalExamExpiresAt)) {
+    return { error: "Debes indicar la fecha del PDF que vas a guardar." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  try {
+    const staffQuery = staffMemberId
+      ? supabase
+          .from("branch_staff_members")
+          .update({ full_name: fullName, is_active: true })
+          .eq("id", staffMemberId)
+          .eq("branch_id", branchId)
+      : supabase.from("branch_staff_members").insert({
+          branch_id: branchId,
+          company_id: branch.companyId,
+          full_name: fullName,
+          is_active: true,
+        });
+
+    const { data: staffRow, error: staffError } = await staffQuery
+      .select("id, branch_id, company_id, full_name, is_active, updated_at")
+      .single<BranchStaffMemberRow>();
+
+    if (staffError) {
+      return { error: formatDatabaseError(staffError, "No fue posible guardar el empleado.") };
+    }
+
+    const savedFiles: BranchSanitaryDocumentFileSummary[] = [];
+
+    if (foodHandlingPdf) {
+      savedFiles.push(
+        await saveOwnedSanitaryDocumentFile({
+          branchId,
+          companyId: branch.companyId,
+          documentKind: "food_handling_course",
+          file: foodHandlingPdf,
+          staffMemberId: staffRow.id,
+          expiresAt: foodHandlingExpiresAt,
+          metadata: { issuedAt: foodHandlingIssuedAt },
+        }),
+      );
+    }
+
+    if (medicalExamPdf) {
+      savedFiles.push(
+        await saveOwnedSanitaryDocumentFile({
+          branchId,
+          companyId: branch.companyId,
+          documentKind: "medical_fitness_exam",
+          file: medicalExamPdf,
+          staffMemberId: staffRow.id,
+          expiresAt: medicalExamExpiresAt,
+          metadata: { issuedAt: medicalExamIssuedAt },
+        }),
+      );
+    }
+
+    const { data: staffFiles, error: filesError } = await supabase
+      .from("branch_sanitary_document_files")
+      .select(getSanitaryDocumentFileSelect())
+      .eq("branch_id", branchId)
+      .eq("staff_member_id", staffRow.id)
+      .eq("is_active", true)
+      .returns<BranchSanitaryDocumentFileRow[]>();
+
+    if (filesError) {
+      return { error: formatDatabaseError(filesError, "No fue posible leer los archivos del empleado.") };
+    }
+
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+    revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+    return {
+      success: "Empleado guardado correctamente.",
+      staffMember: mapStaffMemberRow(staffRow),
+      files: staffFiles?.map(mapSanitaryDocumentFileRow) ?? savedFiles,
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No fue posible guardar el empleado." };
+  }
+}
+
+export async function archiveBranchSanitaryDocumentFileAction(
+  formData: FormData,
+): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const documentId = readString(formData, "documentId");
+
+  if (!branchId || !companySlug || !branchSlug || !documentId) {
+    return { error: "Debes indicar el documento a eliminar." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const { error } = await supabase
+    .from("branch_sanitary_document_files")
+    .update({ is_active: false })
+    .eq("id", documentId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible eliminar el documento.") };
+  }
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+  return { success: "Documento eliminado correctamente.", id: documentId };
+}
+
+export async function archiveBranchChemicalProductAction(
+  formData: FormData,
+): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const productId = readString(formData, "productId");
+
+  if (!branchId || !companySlug || !branchSlug || !productId) {
+    return { error: "Debes indicar el producto a eliminar." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const { error } = await supabase
+    .from("branch_chemical_products")
+    .update({ is_active: false })
+    .eq("id", productId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible eliminar el producto.") };
+  }
+
+  await supabase
+    .from("branch_sanitary_document_files")
+    .update({ is_active: false })
+    .eq("branch_id", branchId)
+    .eq("chemical_product_id", productId);
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+  return { success: "Producto eliminado correctamente.", id: productId };
+}
+
+export async function archiveBranchStaffMemberAction(
+  formData: FormData,
+): Promise<SanitaryDocumentActionState> {
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const branchSlug = readString(formData, "branchSlug");
+  const staffMemberId = readString(formData, "staffMemberId");
+
+  if (!branchId || !companySlug || !branchSlug || !staffMemberId) {
+    return { error: "Debes indicar el empleado a eliminar." };
+  }
+
+  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+
+  if (branch.id !== branchId) {
+    return { error: "La sede seleccionada no coincide con la ruta actual." };
+  }
+
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return { error: "Supabase no está configurado en el servidor." };
+  }
+
+  const { error } = await supabase
+    .from("branch_staff_members")
+    .update({ is_active: false })
+    .eq("id", staffMemberId)
+    .eq("branch_id", branchId);
+
+  if (error) {
+    return { error: formatDatabaseError(error, "No fue posible eliminar el empleado.") };
+  }
+
+  await supabase
+    .from("branch_sanitary_document_files")
+    .update({ is_active: false })
+    .eq("branch_id", branchId)
+    .eq("staff_member_id", staffMemberId);
+
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
+  revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}/cumplimiento`);
+  return { success: "Empleado eliminado correctamente.", id: staffMemberId };
 }
 
 async function createBranchCatalogItem({

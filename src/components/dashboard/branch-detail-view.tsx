@@ -20,10 +20,13 @@ import { createPublicFormPath, operationalFormLabels, operationalFormTypes } fro
 import { printableQrInstructions } from "@/lib/qr/printable";
 import type {
   BranchCatalogItemSummary,
+  BranchChemicalProductSummary,
   BranchDocumentSectionKey,
   BranchDocumentSummary,
   BranchFormQrSummary,
   BranchRefrigerationEquipmentType,
+  BranchSanitaryDocumentFileSummary,
+  BranchStaffMemberSummary,
   CompanySummary,
   OperationalFormType,
 } from "@/types/auth";
@@ -50,6 +53,9 @@ type BranchDetailViewProps = {
   qrCodes: BranchFormQrSummary[];
   refrigerationEquipment: BranchCatalogItemSummary[];
   sanitationAreas: BranchCatalogItemSummary[];
+  chemicalProducts: BranchChemicalProductSummary[];
+  staffMembers: BranchStaffMemberSummary[];
+  sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
 };
 
 type BranchSectionMeta = {
@@ -1305,10 +1311,21 @@ export function BranchOperationalView({
 export function BranchComplianceView({
   company,
   branch,
+  chemicalProducts,
+  staffMembers,
+  sanitaryDocumentFiles,
 }: BranchDetailViewProps) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="compliance">
-      <CompanyAdminDocumentsView />
+      <CompanyAdminDocumentsView
+        branchId={branch.id}
+        companyId={branch.companyId}
+        companySlug={company.slug}
+        branchSlug={branch.slug}
+        initialChemicalProducts={chemicalProducts}
+        initialStaffMembers={staffMembers}
+        initialSanitaryDocumentFiles={sanitaryDocumentFiles}
+      />
     </BranchLayout>
   );
 }

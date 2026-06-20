@@ -50,6 +50,52 @@ export type BranchDocumentSummary = {
   sortOrder: number;
 };
 
+export type BranchSanitaryDocumentKind =
+  | "sanitation_plan"
+  | "chemical_technical_sheet"
+  | "chemical_safety_sheet"
+  | "pest_control_certificate"
+  | "water_tank_cleaning_certificate"
+  | "acu_final_disposal_certificate"
+  | "food_handling_course"
+  | "medical_fitness_exam";
+
+export type BranchSanitaryDocumentFileSummary = {
+  id: string;
+  branchId: string;
+  companyId: string;
+  documentKind: BranchSanitaryDocumentKind;
+  chemicalProductId: string | null;
+  staffMemberId: string | null;
+  fileUrl: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  metadata: Record<string, unknown>;
+  expiresAt: string | null;
+  isActive: boolean;
+  uploadedAt: string;
+  updatedAt: string;
+};
+
+export type BranchChemicalProductSummary = {
+  id: string;
+  branchId: string;
+  companyId: string;
+  name: string;
+  isActive: boolean;
+  updatedAt: string;
+};
+
+export type BranchStaffMemberSummary = {
+  id: string;
+  branchId: string;
+  companyId: string;
+  fullName: string;
+  isActive: boolean;
+  updatedAt: string;
+};
+
 export type OperationalFormType =
   | "thermal_control"
   | "area_sanitation"

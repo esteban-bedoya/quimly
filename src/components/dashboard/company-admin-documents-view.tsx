@@ -1,6 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+
+import {
+  archiveBranchChemicalProductAction,
+  archiveBranchSanitaryDocumentFileAction,
+  archiveBranchStaffMemberAction,
+  saveBranchChemicalProductAction,
+  saveBranchSanitaryDocumentFileAction,
+  saveBranchStaffMemberAction,
+} from "@/app/dashboard/actions";
+import type {
+  BranchChemicalProductSummary,
+  BranchSanitaryDocumentFileSummary,
+  BranchSanitaryDocumentKind,
+  BranchStaffMemberSummary,
+} from "@/types/auth";
 
 const BASE_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
@@ -12,6 +27,8 @@ type UploadedPdf = {
   size: number;
   selectedAt: string;
   previewUrl: string | null;
+  sourceFile?: File;
+  isObjectUrl?: boolean;
 };
 
 type FileInputState = {
@@ -104,6 +121,11 @@ type DocumentFormData = {
   foodHandlingPdf: FileInputState;
   medicalExamIssuedAt: string;
   medicalExamPdf: FileInputState;
+};
+
+type AdminMessage = {
+  tone: "success" | "error";
+  text: string;
 };
 
 const DOCUMENT_SECTIONS: DocumentSectionMeta[] = [
@@ -239,7 +261,7 @@ function createEmptyDocumentFormData(): DocumentFormData {
 }
 
 function revokeUploadedPdf(file: UploadedPdf | null) {
-  if (!file?.previewUrl) {
+  if (!file?.previewUrl || !file.isObjectUrl) {
     return;
   }
 
@@ -348,6 +370,139 @@ function getMenuBadgeFromStatus(status: DocumentStatus): DocumentMenuBadgeState 
   };
 }
 
+function getMetadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
+function getMetadataNumberString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
+function toStoredPdf(file: BranchSanitaryDocumentFileSummary): UploadedPdf {
+  return {
+    id: file.id,
+    name: file.fileName,
+    size: file.fileSizeBytes,
+    selectedAt: file.uploadedAt,
+    previewUrl: file.fileUrl,
+  };
+}
+
+function toFileState(file: BranchSanitaryDocumentFileSummary | null | undefined): FileInputState {
+  return {
+    file: file ? toStoredPdf(file) : null,
+    error: null,
+  };
+}
+
+function findLatestFile(
+  files: BranchSanitaryDocumentFileSummary[],
+  documentKind: BranchSanitaryDocumentKind,
+  owner: { chemicalProductId?: string | null; staffMemberId?: string | null } = {},
+) {
+  return (
+    files.find((file) => {
+      if (file.documentKind !== documentKind || !file.isActive) {
+        return false;
+      }
+
+      if ("chemicalProductId" in owner && file.chemicalProductId !== owner.chemicalProductId) {
+        return false;
+      }
+
+      if ("staffMemberId" in owner && file.staffMemberId !== owner.staffMemberId) {
+        return false;
+      }
+
+      return true;
+    }) ?? null
+  );
+}
+
+function buildSanitationPlanRecord(files: BranchSanitaryDocumentFileSummary[]): SanitationPlanRecord | null {
+  const file = findLatestFile(files, "sanitation_plan");
+
+  if (!file) {
+    return null;
+  }
+
+  return {
+    id: file.id,
+    name: "Plan de Saneamiento Básico",
+    pdf: toStoredPdf(file),
+    updatedAt: file.updatedAt,
+  };
+}
+
+function buildDatedRecords(
+  files: BranchSanitaryDocumentFileSummary[],
+  documentKind: "pest_control_certificate" | "water_tank_cleaning_certificate",
+): DatedDocumentRecord[] {
+  return files
+    .filter((file) => file.documentKind === documentKind && file.isActive)
+    .map((file) => ({
+      id: file.id,
+      issuedAt: getMetadataString(file.metadata, "issuedAt"),
+      expiresAt: file.expiresAt ?? "",
+      updatedAt: file.updatedAt,
+      pdf: toStoredPdf(file),
+    }));
+}
+
+function buildAcuHistory(files: BranchSanitaryDocumentFileSummary[]): AcuCollectionRecord[] {
+  return files
+    .filter((file) => file.documentKind === "acu_final_disposal_certificate" && file.isActive)
+    .map((file) => ({
+      id: file.id,
+      collectedAt: getMetadataString(file.metadata, "collectedAt"),
+      quantity: getMetadataNumberString(file.metadata, "quantity"),
+      unit: getMetadataString(file.metadata, "unit") === "Litros" ? "Litros" : "Galones",
+      pdf: toStoredPdf(file),
+      updatedAt: file.updatedAt,
+    }));
+}
+
+function buildChemicalProductRecords(
+  products: BranchChemicalProductSummary[],
+  files: BranchSanitaryDocumentFileSummary[],
+): ChemicalProductRecord[] {
+  return products.map((product) => ({
+    id: product.id,
+    name: product.name,
+    technicalSheet: toFileState(findLatestFile(files, "chemical_technical_sheet", { chemicalProductId: product.id })),
+    safetySheet: toFileState(findLatestFile(files, "chemical_safety_sheet", { chemicalProductId: product.id })),
+    updatedAt: product.updatedAt,
+  }));
+}
+
+function buildStaffRecords(
+  staffMembers: BranchStaffMemberSummary[],
+  files: BranchSanitaryDocumentFileSummary[],
+): StaffRecord[] {
+  return staffMembers.map((staffMember) => {
+    const foodHandlingFile = findLatestFile(files, "food_handling_course", { staffMemberId: staffMember.id });
+    const medicalExamFile = findLatestFile(files, "medical_fitness_exam", { staffMemberId: staffMember.id });
+
+    return {
+      id: staffMember.id,
+      fullName: staffMember.fullName,
+      foodHandlingIssuedAt: foodHandlingFile ? getMetadataString(foodHandlingFile.metadata, "issuedAt") : "",
+      foodHandlingExpiresAt: foodHandlingFile?.expiresAt ?? "",
+      foodHandlingPdf: toFileState(foodHandlingFile),
+      medicalExamIssuedAt: medicalExamFile ? getMetadataString(medicalExamFile.metadata, "issuedAt") : "",
+      medicalExamExpiresAt: medicalExamFile?.expiresAt ?? "",
+      medicalExamPdf: toFileState(medicalExamFile),
+      updatedAt: staffMember.updatedAt,
+    };
+  });
+}
+
 function validatePdfFile(file: File, maxSizeBytes: number): FileInputState {
   const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
@@ -372,6 +527,8 @@ function validatePdfFile(file: File, maxSizeBytes: number): FileInputState {
       size: file.size,
       selectedAt: new Date().toISOString(),
       previewUrl: URL.createObjectURL(file),
+      sourceFile: file,
+      isObjectUrl: true,
     },
     error: null,
   };
@@ -625,6 +782,19 @@ function UploadPolicyNote({ maxSizeLabel }: { maxSizeLabel: string }) {
   );
 }
 
+function ActionMessage({ message }: { message: AdminMessage }) {
+  const className =
+    message.tone === "success"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+      : "border-rose-100 bg-rose-50 text-rose-700";
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 text-sm font-medium ${className}`}>
+      {message.text}
+    </div>
+  );
+}
+
 function RecordsList({
   children,
   emptyLabel = "No hay registros cargados.",
@@ -670,17 +840,46 @@ function PdfViewButton({ file }: { file: UploadedPdf | null }) {
   );
 }
 
-export function CompanyAdminDocumentsView() {
+type CompanyAdminDocumentsViewProps = {
+  branchId: string;
+  companyId: string;
+  companySlug: string;
+  branchSlug: string;
+  initialChemicalProducts: BranchChemicalProductSummary[];
+  initialStaffMembers: BranchStaffMemberSummary[];
+  initialSanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
+};
+
+export function CompanyAdminDocumentsView({
+  branchId,
+  companySlug,
+  branchSlug,
+  initialChemicalProducts,
+  initialStaffMembers,
+  initialSanitaryDocumentFiles,
+}: CompanyAdminDocumentsViewProps) {
   const sanitationPlanInputRef = useRef<HTMLInputElement | null>(null);
   const [activeSection, setActiveSection] = useState<DocumentSectionId | null>(null);
+  const [isSaving, startSaving] = useTransition();
   const [isRegistering, setIsRegistering] = useState(false);
   const [formData, setFormData] = useState<DocumentFormData>(createEmptyDocumentFormData);
-  const [sanitationPlan, setSanitationPlan] = useState<SanitationPlanRecord | null>(null);
-  const [chemicalProducts, setChemicalProducts] = useState<ChemicalProductRecord[]>([]);
-  const [pestControlRecords, setPestControlRecords] = useState<DatedDocumentRecord[]>([]);
-  const [waterTankRecords, setWaterTankRecords] = useState<DatedDocumentRecord[]>([]);
-  const [acuHistory, setAcuHistory] = useState<AcuCollectionRecord[]>([]);
-  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>([]);
+  const [actionMessage, setActionMessage] = useState<AdminMessage | null>(null);
+  const [sanitationPlan, setSanitationPlan] = useState<SanitationPlanRecord | null>(() =>
+    buildSanitationPlanRecord(initialSanitaryDocumentFiles),
+  );
+  const [chemicalProducts, setChemicalProducts] = useState<ChemicalProductRecord[]>(() =>
+    buildChemicalProductRecords(initialChemicalProducts, initialSanitaryDocumentFiles),
+  );
+  const [pestControlRecords, setPestControlRecords] = useState<DatedDocumentRecord[]>(() =>
+    buildDatedRecords(initialSanitaryDocumentFiles, "pest_control_certificate"),
+  );
+  const [waterTankRecords, setWaterTankRecords] = useState<DatedDocumentRecord[]>(() =>
+    buildDatedRecords(initialSanitaryDocumentFiles, "water_tank_cleaning_certificate"),
+  );
+  const [acuHistory, setAcuHistory] = useState<AcuCollectionRecord[]>(() => buildAcuHistory(initialSanitaryDocumentFiles));
+  const [staffMembers, setStaffMembers] = useState<StaffRecord[]>(() =>
+    buildStaffRecords(initialStaffMembers, initialSanitaryDocumentFiles),
+  );
   const activeSectionConfig = DOCUMENT_SECTIONS.find((section) => section.id === activeSection) ?? null;
   const latestPestControl = getLatestDatedRecord(pestControlRecords);
   const latestWaterTank = getLatestDatedRecord(waterTankRecords);
@@ -716,6 +915,34 @@ export function CompanyAdminDocumentsView() {
   const startRegistration = (nextData?: Partial<DocumentFormData>) => {
     setFormData({ ...createEmptyDocumentFormData(), ...nextData });
     setIsRegistering(true);
+    setActionMessage(null);
+  };
+
+  const createBaseFormData = () => {
+    const nextFormData = new FormData();
+    nextFormData.set("branchId", branchId);
+    nextFormData.set("companySlug", companySlug);
+    nextFormData.set("branchSlug", branchSlug);
+    return nextFormData;
+  };
+
+  const setResultMessage = (result: { error?: string; success?: string }) => {
+    if (result.error) {
+      setActionMessage({ tone: "error", text: result.error });
+      return false;
+    }
+
+    if (result.success) {
+      setActionMessage({ tone: "success", text: result.success });
+    }
+
+    return true;
+  };
+
+  const appendPdfFile = (nextFormData: FormData, key: string, fileState: FileInputState) => {
+    if (fileState.file?.sourceFile) {
+      nextFormData.set(key, fileState.file.sourceFile);
+    }
   };
 
   const replaceSanitationPlan = (file: File | null) => {
@@ -730,14 +957,31 @@ export function CompanyAdminDocumentsView() {
       return;
     }
 
-    revokeUploadedPdf(sanitationPlan?.pdf ?? null);
-    setSanitationPlan({
-      id: createId("sanitation-plan"),
-      name: "Plan de Saneamiento Básico",
-      pdf: nextFileState.file,
-      updatedAt: new Date().toISOString(),
+    setActionMessage(null);
+    updateFormData({ pdf: nextFileState });
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("documentKind", "sanitation_plan");
+      if (sanitationPlan?.id) {
+        nextFormData.set("documentId", sanitationPlan.id);
+      }
+      appendPdfFile(nextFormData, "pdfFile", nextFileState);
+
+      const result = await saveBranchSanitaryDocumentFileAction(nextFormData);
+
+      if (!setResultMessage(result) || !result.file) {
+        return;
+      }
+
+      revokeUploadedPdf(nextFileState.file);
+      setSanitationPlan({
+        id: result.file.id,
+        name: "Plan de Saneamiento Básico",
+        pdf: toStoredPdf(result.file),
+        updatedAt: result.file.updatedAt,
+      });
+      updateFormData({ pdf: createEmptyFileState() });
     });
-    updateFormData({ pdf: createEmptyFileState() });
   };
 
   const saveDatedRecord = (
@@ -755,24 +999,43 @@ export function CompanyAdminDocumentsView() {
       return;
     }
 
-    if (existingRecord?.pdf && formData.pdf.file && existingRecord.pdf.id !== formData.pdf.file.id) {
-      revokeUploadedPdf(existingRecord.pdf);
-    }
+    const expiresAt = addMonthsToDate(formData.issuedAt, monthsToExpire);
+    const documentKind: BranchSanitaryDocumentKind =
+      prefix === "pest-control" ? "pest_control_certificate" : "water_tank_cleaning_certificate";
 
-    const nextRecord: DatedDocumentRecord = {
-      id: formData.editingId ?? createId(prefix),
-      issuedAt: formData.issuedAt,
-      expiresAt: addMonthsToDate(formData.issuedAt, monthsToExpire),
-      updatedAt: new Date().toISOString(),
-      pdf: selectedPdf,
-    };
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("documentKind", documentKind);
+      nextFormData.set("expiresAt", expiresAt);
+      nextFormData.set("metadata", JSON.stringify({ issuedAt: formData.issuedAt }));
+      if (formData.editingId) {
+        nextFormData.set("documentId", formData.editingId);
+      }
+      appendPdfFile(nextFormData, "pdfFile", formData.pdf);
 
-    setRecords(
-      formData.editingId
-        ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
-        : [nextRecord, ...records],
-    );
-    resetRegistration();
+      const result = await saveBranchSanitaryDocumentFileAction(nextFormData);
+
+      if (!setResultMessage(result) || !result.file) {
+        return;
+      }
+
+      revokeUploadedPdf(formData.pdf.file);
+      const nextRecord: DatedDocumentRecord = {
+        id: result.file.id,
+        issuedAt: formData.issuedAt,
+        expiresAt: result.file.expiresAt ?? expiresAt,
+        updatedAt: result.file.updatedAt,
+        pdf: toStoredPdf(result.file),
+      };
+
+      setRecords(
+        formData.editingId
+          ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
+          : [nextRecord],
+      );
+      resetRegistration();
+    });
   };
 
   const saveAcuRecord = () => {
@@ -785,25 +1048,46 @@ export function CompanyAdminDocumentsView() {
       return;
     }
 
-    if (existingRecord?.pdf && formData.pdf.file && existingRecord.pdf.id !== formData.pdf.file.id) {
-      revokeUploadedPdf(existingRecord.pdf);
-    }
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("documentKind", "acu_final_disposal_certificate");
+      nextFormData.set(
+        "metadata",
+        JSON.stringify({
+          collectedAt: formData.collectedAt,
+          quantity: formData.quantity,
+          unit: formData.unit,
+        }),
+      );
+      if (formData.editingId) {
+        nextFormData.set("documentId", formData.editingId);
+      }
+      appendPdfFile(nextFormData, "pdfFile", formData.pdf);
 
-    const nextRecord: AcuCollectionRecord = {
-      id: formData.editingId ?? createId("acu-record"),
-      collectedAt: formData.collectedAt,
-      quantity: formData.quantity,
-      unit: formData.unit,
-      pdf: selectedPdf,
-      updatedAt: new Date().toISOString(),
-    };
+      const result = await saveBranchSanitaryDocumentFileAction(nextFormData);
 
-    setAcuHistory((currentRecords) =>
-      formData.editingId
-        ? currentRecords.map((record) => (record.id === formData.editingId ? nextRecord : record))
-        : [nextRecord, ...currentRecords],
-    );
-    resetRegistration();
+      if (!setResultMessage(result) || !result.file) {
+        return;
+      }
+
+      revokeUploadedPdf(formData.pdf.file);
+      const nextRecord: AcuCollectionRecord = {
+        id: result.file.id,
+        collectedAt: formData.collectedAt,
+        quantity: formData.quantity,
+        unit: formData.unit,
+        pdf: toStoredPdf(result.file),
+        updatedAt: result.file.updatedAt,
+      };
+
+      setAcuHistory((currentRecords) =>
+        formData.editingId
+          ? currentRecords.map((record) => (record.id === formData.editingId ? nextRecord : record))
+          : [nextRecord, ...currentRecords],
+      );
+      resetRegistration();
+    });
   };
 
   const saveChemicalProduct = () => {
@@ -821,82 +1105,163 @@ export function CompanyAdminDocumentsView() {
       return;
     }
 
-    if (
-      existingProduct?.technicalSheet.file &&
-      formData.technicalSheet.file &&
-      existingProduct.technicalSheet.file.id !== formData.technicalSheet.file.id
-    ) {
-      revokeUploadedPdf(existingProduct.technicalSheet.file);
-    }
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("productName", formData.productName.trim());
+      if (formData.editingId) {
+        nextFormData.set("productId", formData.editingId);
+      }
+      appendPdfFile(nextFormData, "technicalSheetPdf", formData.technicalSheet);
+      appendPdfFile(nextFormData, "safetySheetPdf", formData.safetySheet);
 
-    if (
-      existingProduct?.safetySheet.file &&
-      formData.safetySheet.file &&
-      existingProduct.safetySheet.file.id !== formData.safetySheet.file.id
-    ) {
-      revokeUploadedPdf(existingProduct.safetySheet.file);
-    }
+      const result = await saveBranchChemicalProductAction(nextFormData);
 
-    const nextProduct: ChemicalProductRecord = {
-      id: formData.editingId ?? createId("chemical-product"),
-      name: formData.productName.trim(),
-      technicalSheet,
-      safetySheet,
-      updatedAt: new Date().toISOString(),
-    };
+      if (!setResultMessage(result) || !result.product) {
+        return;
+      }
 
-    setChemicalProducts((currentProducts) =>
-      formData.editingId
-        ? currentProducts.map((product) => (product.id === formData.editingId ? nextProduct : product))
-        : [nextProduct, ...currentProducts],
-    );
-    resetRegistration();
+      revokeUploadedPdf(formData.technicalSheet.file);
+      revokeUploadedPdf(formData.safetySheet.file);
+
+      const technicalSheetFile =
+        result.files?.find((file) => file.documentKind === "chemical_technical_sheet") ?? null;
+      const safetySheetFile = result.files?.find((file) => file.documentKind === "chemical_safety_sheet") ?? null;
+      const nextProduct: ChemicalProductRecord = {
+        id: result.product.id,
+        name: result.product.name,
+        technicalSheet: technicalSheetFile ? toFileState(technicalSheetFile) : technicalSheet,
+        safetySheet: safetySheetFile ? toFileState(safetySheetFile) : safetySheet,
+        updatedAt: result.product.updatedAt,
+      };
+
+      setChemicalProducts((currentProducts) =>
+        formData.editingId
+          ? currentProducts.map((product) => (product.id === formData.editingId ? nextProduct : product))
+          : [nextProduct, ...currentProducts],
+      );
+      resetRegistration();
+    });
   };
 
   const saveStaffRecord = () => {
     const existingMember = formData.editingId
       ? staffMembers.find((member) => member.id === formData.editingId) ?? null
       : null;
-    const hasAtLeastOnePdf = Boolean(formData.foodHandlingPdf.file || formData.medicalExamPdf.file);
+    const hasAtLeastOnePdf = Boolean(
+      formData.foodHandlingPdf.file ||
+        formData.medicalExamPdf.file ||
+        existingMember?.foodHandlingPdf.file ||
+        existingMember?.medicalExamPdf.file,
+    );
 
     if (!formData.fullName.trim() || !hasAtLeastOnePdf) {
       return;
     }
 
     if (
-      existingMember?.foodHandlingPdf.file &&
-      formData.foodHandlingPdf.file &&
-      existingMember.foodHandlingPdf.file.id !== formData.foodHandlingPdf.file.id
+      (formData.foodHandlingPdf.file && !formData.foodHandlingIssuedAt) ||
+      (formData.medicalExamPdf.file && !formData.medicalExamIssuedAt)
     ) {
-      revokeUploadedPdf(existingMember.foodHandlingPdf.file);
+      setActionMessage({ tone: "error", text: "Debes indicar la fecha del PDF que vas a guardar." });
+      return;
     }
 
-    if (
-      existingMember?.medicalExamPdf.file &&
-      formData.medicalExamPdf.file &&
-      existingMember.medicalExamPdf.file.id !== formData.medicalExamPdf.file.id
-    ) {
-      revokeUploadedPdf(existingMember.medicalExamPdf.file);
-    }
+    const foodHandlingExpiresAt = addMonthsToDate(formData.foodHandlingIssuedAt, 12);
+    const medicalExamExpiresAt = addMonthsToDate(formData.medicalExamIssuedAt, 12);
 
-    const nextMember: StaffRecord = {
-      id: formData.editingId ?? createId("staff-member"),
-      fullName: formData.fullName.trim(),
-      foodHandlingIssuedAt: formData.foodHandlingIssuedAt,
-      foodHandlingExpiresAt: addMonthsToDate(formData.foodHandlingIssuedAt, 12),
-      foodHandlingPdf: formData.foodHandlingPdf,
-      medicalExamIssuedAt: formData.medicalExamIssuedAt,
-      medicalExamExpiresAt: addMonthsToDate(formData.medicalExamIssuedAt, 12),
-      medicalExamPdf: formData.medicalExamPdf,
-      updatedAt: new Date().toISOString(),
-    };
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("fullName", formData.fullName.trim());
+      nextFormData.set("foodHandlingIssuedAt", formData.foodHandlingIssuedAt);
+      nextFormData.set("foodHandlingExpiresAt", foodHandlingExpiresAt);
+      nextFormData.set("medicalExamIssuedAt", formData.medicalExamIssuedAt);
+      nextFormData.set("medicalExamExpiresAt", medicalExamExpiresAt);
+      if (formData.editingId) {
+        nextFormData.set("staffMemberId", formData.editingId);
+      }
+      appendPdfFile(nextFormData, "foodHandlingPdf", formData.foodHandlingPdf);
+      appendPdfFile(nextFormData, "medicalExamPdf", formData.medicalExamPdf);
 
-    setStaffMembers((currentMembers) =>
-      formData.editingId
-        ? currentMembers.map((member) => (member.id === formData.editingId ? nextMember : member))
-        : [nextMember, ...currentMembers],
-    );
-    resetRegistration();
+      const result = await saveBranchStaffMemberAction(nextFormData);
+
+      if (!setResultMessage(result) || !result.staffMember) {
+        return;
+      }
+
+      revokeUploadedPdf(formData.foodHandlingPdf.file);
+      revokeUploadedPdf(formData.medicalExamPdf.file);
+
+      const foodHandlingFile = result.files?.find((file) => file.documentKind === "food_handling_course") ?? null;
+      const medicalExamFile = result.files?.find((file) => file.documentKind === "medical_fitness_exam") ?? null;
+      const nextMember: StaffRecord = {
+        id: result.staffMember.id,
+        fullName: result.staffMember.fullName,
+        foodHandlingIssuedAt: formData.foodHandlingIssuedAt,
+        foodHandlingExpiresAt: foodHandlingFile?.expiresAt ?? foodHandlingExpiresAt,
+        foodHandlingPdf: foodHandlingFile ? toFileState(foodHandlingFile) : formData.foodHandlingPdf,
+        medicalExamIssuedAt: formData.medicalExamIssuedAt,
+        medicalExamExpiresAt: medicalExamFile?.expiresAt ?? medicalExamExpiresAt,
+        medicalExamPdf: medicalExamFile ? toFileState(medicalExamFile) : formData.medicalExamPdf,
+        updatedAt: result.staffMember.updatedAt,
+      };
+
+      setStaffMembers((currentMembers) =>
+        formData.editingId
+          ? currentMembers.map((member) => (member.id === formData.editingId ? nextMember : member))
+          : [nextMember, ...currentMembers],
+      );
+      resetRegistration();
+    });
+  };
+
+  const archiveDocumentFile = (documentId: string, onSuccess: () => void) => {
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("documentId", documentId);
+
+      const result = await archiveBranchSanitaryDocumentFileAction(nextFormData);
+
+      if (!setResultMessage(result)) {
+        return;
+      }
+
+      onSuccess();
+    });
+  };
+
+  const archiveChemicalProduct = (productId: string) => {
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("productId", productId);
+
+      const result = await archiveBranchChemicalProductAction(nextFormData);
+
+      if (!setResultMessage(result)) {
+        return;
+      }
+
+      setChemicalProducts((currentProducts) => currentProducts.filter((product) => product.id !== productId));
+    });
+  };
+
+  const archiveStaffMember = (staffMemberId: string) => {
+    setActionMessage(null);
+    startSaving(async () => {
+      const nextFormData = createBaseFormData();
+      nextFormData.set("staffMemberId", staffMemberId);
+
+      const result = await archiveBranchStaffMemberAction(nextFormData);
+
+      if (!setResultMessage(result)) {
+        return;
+      }
+
+      setStaffMembers((currentMembers) => currentMembers.filter((member) => member.id !== staffMemberId));
+    });
   };
 
   const renderPlanSection = () => (
@@ -916,9 +1281,10 @@ export function CompanyAdminDocumentsView() {
         <button
           type="button"
           onClick={() => sanitationPlanInputRef.current?.click()}
-          className="ui-pill-button-primary min-h-11 px-5"
+          disabled={isSaving}
+          className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {sanitationPlan ? "Reemplazar documento" : "Subir documento"}
+          {isSaving ? "Guardando..." : sanitationPlan ? "Reemplazar documento" : "Subir documento"}
         </button>
       </div>
       <UploadPolicyNote maxSizeLabel="6 MB" />
@@ -942,8 +1308,11 @@ export function CompanyAdminDocumentsView() {
               type="button"
               disabled={!sanitationPlan}
               onClick={() => {
-                revokeUploadedPdf(sanitationPlan?.pdf ?? null);
-                setSanitationPlan(null);
+                if (!sanitationPlan) {
+                  return;
+                }
+
+                archiveDocumentFile(sanitationPlan.id, () => setSanitationPlan(null));
               }}
               className="text-xs font-medium text-rose-500 transition hover:text-rose-700 disabled:text-gray-300"
             >
@@ -974,7 +1343,8 @@ export function CompanyAdminDocumentsView() {
       {isRegistering ? (
         <InlineDocumentForm
           onSubmit={() => saveDatedRecord(records, setRecords, monthsToExpire, prefix)}
-          disabled={!formData.issuedAt || !formData.pdf.file}
+          disabled={isSaving || !formData.issuedAt || !formData.pdf.file}
+          submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
         >
           <label className="grid gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
@@ -1033,7 +1403,11 @@ export function CompanyAdminDocumentsView() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRecords(records.filter((currentRecord) => currentRecord.id !== record.id))}
+                    onClick={() =>
+                      archiveDocumentFile(record.id, () =>
+                        setRecords(records.filter((currentRecord) => currentRecord.id !== record.id)),
+                      )
+                    }
                     className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
                   >
                     Eliminar
@@ -1059,7 +1433,8 @@ export function CompanyAdminDocumentsView() {
       {isRegistering ? (
         <InlineDocumentForm
           onSubmit={saveAcuRecord}
-          disabled={!formData.collectedAt || !formData.quantity || !formData.pdf.file}
+          disabled={isSaving || !formData.collectedAt || !formData.quantity || !formData.pdf.file}
+          submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-2">
@@ -1138,8 +1513,9 @@ export function CompanyAdminDocumentsView() {
                   <button
                     type="button"
                     onClick={() => {
-                      revokeUploadedPdf(record.pdf);
-                      setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id));
+                      archiveDocumentFile(record.id, () =>
+                        setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id)),
+                      );
                     }}
                     className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
                   >
@@ -1177,8 +1553,8 @@ export function CompanyAdminDocumentsView() {
         {isRegistering ? (
           <InlineDocumentForm
             onSubmit={saveChemicalProduct}
-            disabled={!formData.productName.trim() || !hasChemicalPdf}
-            submitLabel={formData.editingId ? "Guardar producto" : "Registrar producto"}
+            disabled={isSaving || !formData.productName.trim() || !hasChemicalPdf}
+            submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar producto" : "Registrar producto"}
           >
           <label className="grid gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
@@ -1243,9 +1619,7 @@ export function CompanyAdminDocumentsView() {
                   <button
                     type="button"
                     onClick={() => {
-                      revokeUploadedPdf(product.technicalSheet.file);
-                      revokeUploadedPdf(product.safetySheet.file);
-                      setChemicalProducts(chemicalProducts.filter((currentProduct) => currentProduct.id !== product.id));
+                      archiveChemicalProduct(product.id);
                     }}
                     className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
                   >
@@ -1261,7 +1635,18 @@ export function CompanyAdminDocumentsView() {
   };
 
   const renderStaffSection = () => {
-    const canSaveStaff = Boolean(formData.fullName.trim() && (formData.foodHandlingPdf.file || formData.medicalExamPdf.file));
+    const existingMember = formData.editingId
+      ? staffMembers.find((member) => member.id === formData.editingId) ?? null
+      : null;
+    const canSaveStaff = Boolean(
+      formData.fullName.trim() &&
+        (formData.foodHandlingPdf.file ||
+          formData.medicalExamPdf.file ||
+          existingMember?.foodHandlingPdf.file ||
+          existingMember?.medicalExamPdf.file) &&
+        (!formData.foodHandlingPdf.file || formData.foodHandlingIssuedAt) &&
+        (!formData.medicalExamPdf.file || formData.medicalExamIssuedAt),
+    );
 
     return (
       <div className="grid gap-4">
@@ -1276,8 +1661,8 @@ export function CompanyAdminDocumentsView() {
         {isRegistering ? (
           <InlineDocumentForm
             onSubmit={saveStaffRecord}
-            disabled={!canSaveStaff}
-            submitLabel={formData.editingId ? "Guardar empleado" : "Registrar empleado"}
+            disabled={isSaving || !canSaveStaff}
+            submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar empleado" : "Registrar empleado"}
           >
             <label className="grid gap-2">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Nombre</span>
@@ -1365,9 +1750,7 @@ export function CompanyAdminDocumentsView() {
                     <button
                       type="button"
                       onClick={() => {
-                        revokeUploadedPdf(member.foodHandlingPdf.file);
-                        revokeUploadedPdf(member.medicalExamPdf.file);
-                        setStaffMembers(staffMembers.filter((currentMember) => currentMember.id !== member.id));
+                        archiveStaffMember(member.id);
                       }}
                       className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
                     >
@@ -1419,7 +1802,10 @@ export function CompanyAdminDocumentsView() {
       ) : null}
 
       {activeSectionConfig ? (
-        <DedicatedSectionScreen>{renderActiveSection(activeSectionConfig.id)}</DedicatedSectionScreen>
+        <DedicatedSectionScreen>
+          {actionMessage ? <ActionMessage message={actionMessage} /> : null}
+          {renderActiveSection(activeSectionConfig.id)}
+        </DedicatedSectionScreen>
       ) : (
         <div className="mx-auto mt-6 w-full max-w-3xl px-4">
           <article className="rounded-[1.45rem] p-5 text-left dashboard-card-surface dashboard-card-surface-operational">
