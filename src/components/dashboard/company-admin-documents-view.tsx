@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import {
   archiveBranchChemicalProductAction,
   archiveBranchSanitaryDocumentFileAction,
   archiveBranchStaffMemberAction,
-  loadBranchSanitaryDocumentsAction,
   saveBranchChemicalProductAction,
   saveBranchSanitaryDocumentFileAction,
   saveBranchStaffMemberAction,
@@ -20,7 +20,9 @@ import type {
 
 const BASE_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
+const ACTION_MESSAGE_AUTO_DISMISS_MS = 8000;
 const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
+const DOCUMENT_MODAL_DIVIDER_CLASS = "border-t border-gray-200";
 
 type UploadedPdf = {
   id: string;
@@ -81,8 +83,6 @@ type DatedDocumentRecord = {
 type AcuCollectionRecord = {
   id: string;
   collectedAt: string;
-  quantity: string;
-  unit: "Galones" | "Litros";
   pdf: UploadedPdf;
   updatedAt: string;
 };
@@ -112,8 +112,6 @@ type DocumentFormData = {
   pdf: FileInputState;
   issuedAt: string;
   collectedAt: string;
-  quantity: string;
-  unit: "Galones" | "Litros";
   productName: string;
   technicalSheet: FileInputState;
   safetySheet: FileInputState;
@@ -184,11 +182,11 @@ const DOCUMENT_MENU_ITEMS: DocumentMenuItem[] = [
   },
   {
     sectionId: "staff_records",
-    title: "Fichas del personal (manipulación de alimentos y exámenes médicos)",
+    title: "Fichas del personal (cursos manipulación de alimentos y exámenes de aptitud médica)",
   },
   {
     sectionId: "chemical_products",
-    title: "Fichas técnicas y hojas de seguridad (de los productos químicos)",
+    title: "Fichas de productos químicos (fichas técnicas y hojas de seguridad)",
   },
 ];
 
@@ -248,8 +246,6 @@ function createEmptyDocumentFormData(): DocumentFormData {
     pdf: createEmptyFileState(),
     issuedAt: "",
     collectedAt: "",
-    quantity: "",
-    unit: "Galones",
     productName: "",
     technicalSheet: createEmptyFileState(),
     safetySheet: createEmptyFileState(),
@@ -330,6 +326,23 @@ function getLatestDatedRecord(records: DatedDocumentRecord[]) {
   return records[0] ?? null;
 }
 
+function getDocumentDateTime(value: string) {
+  const time = Date.parse(`${value}T00:00:00`);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function sortDatedRecordsByIssuedAt(records: DatedDocumentRecord[]) {
+  return [...records].sort((leftRecord, rightRecord) => {
+    return getDocumentDateTime(rightRecord.issuedAt) - getDocumentDateTime(leftRecord.issuedAt);
+  });
+}
+
+function sortAcuHistoryByCollectedAt(records: AcuCollectionRecord[]) {
+  return [...records].sort((leftRecord, rightRecord) => {
+    return getDocumentDateTime(rightRecord.collectedAt) - getDocumentDateTime(leftRecord.collectedAt);
+  });
+}
+
 function getAggregatedProductStatus(products: ChemicalProductRecord[]): DocumentStatus {
   if (products.length === 0) {
     return "Sin registro";
@@ -373,15 +386,6 @@ function getMenuBadgeFromStatus(status: DocumentStatus): DocumentMenuBadgeState 
 
 function getMetadataString(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key];
-  return typeof value === "string" ? value : "";
-}
-
-function getMetadataNumberString(metadata: Record<string, unknown>, key: string) {
-  const value = metadata[key];
-  if (typeof value === "number") {
-    return String(value);
-  }
-
   return typeof value === "string" ? value : "";
 }
 
@@ -445,7 +449,7 @@ function buildDatedRecords(
   files: BranchSanitaryDocumentFileSummary[],
   documentKind: "pest_control_certificate" | "water_tank_cleaning_certificate",
 ): DatedDocumentRecord[] {
-  return files
+  const records = files
     .filter((file) => file.documentKind === documentKind && file.isActive)
     .map((file) => ({
       id: file.id,
@@ -454,19 +458,21 @@ function buildDatedRecords(
       updatedAt: file.updatedAt,
       pdf: toStoredPdf(file),
     }));
+
+  return sortDatedRecordsByIssuedAt(records);
 }
 
 function buildAcuHistory(files: BranchSanitaryDocumentFileSummary[]): AcuCollectionRecord[] {
-  return files
+  const records = files
     .filter((file) => file.documentKind === "acu_final_disposal_certificate" && file.isActive)
     .map((file) => ({
       id: file.id,
       collectedAt: getMetadataString(file.metadata, "collectedAt"),
-      quantity: getMetadataNumberString(file.metadata, "quantity"),
-      unit: getMetadataString(file.metadata, "unit") === "Litros" ? "Litros" : "Galones",
       pdf: toStoredPdf(file),
       updatedAt: file.updatedAt,
     }));
+
+  return sortAcuHistoryByCollectedAt(records);
 }
 
 function buildChemicalProductRecords(
@@ -558,13 +564,19 @@ function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
   return <span className={`text-xs font-medium ${toneClassName}`}>{badge.label}</span>;
 }
 
+function formatStoredRecordCount(count: number) {
+  return `${count} ${count === 1 ? "registro almacenado" : "registros almacenados"}`;
+}
+
 function DocumentMenuCard({
   item,
   badge,
+  countLabel,
   onSelect,
 }: {
   item: DocumentMenuItem;
   badge: DocumentMenuBadgeState;
+  countLabel: string;
   onSelect: (sectionId: DocumentSectionId) => void;
 }) {
   return (
@@ -574,7 +586,10 @@ function DocumentMenuCard({
       className="block w-full cursor-pointer rounded-xl bg-[#fafbfc] px-2 py-4 text-left transition-all duration-200 ease-out hover:scale-[1.015] hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-inset hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-[#2a7f86]/20 active:scale-[0.995]"
     >
       <span className="flex items-start gap-3">
-        <span className="font-medium text-[15px] text-gray-800">{item.title}</span>
+        <span className="min-w-0">
+          <span className="block font-medium text-[15px] text-gray-800">{item.title}</span>
+          <span className="mt-1 block text-xs font-medium text-gray-400">{countLabel}</span>
+        </span>
         <span className="ml-auto shrink-0 pt-0.5">
           <DocumentMenuBadge badge={badge} />
         </span>
@@ -670,7 +685,7 @@ function CompactPdfInput({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 gap-2">
       <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">{label}</span>
       <input
         ref={fileInputRef}
@@ -690,7 +705,7 @@ function CompactPdfInput({
           event.currentTarget.value = "";
         }}
       />
-      <div className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-4 py-2">
+      <div className="flex min-h-12 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-4 py-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-gray-800">
             {state.file ? state.file.name : "Selecciona un PDF"}
@@ -712,36 +727,72 @@ function CompactPdfInput({
   );
 }
 
-function InlineDocumentForm({
+function DocumentRegisterModal({
   children,
+  title,
+  message,
+  onCancel,
   onSubmit,
   disabled,
   submitLabel = "Guardar registro",
+  maxWidthClassName = "max-w-lg",
 }: {
   children: ReactNode;
+  title: string;
+  message?: AdminMessage | null;
+  onCancel: () => void;
   onSubmit: () => void;
   disabled?: boolean;
   submitLabel?: string;
+  maxWidthClassName?: string;
 }) {
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-      className="bg-gray-50/60 border border-gray-100 rounded-2xl p-6 mb-6 text-left transition-all duration-300 ease-in-out animate-fadeIn"
-    >
-      <div className="grid gap-4">{children}</div>
-      <div className="mt-5 flex justify-end">
-        <button
-          type="submit"
-          disabled={disabled}
-          className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          {submitLabel}
-        </button>
-      </div>
-    </form>
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 py-6 backdrop-blur-md">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+        className={`ui-modal-surface w-full ${maxWidthClassName} max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[1.7rem] p-6 text-left transition-all duration-300 ease-in-out animate-fadeIn`}
+        aria-modal="true"
+        role="dialog"
+      >
+        <div className="space-y-2">
+          <h3 className="ui-modal-title">{title}</h3>
+          <p className="ui-modal-copy">Completa la información y carga únicamente archivos PDF.</p>
+        </div>
+
+        <div className="mt-4 grid gap-4">{children}</div>
+
+        {message ? (
+          <div className="mt-4">
+            <ActionMessage message={message} />
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="ui-pill-button-secondary ui-modal-action-secondary"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={disabled}
+            className="ui-pill-button-primary ui-modal-action-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }
 
@@ -843,7 +894,6 @@ function PdfViewButton({ file }: { file: UploadedPdf | null }) {
 
 type CompanyAdminDocumentsViewProps = {
   branchId: string;
-  companyId: string;
   companySlug: string;
   branchSlug: string;
   initialChemicalProducts: BranchChemicalProductSummary[];
@@ -892,22 +942,56 @@ export function CompanyAdminDocumentsView({
     acu_final_disposal: getMenuBadgeFromStatus(acuHistory.length ? "Al día" : "Sin registro"),
     staff_records: getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
   };
+  const sectionCountLabels: Record<DocumentSectionId, string> = {
+    sanitation_plan: formatStoredRecordCount(sanitationPlan ? 1 : 0),
+    pest_control: formatStoredRecordCount(pestControlRecords.length),
+    water_tank_cleaning: formatStoredRecordCount(waterTankRecords.length),
+    acu_final_disposal: formatStoredRecordCount(acuHistory.length),
+    staff_records: formatStoredRecordCount(staffMembers.length),
+    chemical_products: formatStoredRecordCount(chemicalProducts.length),
+  };
 
-  const resetRegistration = () => {
+  const resetRegistration = useCallback(() => {
     setIsRegistering(false);
     setFormData(createEmptyDocumentFormData());
-  };
+  }, []);
+
+  const clearActionMessage = useCallback(() => {
+    setActionMessage(null);
+  }, []);
+
+  const cancelRegistration = useCallback(() => {
+    resetRegistration();
+    clearActionMessage();
+  }, [clearActionMessage, resetRegistration]);
+
+  const showActionMessage = useCallback((message: AdminMessage) => {
+    setActionMessage(message);
+  }, []);
+
+  useEffect(() => {
+    if (actionMessage?.tone !== "success") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setActionMessage(null);
+    }, ACTION_MESSAGE_AUTO_DISMISS_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [actionMessage]);
 
   useEffect(() => {
     const showDocumentsMenu = () => {
       setActiveSection(null);
       resetRegistration();
+      clearActionMessage();
     };
 
     window.addEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
 
     return () => window.removeEventListener(DOCUMENTS_HOME_EVENT, showDocumentsMenu);
-  }, []);
+  }, [clearActionMessage, resetRegistration]);
 
   const updateFormData = (nextData: Partial<DocumentFormData>) => {
     setFormData((currentData) => ({ ...currentData, ...nextData }));
@@ -916,7 +1000,7 @@ export function CompanyAdminDocumentsView({
   const startRegistration = (nextData?: Partial<DocumentFormData>) => {
     setFormData({ ...createEmptyDocumentFormData(), ...nextData });
     setIsRegistering(true);
-    setActionMessage(null);
+    clearActionMessage();
   };
 
   const createBaseFormData = () => {
@@ -929,12 +1013,12 @@ export function CompanyAdminDocumentsView({
 
   const setResultMessage = (result: { error?: string; success?: string }) => {
     if (result.error) {
-      setActionMessage({ tone: "error", text: result.error });
+      showActionMessage({ tone: "error", text: result.error });
       return false;
     }
 
     if (result.success) {
-      setActionMessage({ tone: "success", text: result.success });
+      showActionMessage({ tone: "success", text: result.success });
     }
 
     return true;
@@ -945,52 +1029,6 @@ export function CompanyAdminDocumentsView({
       nextFormData.set(key, fileState.file.sourceFile);
     }
   };
-
-  const hydrateStoredDocuments = ({
-    chemicalProductRows,
-    staffMemberRows,
-    sanitaryDocumentFileRows,
-  }: {
-    chemicalProductRows: BranchChemicalProductSummary[];
-    staffMemberRows: BranchStaffMemberSummary[];
-    sanitaryDocumentFileRows: BranchSanitaryDocumentFileSummary[];
-  }) => {
-    setSanitationPlan(buildSanitationPlanRecord(sanitaryDocumentFileRows));
-    setChemicalProducts(buildChemicalProductRecords(chemicalProductRows, sanitaryDocumentFileRows));
-    setPestControlRecords(buildDatedRecords(sanitaryDocumentFileRows, "pest_control_certificate"));
-    setWaterTankRecords(buildDatedRecords(sanitaryDocumentFileRows, "water_tank_cleaning_certificate"));
-    setAcuHistory(buildAcuHistory(sanitaryDocumentFileRows));
-    setStaffMembers(buildStaffRecords(staffMemberRows, sanitaryDocumentFileRows));
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    const nextFormData = new FormData();
-    nextFormData.set("branchId", branchId);
-    nextFormData.set("companySlug", companySlug);
-    nextFormData.set("branchSlug", branchSlug);
-
-    loadBranchSanitaryDocumentsAction(nextFormData).then((result) => {
-      if (!isMounted) {
-        return;
-      }
-
-      if (result.error) {
-        setActionMessage({ tone: "error", text: result.error });
-        return;
-      }
-
-      hydrateStoredDocuments({
-        chemicalProductRows: result.chemicalProducts ?? [],
-        staffMemberRows: result.staffMembers ?? [],
-        sanitaryDocumentFileRows: result.sanitaryDocumentFiles ?? [],
-      });
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [branchId, branchSlug, companySlug]);
 
   const replaceSanitationPlan = (file: File | null) => {
     if (!file) {
@@ -1004,7 +1042,7 @@ export function CompanyAdminDocumentsView({
       return;
     }
 
-    setActionMessage(null);
+    clearActionMessage();
     updateFormData({ pdf: nextFileState });
     startSaving(async () => {
       const nextFormData = createBaseFormData();
@@ -1050,7 +1088,7 @@ export function CompanyAdminDocumentsView({
     const documentKind: BranchSanitaryDocumentKind =
       prefix === "pest-control" ? "pest_control_certificate" : "water_tank_cleaning_certificate";
 
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("documentKind", documentKind);
@@ -1077,9 +1115,11 @@ export function CompanyAdminDocumentsView({
       };
 
       setRecords(
-        formData.editingId
-          ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
-          : [nextRecord],
+        sortDatedRecordsByIssuedAt(
+          formData.editingId
+            ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
+            : [nextRecord],
+        ),
       );
       resetRegistration();
     });
@@ -1091,11 +1131,11 @@ export function CompanyAdminDocumentsView({
       : null;
     const selectedPdf = formData.pdf.file ?? existingRecord?.pdf ?? null;
 
-    if (!formData.collectedAt || !formData.quantity || !selectedPdf) {
+    if (!formData.collectedAt || !selectedPdf) {
       return;
     }
 
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("documentKind", "acu_final_disposal_certificate");
@@ -1103,8 +1143,6 @@ export function CompanyAdminDocumentsView({
         "metadata",
         JSON.stringify({
           collectedAt: formData.collectedAt,
-          quantity: formData.quantity,
-          unit: formData.unit,
         }),
       );
       if (formData.editingId) {
@@ -1122,16 +1160,16 @@ export function CompanyAdminDocumentsView({
       const nextRecord: AcuCollectionRecord = {
         id: result.file.id,
         collectedAt: formData.collectedAt,
-        quantity: formData.quantity,
-        unit: formData.unit,
         pdf: toStoredPdf(result.file),
         updatedAt: result.file.updatedAt,
       };
 
       setAcuHistory((currentRecords) =>
-        formData.editingId
-          ? currentRecords.map((record) => (record.id === formData.editingId ? nextRecord : record))
-          : [nextRecord, ...currentRecords],
+        sortAcuHistoryByCollectedAt(
+          formData.editingId
+            ? currentRecords.map((record) => (record.id === formData.editingId ? nextRecord : record))
+            : [nextRecord, ...currentRecords],
+        ),
       );
       resetRegistration();
     });
@@ -1152,7 +1190,7 @@ export function CompanyAdminDocumentsView({
       return;
     }
 
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("productName", formData.productName.trim());
@@ -1210,14 +1248,14 @@ export function CompanyAdminDocumentsView({
       (formData.foodHandlingPdf.file && !formData.foodHandlingIssuedAt) ||
       (formData.medicalExamPdf.file && !formData.medicalExamIssuedAt)
     ) {
-      setActionMessage({ tone: "error", text: "Debes indicar la fecha del PDF que vas a guardar." });
+      showActionMessage({ tone: "error", text: "Debes indicar la fecha del PDF que vas a guardar." });
       return;
     }
 
     const foodHandlingExpiresAt = addMonthsToDate(formData.foodHandlingIssuedAt, 12);
     const medicalExamExpiresAt = addMonthsToDate(formData.medicalExamIssuedAt, 12);
 
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("fullName", formData.fullName.trim());
@@ -1264,7 +1302,7 @@ export function CompanyAdminDocumentsView({
   };
 
   const archiveDocumentFile = (documentId: string, onSuccess: () => void) => {
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("documentId", documentId);
@@ -1280,7 +1318,7 @@ export function CompanyAdminDocumentsView({
   };
 
   const archiveChemicalProduct = (productId: string) => {
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("productId", productId);
@@ -1296,7 +1334,7 @@ export function CompanyAdminDocumentsView({
   };
 
   const archiveStaffMember = (staffMemberId: string) => {
-    setActionMessage(null);
+    clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("staffMemberId", staffMemberId);
@@ -1383,39 +1421,46 @@ export function CompanyAdminDocumentsView({
         isRegistering={isRegistering}
         actionLabel="+ Registrar dato"
         onStart={() => startRegistration()}
-        onCancel={resetRegistration}
+        onCancel={cancelRegistration}
       />
       <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
-        <InlineDocumentForm
+        <DocumentRegisterModal
+          title={formData.editingId ? "Editar registro" : "Registrar dato"}
+          message={actionMessage}
+          onCancel={cancelRegistration}
           onSubmit={() => saveDatedRecord(records, setRecords, monthsToExpire, prefix)}
           disabled={isSaving || !formData.issuedAt || !formData.pdf.file}
           submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
         >
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-              {dateLabel}
-            </span>
-            <input
-              type="date"
-              value={formData.issuedAt}
-              onChange={(event) => updateFormData({ issuedAt: event.currentTarget.value })}
-              className="ui-document-form-control"
-            />
-          </label>
-          {formData.issuedAt ? (
-            <p className="text-xs font-medium text-gray-400">
-              Vencimiento: {formatDate(addMonthsToDate(formData.issuedAt, monthsToExpire))}
-            </p>
-          ) : null}
           <CompactPdfInput
             id={`${prefix}-pdf`}
             label="Certificado PDF"
             state={formData.pdf}
             onChange={(pdf) => updateFormData({ pdf })}
           />
-        </InlineDocumentForm>
+          {formData.pdf.file ? (
+            <>
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                  {dateLabel}
+                </span>
+                <input
+                  type="date"
+                  value={formData.issuedAt}
+                  onChange={(event) => updateFormData({ issuedAt: event.currentTarget.value })}
+                  className="ui-document-form-control"
+                />
+              </label>
+              {formData.issuedAt ? (
+                <p className="text-xs font-medium text-gray-400">
+                  Vencimiento: {formatDate(addMonthsToDate(formData.issuedAt, monthsToExpire))}
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </DocumentRegisterModal>
       ) : null}
 
       <RecordsList>
@@ -1473,17 +1518,21 @@ export function CompanyAdminDocumentsView({
         isRegistering={isRegistering}
         actionLabel="+ Registrar dato"
         onStart={() => startRegistration()}
-        onCancel={resetRegistration}
+        onCancel={cancelRegistration}
       />
       <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
-        <InlineDocumentForm
+        <DocumentRegisterModal
+          title={formData.editingId ? "Editar registro" : "Registrar dato"}
+          message={actionMessage}
+          onCancel={cancelRegistration}
           onSubmit={saveAcuRecord}
-          disabled={isSaving || !formData.collectedAt || !formData.quantity || !formData.pdf.file}
+          disabled={isSaving || !formData.collectedAt || !formData.pdf.file}
           submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <CompactPdfInput id="acu-pdf" label="Certificado PDF" state={formData.pdf} onChange={(pdf) => updateFormData({ pdf })} />
+          {formData.pdf.file ? (
             <label className="grid gap-2">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                 Fecha recolección
@@ -1495,44 +1544,18 @@ export function CompanyAdminDocumentsView({
                 className="ui-document-form-control"
               />
             </label>
-            <div className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Cantidad</span>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.quantity}
-                  onChange={(event) => updateFormData({ quantity: event.currentTarget.value })}
-                  className="ui-document-form-control"
-                />
-                <select
-                  value={formData.unit}
-                  onChange={(event) => updateFormData({ unit: event.currentTarget.value as "Galones" | "Litros" })}
-                  className="ui-document-form-control"
-                >
-                  <option>Galones</option>
-                  <option>Litros</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <CompactPdfInput id="acu-pdf" label="Certificado PDF" state={formData.pdf} onChange={(pdf) => updateFormData({ pdf })} />
-        </InlineDocumentForm>
+          ) : null}
+        </DocumentRegisterModal>
       ) : null}
 
       <RecordsList>
         {acuHistory.length
           ? acuHistory.map((record) => (
               <RecordRow key={record.id}>
-                <div className="grid min-w-0 gap-1 sm:grid-cols-3 sm:gap-6">
+                <div className="grid min-w-0 gap-1 sm:grid-cols-2 sm:gap-6">
                   <p className="text-sm text-gray-700">
                     <span className="block text-xs text-gray-400">Recolección</span>
                     {formatDate(record.collectedAt)}
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <span className="block text-xs text-gray-400">Cantidad</span>
-                    {record.quantity} {record.unit}
                   </p>
                   <p className="text-sm text-gray-400">
                     <span className="block text-xs text-gray-400">Vencimiento</span>
@@ -1548,8 +1571,6 @@ export function CompanyAdminDocumentsView({
                       startRegistration({
                         editingId: record.id,
                         collectedAt: record.collectedAt,
-                        quantity: record.quantity,
-                        unit: record.unit,
                         pdf: { file: record.pdf, error: null },
                       })
                     }
@@ -1593,12 +1614,15 @@ export function CompanyAdminDocumentsView({
           isRegistering={isRegistering}
           actionLabel="+ Registrar dato"
           onStart={() => startRegistration()}
-          onCancel={resetRegistration}
+          onCancel={cancelRegistration}
         />
         <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
-          <InlineDocumentForm
+          <DocumentRegisterModal
+            title={formData.editingId ? "Editar producto" : "Registrar producto"}
+            message={actionMessage}
+            onCancel={cancelRegistration}
             onSubmit={saveChemicalProduct}
             disabled={isSaving || !formData.productName.trim() || !hasChemicalPdf}
             submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar producto" : "Registrar producto"}
@@ -1628,7 +1652,7 @@ export function CompanyAdminDocumentsView({
               onChange={(safetySheet) => updateFormData({ safetySheet })}
             />
           </div>
-          </InlineDocumentForm>
+          </DocumentRegisterModal>
         ) : null}
 
         <RecordsList>
@@ -1685,15 +1709,30 @@ export function CompanyAdminDocumentsView({
     const existingMember = formData.editingId
       ? staffMembers.find((member) => member.id === formData.editingId) ?? null
       : null;
+    const hasFoodHandlingPdf = Boolean(formData.foodHandlingPdf.file || existingMember?.foodHandlingPdf.file);
+    const hasMedicalExamPdf = Boolean(formData.medicalExamPdf.file || existingMember?.medicalExamPdf.file);
     const canSaveStaff = Boolean(
       formData.fullName.trim() &&
-        (formData.foodHandlingPdf.file ||
-          formData.medicalExamPdf.file ||
-          existingMember?.foodHandlingPdf.file ||
-          existingMember?.medicalExamPdf.file) &&
-        (!formData.foodHandlingPdf.file || formData.foodHandlingIssuedAt) &&
-        (!formData.medicalExamPdf.file || formData.medicalExamIssuedAt),
+        (hasFoodHandlingPdf || hasMedicalExamPdf) &&
+        (!hasFoodHandlingPdf || formData.foodHandlingIssuedAt) &&
+        (!hasMedicalExamPdf || formData.medicalExamIssuedAt),
     );
+    const handleStaffDateChange = (
+      value: string,
+      fileExists: boolean,
+      field: "foodHandlingIssuedAt" | "medicalExamIssuedAt",
+    ) => {
+      if (!fileExists) {
+        showActionMessage({
+          tone: "error",
+          text: "Para asignar la fecha debes subir primero el PDF correspondiente",
+        });
+        return;
+      }
+
+      clearActionMessage();
+      updateFormData(field === "foodHandlingIssuedAt" ? { foodHandlingIssuedAt: value } : { medicalExamIssuedAt: value });
+    };
 
     return (
       <div className="grid gap-4">
@@ -1701,15 +1740,19 @@ export function CompanyAdminDocumentsView({
           isRegistering={isRegistering}
           actionLabel="+ Registrar dato"
           onStart={() => startRegistration()}
-          onCancel={resetRegistration}
+          onCancel={cancelRegistration}
         />
         <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
-          <InlineDocumentForm
+          <DocumentRegisterModal
+            title={formData.editingId ? "Editar empleado" : "Registrar empleado"}
+            message={actionMessage}
+            onCancel={cancelRegistration}
             onSubmit={saveStaffRecord}
             disabled={isSaving || !canSaveStaff}
             submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar empleado" : "Registrar empleado"}
+            maxWidthClassName="max-w-2xl"
           >
             <label className="grid gap-2">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Nombre</span>
@@ -1720,47 +1763,83 @@ export function CompanyAdminDocumentsView({
                 className="ui-document-form-control"
               />
             </label>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="grid gap-3">
-                <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                    Fecha curso manipulación
-                  </span>
-                  <input
-                    type="date"
-                    value={formData.foodHandlingIssuedAt}
-                    onChange={(event) => updateFormData({ foodHandlingIssuedAt: event.currentTarget.value })}
-                    className="ui-document-form-control"
-                  />
-                </label>
+            <div className={DOCUMENT_MODAL_DIVIDER_CLASS} />
+            <div className="grid gap-5">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_190px] md:items-end">
                 <CompactPdfInput
                   id="staff-food-handling-pdf"
                   label="PDF curso manipulación"
                   state={formData.foodHandlingPdf}
-                  onChange={(foodHandlingPdf) => updateFormData({ foodHandlingPdf })}
+                  onChange={(foodHandlingPdf) => {
+                    clearActionMessage();
+                    updateFormData({ foodHandlingPdf });
+                  }}
                 />
-              </div>
-              <div className="grid gap-3">
-                <label className="grid gap-2">
+                <label className="grid min-w-0 gap-2">
                   <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                    Fecha examen médico
+                    Fecha curso
                   </span>
                   <input
                     type="date"
-                    value={formData.medicalExamIssuedAt}
-                    onChange={(event) => updateFormData({ medicalExamIssuedAt: event.currentTarget.value })}
+                    value={formData.foodHandlingIssuedAt}
+                    onFocus={() => {
+                      if (!hasFoodHandlingPdf) {
+                        showActionMessage({
+                          tone: "error",
+                          text: "Para asignar la fecha debes subir primero el PDF correspondiente",
+                        });
+                      }
+                    }}
+                    onChange={(event) =>
+                      handleStaffDateChange(
+                        event.currentTarget.value,
+                        hasFoodHandlingPdf,
+                        "foodHandlingIssuedAt",
+                      )
+                    }
                     className="ui-document-form-control"
                   />
                 </label>
+              </div>
+              <div className={DOCUMENT_MODAL_DIVIDER_CLASS} />
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_190px] md:items-end">
                 <CompactPdfInput
                   id="staff-medical-exam-pdf"
                   label="PDF examen médico"
                   state={formData.medicalExamPdf}
-                  onChange={(medicalExamPdf) => updateFormData({ medicalExamPdf })}
+                  onChange={(medicalExamPdf) => {
+                    clearActionMessage();
+                    updateFormData({ medicalExamPdf });
+                  }}
                 />
+                <label className="grid min-w-0 gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                    Fecha examen
+                  </span>
+                  <input
+                    type="date"
+                    value={formData.medicalExamIssuedAt}
+                    onFocus={() => {
+                      if (!hasMedicalExamPdf) {
+                        showActionMessage({
+                          tone: "error",
+                          text: "Para asignar la fecha debes subir primero el PDF correspondiente",
+                        });
+                      }
+                    }}
+                    onChange={(event) =>
+                      handleStaffDateChange(
+                        event.currentTarget.value,
+                        hasMedicalExamPdf,
+                        "medicalExamIssuedAt",
+                      )
+                    }
+                    className="ui-document-form-control"
+                  />
+                </label>
               </div>
             </div>
-          </InlineDocumentForm>
+          </DocumentRegisterModal>
         ) : null}
 
         <RecordsList>
@@ -1843,6 +1922,7 @@ export function CompanyAdminDocumentsView({
           activeSectionConfig={activeSectionConfig}
           onBack={() => {
             resetRegistration();
+            clearActionMessage();
             setActiveSection(null);
           }}
         />
@@ -1850,7 +1930,7 @@ export function CompanyAdminDocumentsView({
 
       {activeSectionConfig ? (
         <DedicatedSectionScreen>
-          {actionMessage ? <ActionMessage message={actionMessage} /> : null}
+          {!isRegistering && actionMessage ? <ActionMessage message={actionMessage} /> : null}
           {renderActiveSection(activeSectionConfig.id)}
         </DedicatedSectionScreen>
       ) : (
@@ -1865,8 +1945,10 @@ export function CompanyAdminDocumentsView({
                   <DocumentMenuCard
                     item={item}
                     badge={sectionStatusBadges[item.sectionId]}
+                    countLabel={sectionCountLabels[item.sectionId]}
                     onSelect={(sectionId) => {
                       resetRegistration();
+                      clearActionMessage();
                       setActiveSection(sectionId);
                     }}
                   />

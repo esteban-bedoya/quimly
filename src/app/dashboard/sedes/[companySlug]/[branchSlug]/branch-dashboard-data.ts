@@ -2,7 +2,6 @@ import { requireBranchAccess } from "@/lib/auth/authorization";
 import { operationalFormTypes } from "@/lib/operational-forms";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   BranchCatalogItemSummary,
   BranchCatalogItemStatus,
@@ -207,8 +206,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   let sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[] = [];
 
   if (supabase) {
-    const documentSupabase = getSupabaseServerClient() ?? supabase;
-
     logServerInfo("branch.view.load.start", {
       branchId: branch.id,
       companyId: company.id,
@@ -263,21 +260,21 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         .neq("status", "archived")
         .order("name", { ascending: true })
         .returns<BranchCatalogRow[]>(),
-      documentSupabase
+      supabase
         .from("branch_chemical_products")
         .select("id, branch_id, company_id, name, is_active, updated_at")
         .eq("branch_id", branch.id)
         .eq("is_active", true)
         .order("name", { ascending: true })
         .returns<BranchChemicalProductRow[]>(),
-      documentSupabase
+      supabase
         .from("branch_staff_members")
         .select("id, branch_id, company_id, full_name, is_active, updated_at")
         .eq("branch_id", branch.id)
         .eq("is_active", true)
         .order("full_name", { ascending: true })
         .returns<BranchStaffMemberRow[]>(),
-      documentSupabase
+      supabase
         .from("branch_sanitary_document_files")
         .select(
           "id, branch_id, company_id, document_kind, chemical_product_id, staff_member_id, file_url, file_name, file_size_bytes, mime_type, metadata, expires_at, is_active, uploaded_at, updated_at",

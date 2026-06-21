@@ -1319,7 +1319,6 @@ export function BranchComplianceView({
     <BranchLayout company={company} branch={branch} currentSection="compliance">
       <CompanyAdminDocumentsView
         branchId={branch.id}
-        companyId={branch.companyId}
         companySlug={company.slug}
         branchSlug={branch.slug}
         initialChemicalProducts={chemicalProducts}

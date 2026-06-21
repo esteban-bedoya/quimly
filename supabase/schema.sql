@@ -482,6 +482,51 @@ where not exists (
   where id = 'branch-documents'
 );
 
+drop policy if exists "branch_documents_storage_select_policy" on storage.objects;
+create policy "branch_documents_storage_select_policy"
+on storage.objects
+for select
+using (
+  bucket_id = 'branch-documents'
+  and auth.role() = 'authenticated'
+  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+);
+
+drop policy if exists "branch_documents_storage_insert_policy" on storage.objects;
+create policy "branch_documents_storage_insert_policy"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'branch-documents'
+  and auth.role() = 'authenticated'
+  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+);
+
+drop policy if exists "branch_documents_storage_update_policy" on storage.objects;
+create policy "branch_documents_storage_update_policy"
+on storage.objects
+for update
+using (
+  bucket_id = 'branch-documents'
+  and auth.role() = 'authenticated'
+  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+)
+with check (
+  bucket_id = 'branch-documents'
+  and auth.role() = 'authenticated'
+  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+);
+
+drop policy if exists "branch_documents_storage_delete_policy" on storage.objects;
+create policy "branch_documents_storage_delete_policy"
+on storage.objects
+for delete
+using (
+  bucket_id = 'branch-documents'
+  and auth.role() = 'authenticated'
+  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+);
+
 create table if not exists public.demo_requests (
   id uuid primary key default gen_random_uuid(),
   name text not null,

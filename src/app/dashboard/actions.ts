@@ -1,5 +1,6 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
@@ -33,12 +34,6 @@ type SanitaryDocumentActionState = AdminActionState & {
   product?: BranchChemicalProductSummary;
   staffMember?: BranchStaffMemberSummary;
   id?: string;
-};
-
-type BranchSanitaryDocumentsLoadState = AdminActionState & {
-  chemicalProducts?: BranchChemicalProductSummary[];
-  staffMembers?: BranchStaffMemberSummary[];
-  sanitaryDocumentFiles?: BranchSanitaryDocumentFileSummary[];
 };
 
 type BranchSanitaryDocumentFileRow = {
@@ -139,22 +134,17 @@ function getFilePathFromUrl(fileUrl: string) {
 async function uploadBranchDocumentFile({
   branchId,
   file,
+  supabaseClient,
 }: {
   branchId: string;
   file: File;
+  supabaseClient: SupabaseClient;
 }) {
-  const supabase = getSupabaseServerClientOrThrow({
-    operation: "uploadBranchDocumentFile",
-    branchId,
-    fileName: file.name,
-    fileSize: file.size,
-  });
-
   const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
   const safeBranchId = branchId.replace(/[^a-zA-Z0-9_-]/g, "");
   const fileName = `${safeBranchId}/${crypto.randomUUID()}.${extension}`;
 
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabaseClient.storage
     .from(getStorageBucketName())
     .upload(fileName, Buffer.from(await file.arrayBuffer()), {
       contentType: file.type || "application/pdf",
@@ -165,14 +155,14 @@ async function uploadBranchDocumentFile({
     throw new Error(uploadError.message);
   }
 
-  const { data } = supabase.storage.from(getStorageBucketName()).getPublicUrl(fileName);
+  const { data } = supabaseClient.storage.from(getStorageBucketName()).getPublicUrl(fileName);
   return {
     fileUrl: data.publicUrl,
     filePath: fileName,
   };
 }
 
-async function deleteBranchDocumentFile(fileUrl: string | null) {
+async function deleteBranchDocumentFile(fileUrl: string | null, supabaseClient: SupabaseClient) {
   if (!fileUrl) {
     return;
   }
@@ -182,12 +172,7 @@ async function deleteBranchDocumentFile(fileUrl: string | null) {
     return;
   }
 
-  const supabase = getSupabaseServerClient();
-  if (!supabase) {
-    return;
-  }
-
-  await supabase.storage.from(getStorageBucketName()).remove([filePath]);
+  await supabaseClient.storage.from(getStorageBucketName()).remove([filePath]);
 }
 
 function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
@@ -205,6 +190,14 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
       error.message.includes("branch_sanitation_areas")
     ) {
       return "Ya existe una opción con ese nombre en este formulario.";
+    }
+
+    if (error.message.includes("branch_chemical_products_active_name_idx")) {
+      return "Ya existe un producto químico activo con ese nombre. Puedes editar el registro existente o usar otro nombre.";
+    }
+
+    if (error.message.includes("branch_staff_members_active_name_idx")) {
+      return "Ya existe un empleado activo con ese nombre. Puedes editar el registro existente o usar otro nombre.";
     }
   }
 
@@ -523,16 +516,15 @@ export async function createBranchDocument(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "createBranchDocument",
+    branchId,
+  });
 
   let resolvedFileUrl = fileUrl;
 
   if (pdfFile) {
-    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile, supabaseClient: supabase });
     resolvedFileUrl = uploadedFile.fileUrl;
   }
 
@@ -582,11 +574,11 @@ export async function updateBranchDocument(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "updateBranchDocument",
+    branchId,
+    documentId,
+  });
 
   const { data: currentDocument, error: currentDocumentError } = await supabase
     .from("branch_documents")
@@ -602,8 +594,8 @@ export async function updateBranchDocument(
   let resolvedFileUrl = fileUrl;
 
   if (pdfFile) {
-    await deleteBranchDocumentFile(currentDocument.file_url);
-    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+    await deleteBranchDocumentFile(currentDocument.file_url, supabase);
+    const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile, supabaseClient: supabase });
     resolvedFileUrl = uploadedFile.fileUrl;
   }
 
@@ -648,11 +640,11 @@ export async function deleteBranchDocument(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "deleteBranchDocument",
+    branchId,
+    documentId,
+  });
 
   const { data: currentDocument, error: currentDocumentError } = await supabase
     .from("branch_documents")
@@ -671,7 +663,7 @@ export async function deleteBranchDocument(
     return { error: formatDatabaseError(error, "No fue posible eliminar el documento.") };
   }
 
-  await deleteBranchDocumentFile(currentDocument.file_url);
+  await deleteBranchDocumentFile(currentDocument.file_url, supabase);
 
   revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
   return { success: "Documento eliminado correctamente." };
@@ -687,74 +679,6 @@ export async function updateBranchDocumentAction(formData: FormData) {
 
 export async function deleteBranchDocumentAction(formData: FormData) {
   await deleteBranchDocument(undefined, formData);
-}
-
-export async function loadBranchSanitaryDocumentsAction(
-  formData: FormData,
-): Promise<BranchSanitaryDocumentsLoadState> {
-  const branchId = readString(formData, "branchId");
-  const companySlug = readString(formData, "companySlug");
-  const branchSlug = readString(formData, "branchSlug");
-
-  if (!branchId || !companySlug || !branchSlug) {
-    return { error: "No fue posible identificar la sede." };
-  }
-
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
-
-  if (branch.id !== branchId) {
-    return { error: "La sede seleccionada no coincide con la ruta actual." };
-  }
-
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
-
-  const [chemicalProductsResult, staffMembersResult, sanitaryDocumentFilesResult] = await Promise.all([
-    supabase
-      .from("branch_chemical_products")
-      .select("id, branch_id, company_id, name, is_active, updated_at")
-      .eq("branch_id", branchId)
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .returns<BranchChemicalProductRow[]>(),
-    supabase
-      .from("branch_staff_members")
-      .select("id, branch_id, company_id, full_name, is_active, updated_at")
-      .eq("branch_id", branchId)
-      .eq("is_active", true)
-      .order("full_name", { ascending: true })
-      .returns<BranchStaffMemberRow[]>(),
-    supabase
-      .from("branch_sanitary_document_files")
-      .select(getSanitaryDocumentFileSelect())
-      .eq("branch_id", branchId)
-      .eq("is_active", true)
-      .order("uploaded_at", { ascending: false })
-      .returns<BranchSanitaryDocumentFileRow[]>(),
-  ]);
-
-  if (chemicalProductsResult.error) {
-    return { error: formatDatabaseError(chemicalProductsResult.error, "No fue posible cargar productos químicos.") };
-  }
-
-  if (staffMembersResult.error) {
-    return { error: formatDatabaseError(staffMembersResult.error, "No fue posible cargar personal.") };
-  }
-
-  if (sanitaryDocumentFilesResult.error) {
-    return {
-      error: formatDatabaseError(sanitaryDocumentFilesResult.error, "No fue posible cargar documentos sanitarios."),
-    };
-  }
-
-  return {
-    chemicalProducts: chemicalProductsResult.data?.map(mapChemicalProductRow) ?? [],
-    staffMembers: staffMembersResult.data?.map(mapStaffMemberRow) ?? [],
-    sanitaryDocumentFiles: sanitaryDocumentFilesResult.data?.map(mapSanitaryDocumentFileRow) ?? [],
-  };
 }
 
 export async function saveBranchSanitaryDocumentFileAction(
@@ -791,17 +715,17 @@ export async function saveBranchSanitaryDocumentFileAction(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "saveBranchSanitaryDocumentFileAction",
+    branchId,
+    documentKind,
+  });
 
   try {
     const nextFileValues: Partial<BranchSanitaryDocumentFileRow> = {};
 
     if (pdfFile) {
-      const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile });
+      const uploadedFile = await uploadBranchDocumentFile({ branchId, file: pdfFile, supabaseClient: supabase });
       nextFileValues.file_url = uploadedFile.fileUrl;
       nextFileValues.file_name = pdfFile.name;
       nextFileValues.file_size_bytes = pdfFile.size;
@@ -838,7 +762,7 @@ export async function saveBranchSanitaryDocumentFileAction(
       }
 
       if (pdfFile) {
-        await deleteBranchDocumentFile(currentFile.file_url);
+        await deleteBranchDocumentFile(currentFile.file_url, supabase);
       }
 
       revalidatePath(`/dashboard/sedes/${companySlug}/${branchSlug}`);
@@ -893,6 +817,7 @@ async function saveOwnedSanitaryDocumentFile({
   companyId,
   documentKind,
   file,
+  supabaseClient,
   expiresAt = null,
   metadata = {},
   chemicalProductId = null,
@@ -902,6 +827,7 @@ async function saveOwnedSanitaryDocumentFile({
   companyId: string;
   documentKind: BranchSanitaryDocumentKind;
   file: File;
+  supabaseClient: SupabaseClient;
   expiresAt?: string | null;
   metadata?: Record<string, unknown>;
   chemicalProductId?: string | null;
@@ -913,11 +839,7 @@ async function saveOwnedSanitaryDocumentFile({
     throw new Error(validationError);
   }
 
-  const supabase = getSupabaseServerClientOrThrow({
-    operation: "saveOwnedSanitaryDocumentFile",
-    branchId,
-    documentKind,
-  });
+  const supabase = supabaseClient;
 
   await supabase
     .from("branch_sanitary_document_files")
@@ -930,7 +852,7 @@ async function saveOwnedSanitaryDocumentFile({
       ...(staffMemberId ? { staff_member_id: staffMemberId } : {}),
     });
 
-  const uploadedFile = await uploadBranchDocumentFile({ branchId, file });
+  const uploadedFile = await uploadBranchDocumentFile({ branchId, file, supabaseClient: supabase });
   const { data, error } = await supabase
     .from("branch_sanitary_document_files")
     .insert({
@@ -955,6 +877,43 @@ async function saveOwnedSanitaryDocumentFile({
   }
 
   return mapSanitaryDocumentFileRow(data);
+}
+
+async function updateOwnedSanitaryDocumentFileMetadata({
+  branchId,
+  documentKind,
+  supabaseClient,
+  expiresAt,
+  metadata,
+  chemicalProductId = null,
+  staffMemberId = null,
+}: {
+  branchId: string;
+  documentKind: BranchSanitaryDocumentKind;
+  supabaseClient: SupabaseClient;
+  expiresAt: string | null;
+  metadata: Record<string, unknown>;
+  chemicalProductId?: string | null;
+  staffMemberId?: string | null;
+}) {
+  const { error } = await supabaseClient
+    .from("branch_sanitary_document_files")
+    .update({
+      metadata,
+      expires_at: expiresAt,
+      is_active: true,
+    })
+    .eq("branch_id", branchId)
+    .eq("document_kind", documentKind)
+    .eq("is_active", true)
+    .match({
+      ...(chemicalProductId ? { chemical_product_id: chemicalProductId } : {}),
+      ...(staffMemberId ? { staff_member_id: staffMemberId } : {}),
+    });
+
+  if (error) {
+    throw new Error(formatDatabaseError(error, "No fue posible actualizar la fecha del archivo."));
+  }
 }
 
 export async function saveBranchChemicalProductAction(
@@ -982,11 +941,10 @@ export async function saveBranchChemicalProductAction(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "saveBranchChemicalProductAction",
+    branchId,
+  });
 
   try {
     const productQuery = productId
@@ -1019,6 +977,7 @@ export async function saveBranchChemicalProductAction(
           companyId: branch.companyId,
           documentKind: "chemical_technical_sheet",
           file: technicalSheetPdf,
+          supabaseClient: supabase,
           chemicalProductId: productRow.id,
         }),
       );
@@ -1031,6 +990,7 @@ export async function saveBranchChemicalProductAction(
           companyId: branch.companyId,
           documentKind: "chemical_safety_sheet",
           file: safetySheetPdf,
+          supabaseClient: supabase,
           chemicalProductId: productRow.id,
         }),
       );
@@ -1091,11 +1051,10 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "saveBranchStaffMemberAction",
+    branchId,
+  });
 
   try {
     const staffQuery = staffMemberId
@@ -1128,11 +1087,21 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
           companyId: branch.companyId,
           documentKind: "food_handling_course",
           file: foodHandlingPdf,
+          supabaseClient: supabase,
           staffMemberId: staffRow.id,
           expiresAt: foodHandlingExpiresAt,
           metadata: { issuedAt: foodHandlingIssuedAt },
         }),
       );
+    } else if (staffMemberId && foodHandlingIssuedAt && foodHandlingExpiresAt) {
+      await updateOwnedSanitaryDocumentFileMetadata({
+        branchId,
+        documentKind: "food_handling_course",
+        supabaseClient: supabase,
+        staffMemberId: staffRow.id,
+        expiresAt: foodHandlingExpiresAt,
+        metadata: { issuedAt: foodHandlingIssuedAt },
+      });
     }
 
     if (medicalExamPdf) {
@@ -1142,11 +1111,21 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
           companyId: branch.companyId,
           documentKind: "medical_fitness_exam",
           file: medicalExamPdf,
+          supabaseClient: supabase,
           staffMemberId: staffRow.id,
           expiresAt: medicalExamExpiresAt,
           metadata: { issuedAt: medicalExamIssuedAt },
         }),
       );
+    } else if (staffMemberId && medicalExamIssuedAt && medicalExamExpiresAt) {
+      await updateOwnedSanitaryDocumentFileMetadata({
+        branchId,
+        documentKind: "medical_fitness_exam",
+        supabaseClient: supabase,
+        staffMemberId: staffRow.id,
+        expiresAt: medicalExamExpiresAt,
+        metadata: { issuedAt: medicalExamIssuedAt },
+      });
     }
 
     const { data: staffFiles, error: filesError } = await supabase
@@ -1191,11 +1170,11 @@ export async function archiveBranchSanitaryDocumentFileAction(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "archiveBranchSanitaryDocumentFileAction",
+    branchId,
+    documentId,
+  });
 
   const { error } = await supabase
     .from("branch_sanitary_document_files")
@@ -1230,11 +1209,11 @@ export async function archiveBranchChemicalProductAction(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "archiveBranchChemicalProductAction",
+    branchId,
+    productId,
+  });
 
   const { error } = await supabase
     .from("branch_chemical_products")
@@ -1275,11 +1254,11 @@ export async function archiveBranchStaffMemberAction(
     return { error: "La sede seleccionada no coincide con la ruta actual." };
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "archiveBranchStaffMemberAction",
+    branchId,
+    staffMemberId,
+  });
 
   const { error } = await supabase
     .from("branch_staff_members")
