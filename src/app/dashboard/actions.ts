@@ -85,6 +85,7 @@ const sanitaryDocumentKinds = [
 
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
 const GENERAL_DOCUMENT_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
+const MAX_DOCUMENT_SECTION_RECORDS = 40;
 
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -722,6 +723,28 @@ export async function saveBranchSanitaryDocumentFileAction(
   });
 
   try {
+    if (
+      !documentId &&
+      (documentKind === "pest_control_certificate" ||
+        documentKind === "water_tank_cleaning_certificate" ||
+        documentKind === "acu_final_disposal_certificate")
+    ) {
+      const { count, error: countError } = await supabase
+        .from("branch_sanitary_document_files")
+        .select("id", { count: "exact", head: true })
+        .eq("branch_id", branchId)
+        .eq("document_kind", documentKind)
+        .eq("is_active", true);
+
+      if (countError) {
+        return { error: formatDatabaseError(countError, "No fue posible validar el limite de registros.") };
+      }
+
+      if ((count ?? 0) >= MAX_DOCUMENT_SECTION_RECORDS) {
+        return { error: `Esta sección permite máximo ${MAX_DOCUMENT_SECTION_RECORDS} registros almacenados.` };
+      }
+    }
+
     const nextFileValues: Partial<BranchSanitaryDocumentFileRow> = {};
 
     if (pdfFile) {
@@ -770,11 +793,7 @@ export async function saveBranchSanitaryDocumentFileAction(
       return { success: "Documento guardado correctamente.", file: mapSanitaryDocumentFileRow(data) };
     }
 
-    if (
-      documentKind === "sanitation_plan" ||
-      documentKind === "pest_control_certificate" ||
-      documentKind === "water_tank_cleaning_certificate"
-    ) {
+    if (documentKind === "sanitation_plan") {
       await supabase
         .from("branch_sanitary_document_files")
         .update({ is_active: false })
@@ -947,6 +966,22 @@ export async function saveBranchChemicalProductAction(
   });
 
   try {
+    if (!productId) {
+      const { count, error: countError } = await supabase
+        .from("branch_chemical_products")
+        .select("id", { count: "exact", head: true })
+        .eq("branch_id", branchId)
+        .eq("is_active", true);
+
+      if (countError) {
+        return { error: formatDatabaseError(countError, "No fue posible validar el limite de productos.") };
+      }
+
+      if ((count ?? 0) >= MAX_DOCUMENT_SECTION_RECORDS) {
+        return { error: `Esta sección permite máximo ${MAX_DOCUMENT_SECTION_RECORDS} registros almacenados.` };
+      }
+    }
+
     const productQuery = productId
       ? supabase
           .from("branch_chemical_products")
@@ -1057,6 +1092,22 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
   });
 
   try {
+    if (!staffMemberId) {
+      const { count, error: countError } = await supabase
+        .from("branch_staff_members")
+        .select("id", { count: "exact", head: true })
+        .eq("branch_id", branchId)
+        .eq("is_active", true);
+
+      if (countError) {
+        return { error: formatDatabaseError(countError, "No fue posible validar el limite de empleados.") };
+      }
+
+      if ((count ?? 0) >= MAX_DOCUMENT_SECTION_RECORDS) {
+        return { error: `Esta sección permite máximo ${MAX_DOCUMENT_SECTION_RECORDS} registros almacenados.` };
+      }
+    }
+
     const staffQuery = staffMemberId
       ? supabase
           .from("branch_staff_members")

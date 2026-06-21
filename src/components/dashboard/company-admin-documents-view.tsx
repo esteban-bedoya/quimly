@@ -1118,7 +1118,7 @@ export function CompanyAdminDocumentsView({
         sortDatedRecordsByIssuedAt(
           formData.editingId
             ? records.map((record) => (record.id === formData.editingId ? nextRecord : record))
-            : [nextRecord],
+            : [...records, nextRecord],
         ),
       );
       resetRegistration();
@@ -1369,7 +1369,7 @@ export function CompanyAdminDocumentsView({
           disabled={isSaving}
           className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {isSaving ? "Guardando..." : sanitationPlan ? "Reemplazar documento" : "Subir documento"}
+          {isSaving ? "Guardando..." : sanitationPlan ? "+ Reemplazar registro" : "+ Crear registro"}
         </button>
       </div>
       <UploadPolicyNote maxSizeLabel="6 MB" />
@@ -1419,7 +1419,7 @@ export function CompanyAdminDocumentsView({
     <div className="grid gap-4">
       <RegisterControl
         isRegistering={isRegistering}
-        actionLabel="+ Registrar dato"
+        actionLabel="+ Crear registro"
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
       />
@@ -1516,7 +1516,7 @@ export function CompanyAdminDocumentsView({
     <div className="grid gap-4">
       <RegisterControl
         isRegistering={isRegistering}
-        actionLabel="+ Registrar dato"
+        actionLabel="+ Crear registro"
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
       />
@@ -1612,7 +1612,7 @@ export function CompanyAdminDocumentsView({
       <div className="grid gap-4">
         <RegisterControl
           isRegistering={isRegistering}
-          actionLabel="+ Registrar dato"
+          actionLabel="+ Crear registro"
           onStart={() => startRegistration()}
           onCancel={cancelRegistration}
         />
@@ -1738,7 +1738,7 @@ export function CompanyAdminDocumentsView({
       <div className="grid gap-4">
         <RegisterControl
           isRegistering={isRegistering}
-          actionLabel="+ Registrar dato"
+          actionLabel="+ Crear registro"
           onStart={() => startRegistration()}
           onCancel={cancelRegistration}
         />

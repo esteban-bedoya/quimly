@@ -260,10 +260,7 @@ on public.branch_sanitary_document_files (chemical_product_id, document_kind)
 where is_active = true
   and document_kind in ('chemical_technical_sheet', 'chemical_safety_sheet');
 
-create unique index if not exists branch_sanitary_document_files_plant_single_idx
-on public.branch_sanitary_document_files (branch_id, document_kind)
-where is_active = true
-  and document_kind in ('pest_control_certificate', 'water_tank_cleaning_certificate');
+drop index if exists public.branch_sanitary_document_files_plant_single_idx;
 
 create unique index if not exists branch_sanitary_document_files_staff_item_idx
 on public.branch_sanitary_document_files (staff_member_id, document_kind)
@@ -622,6 +619,114 @@ begin
 end;
 $$;
 
+create or replace function public.enforce_branch_sanitary_document_files_limit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  active_records_count integer;
+begin
+  if new.is_active is distinct from true then
+    return new;
+  end if;
+
+  if new.document_kind not in (
+    'pest_control_certificate',
+    'water_tank_cleaning_certificate',
+    'acu_final_disposal_certificate'
+  ) then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtext('branch_sanitary_document_files_limit'),
+    hashtext(new.branch_id::text || ':' || new.document_kind::text)
+  );
+
+  select count(*)
+  into active_records_count
+  from public.branch_sanitary_document_files
+  where branch_id = new.branch_id
+    and document_kind = new.document_kind
+    and is_active = true
+    and id is distinct from new.id;
+
+  if active_records_count >= 40 then
+    raise exception 'Esta sección permite máximo 40 registros almacenados.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.enforce_branch_chemical_products_limit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  active_records_count integer;
+begin
+  if new.is_active is distinct from true then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtext('branch_chemical_products_limit'),
+    hashtext(new.branch_id::text)
+  );
+
+  select count(*)
+  into active_records_count
+  from public.branch_chemical_products
+  where branch_id = new.branch_id
+    and is_active = true
+    and id is distinct from new.id;
+
+  if active_records_count >= 40 then
+    raise exception 'Esta sección permite máximo 40 registros almacenados.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.enforce_branch_staff_members_limit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  active_records_count integer;
+begin
+  if new.is_active is distinct from true then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtext('branch_staff_members_limit'),
+    hashtext(new.branch_id::text)
+  );
+
+  select count(*)
+  into active_records_count
+  from public.branch_staff_members
+  where branch_id = new.branch_id
+    and is_active = true
+    and id is distinct from new.id;
+
+  if active_records_count >= 40 then
+    raise exception 'Esta sección permite máximo 40 registros almacenados.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists set_companies_updated_at on public.companies;
 create trigger set_companies_updated_at
 before update on public.companies
@@ -676,6 +781,12 @@ before update on public.branch_chemical_products
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists enforce_branch_chemical_products_limit on public.branch_chemical_products;
+create trigger enforce_branch_chemical_products_limit
+before insert or update of branch_id, is_active on public.branch_chemical_products
+for each row
+execute function public.enforce_branch_chemical_products_limit();
+
 drop trigger if exists set_branch_staff_members_company_id on public.branch_staff_members;
 create trigger set_branch_staff_members_company_id
 before insert or update of branch_id, company_id on public.branch_staff_members
@@ -688,6 +799,12 @@ before update on public.branch_staff_members
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists enforce_branch_staff_members_limit on public.branch_staff_members;
+create trigger enforce_branch_staff_members_limit
+before insert or update of branch_id, is_active on public.branch_staff_members
+for each row
+execute function public.enforce_branch_staff_members_limit();
+
 drop trigger if exists set_branch_sanitary_document_files_company_id on public.branch_sanitary_document_files;
 create trigger set_branch_sanitary_document_files_company_id
 before insert or update of branch_id, company_id on public.branch_sanitary_document_files
@@ -699,6 +816,12 @@ create trigger set_branch_sanitary_document_files_updated_at
 before update on public.branch_sanitary_document_files
 for each row
 execute function public.set_updated_at();
+
+drop trigger if exists enforce_branch_sanitary_document_files_limit on public.branch_sanitary_document_files;
+create trigger enforce_branch_sanitary_document_files_limit
+before insert or update of branch_id, document_kind, is_active on public.branch_sanitary_document_files
+for each row
+execute function public.enforce_branch_sanitary_document_files_limit();
 
 drop trigger if exists set_branch_form_qr_codes_company_id on public.branch_form_qr_codes;
 create trigger set_branch_form_qr_codes_company_id
