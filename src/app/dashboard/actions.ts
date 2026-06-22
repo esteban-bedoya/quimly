@@ -1063,8 +1063,10 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
   const fullName = readString(formData, "fullName");
   const foodHandlingIssuedAt = readString(formData, "foodHandlingIssuedAt");
   const foodHandlingExpiresAt = readString(formData, "foodHandlingExpiresAt") || null;
+  const foodHandlingValidityMonths = readString(formData, "foodHandlingValidityMonths") || "12";
   const medicalExamIssuedAt = readString(formData, "medicalExamIssuedAt");
   const medicalExamExpiresAt = readString(formData, "medicalExamExpiresAt") || null;
+  const medicalExamValidityMonths = readString(formData, "medicalExamValidityMonths") || "12";
   const foodHandlingPdf = readFile(formData, "foodHandlingPdf");
   const medicalExamPdf = readFile(formData, "medicalExamPdf");
 
@@ -1141,7 +1143,7 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
           supabaseClient: supabase,
           staffMemberId: staffRow.id,
           expiresAt: foodHandlingExpiresAt,
-          metadata: { issuedAt: foodHandlingIssuedAt },
+          metadata: { issuedAt: foodHandlingIssuedAt, validityMonths: foodHandlingValidityMonths },
         }),
       );
     } else if (staffMemberId && foodHandlingIssuedAt && foodHandlingExpiresAt) {
@@ -1151,7 +1153,7 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
         supabaseClient: supabase,
         staffMemberId: staffRow.id,
         expiresAt: foodHandlingExpiresAt,
-        metadata: { issuedAt: foodHandlingIssuedAt },
+        metadata: { issuedAt: foodHandlingIssuedAt, validityMonths: foodHandlingValidityMonths },
       });
     }
 
@@ -1165,7 +1167,7 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
           supabaseClient: supabase,
           staffMemberId: staffRow.id,
           expiresAt: medicalExamExpiresAt,
-          metadata: { issuedAt: medicalExamIssuedAt },
+          metadata: { issuedAt: medicalExamIssuedAt, validityMonths: medicalExamValidityMonths },
         }),
       );
     } else if (staffMemberId && medicalExamIssuedAt && medicalExamExpiresAt) {
@@ -1175,7 +1177,7 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
         supabaseClient: supabase,
         staffMemberId: staffRow.id,
         expiresAt: medicalExamExpiresAt,
-        metadata: { issuedAt: medicalExamIssuedAt },
+        metadata: { issuedAt: medicalExamIssuedAt, validityMonths: medicalExamValidityMonths },
       });
     }
 
