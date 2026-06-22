@@ -242,20 +242,8 @@ function formatFileSize(size: number) {
   return `${megabytes.toFixed(megabytes >= 1 ? 1 : 2)} MB`;
 }
 
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Fecha no disponible";
-  }
-
-  return new Intl.DateTimeFormat("es-CO", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+function formatFileLimitLabel(size: number) {
+  return formatFileSize(size);
 }
 
 function formatDate(value: string) {
@@ -807,7 +795,7 @@ function CompactPdfInput({
             {state.file ? state.file.name : "Selecciona un PDF"}
           </p>
           <p className="text-xs text-gray-400">
-            {state.file ? `${formatFileSize(state.file.size)} · ${formatDateTime(state.file.selectedAt)}` : "PDF"}
+            PDF · Máx {formatFileLimitLabel(maxSizeBytes)}
           </p>
         </div>
         <button
