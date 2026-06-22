@@ -51,6 +51,7 @@ type DocumentSectionMeta = {
   id: DocumentSectionId;
   title: string;
   description: string;
+  suggestedValidity: string;
 };
 
 type DocumentMenuItem = {
@@ -132,34 +133,41 @@ const DOCUMENT_SECTIONS: DocumentSectionMeta[] = [
     id: "sanitation_plan",
     title: "Plan de saneamiento básico",
     description:
-      "Contiene 1 documento unificado obligatorio para los cuatro programas de control sanitario (limpieza, plagas, residuos y agua potable).",
+      "Administre el soporte normativo unificado que integra los cuatro programas de control sanitario: limpieza, plagas, residuos y agua potable.",
+    suggestedValidity: "Hasta actualizar algún programa.",
   },
   {
     id: "chemical_products",
-    title: "Fichas técnicas y hojas de seguridad",
+    title: "Fichas de productos químicos",
     description:
-      "Contiene 2 documentos obligatorios por cada producto químico usado en la operación (ficha técnica y hoja de seguridad).",
+      "Administre los soportes normativos por producto químico: fichas técnicas y hojas de seguridad.",
+    suggestedValidity: "Sujeta a nuevas versiones o formulaciones del proveedor.",
   },
   {
     id: "pest_control",
     title: "Certificado de control de plagas",
-    description: "Contiene 1 documento obligatorio con vigencia mensual o trimestral.",
+    description: "Administre los soportes normativos de los certificados de fumigación.",
+    suggestedValidity: "Entre 1 a 3 meses.",
   },
   {
     id: "water_tank_cleaning",
     title: "Certificado de lavado de tanques de agua potable",
-    description: "Contiene 1 documento obligatorio con vigencia semestral.",
+    description: "Administre los soportes normativos de los certificados de lavado y desinfección de tanques de agua.",
+    suggestedValidity: "6 meses.",
   },
   {
     id: "acu_final_disposal",
     title: "Certificado disposición final de aceites (ACU)",
-    description: "Contiene el historial de certificados por cada entrega realizada.",
+    description:
+      "Administre los soportes normativos de los certificados de recolección emitidos por cada entrega de aceite de cocina usado (ACU).",
+    suggestedValidity: "Hasta la próxima recolección.",
   },
   {
     id: "staff_records",
-    title: "Fichas del personal",
+    title: "Fichas de colaboradores",
     description:
-      "Contiene 2 documentos obligatorios por cada empleado (manipulación de alimentos y exámenes de aptitud médica).",
+      "Administre los soportes normativos por colaborador: curso de manipulación de alimentos y exámenes médicos de aptitud.",
+    suggestedValidity: "1 año, por cada soporte.",
   },
 ];
 
@@ -182,13 +190,35 @@ const DOCUMENT_MENU_ITEMS: DocumentMenuItem[] = [
   },
   {
     sectionId: "staff_records",
-    title: "Fichas del personal (cursos manipulación de alimentos y exámenes de aptitud médica)",
+    title: "Fichas de colaboradores (cursos manipulación de alimentos y exámenes de aptitud médica)",
   },
   {
     sectionId: "chemical_products",
     title: "Fichas de productos químicos (fichas técnicas y hojas de seguridad)",
   },
 ];
+
+const DOCUMENT_REGISTER_ACTION_LABELS: Record<DocumentSectionId, { create: string; replace?: string }> = {
+  sanitation_plan: {
+    create: "Agregar plan",
+    replace: "Reemplazar plan",
+  },
+  chemical_products: {
+    create: "Agregar producto",
+  },
+  pest_control: {
+    create: "Agregar certificado",
+  },
+  water_tank_cleaning: {
+    create: "Agregar certificado",
+  },
+  acu_final_disposal: {
+    create: "Agregar certificado",
+  },
+  staff_records: {
+    create: "Agregar colaborador",
+  },
+};
 
 function createId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -564,8 +594,33 @@ function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
   return <span className={`text-xs font-medium ${toneClassName}`}>{badge.label}</span>;
 }
 
-function formatStoredRecordCount(count: number) {
-  return `${count} ${count === 1 ? "registro almacenado" : "registros almacenados"}`;
+function formatCountLabel(count: number, singularLabel: string, pluralLabel: string, singularAction: string, pluralAction: string) {
+  return `${count} ${count === 1 ? singularLabel : pluralLabel} ${count === 1 ? singularAction : pluralAction}`;
+}
+
+function formatStoredRecordCount(sectionId: DocumentSectionId, count: number) {
+  if (sectionId === "sanitation_plan") {
+    return formatCountLabel(count, "plan", "planes", "almacenado", "almacenados");
+  }
+
+  if (sectionId === "staff_records") {
+    return formatCountLabel(count, "colaborador", "colaboradores", "registrado", "registrados");
+  }
+
+  if (sectionId === "chemical_products") {
+    return formatCountLabel(count, "producto", "productos", "registrado", "registrados");
+  }
+
+  return formatCountLabel(count, "certificado", "certificados", "almacenado", "almacenados");
+}
+
+function getDocumentRegisterActionLabel(sectionId: DocumentSectionId, hasExistingRecord = false) {
+  return `+ ${getDocumentRegisterModalLabel(sectionId, hasExistingRecord)}`;
+}
+
+function getDocumentRegisterModalLabel(sectionId: DocumentSectionId, hasExistingRecord = false) {
+  const labels = DOCUMENT_REGISTER_ACTION_LABELS[sectionId];
+  return hasExistingRecord && labels.replace ? labels.replace : labels.create;
 }
 
 function DocumentMenuCard({
@@ -587,7 +642,9 @@ function DocumentMenuCard({
     >
       <span className="flex items-start gap-3">
         <span className="min-w-0">
-          <span className="block font-medium text-[15px] text-gray-800">{item.title}</span>
+          <span className="block font-medium text-[15px] text-gray-800">
+            {item.title}
+          </span>
           <span className="mt-1 block text-xs font-medium text-gray-400">{countLabel}</span>
         </span>
         <span className="ml-auto shrink-0 pt-0.5">
@@ -598,39 +655,10 @@ function DocumentMenuCard({
   );
 }
 
-function DocumentsToolbar({
-  activeSectionConfig,
-  onBack,
-}: {
-  activeSectionConfig: DocumentSectionMeta | null;
-  onBack: () => void;
-}) {
-  if (!activeSectionConfig) {
-    return null;
-  }
-
+function DocumentsToolbar({ activeSectionConfig }: { activeSectionConfig: DocumentSectionMeta }) {
   return (
-    <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-between gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
-      <button
-        type="button"
-        onClick={onBack}
-        className="ui-muted-action ui-muted-action-large operational-toolbar-action shrink-0"
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 shrink-0">
-          <path
-            d="M10 3.5 5.5 8l4.5 4.5M6 8h7"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.4"
-          />
-        </svg>
-        <span className="operational-toolbar-action-label-short">Volver</span>
-        <span className="operational-toolbar-action-label-full">Volver a selección</span>
-      </button>
-
-      <p className="operational-toolbar-copy min-w-0 text-right">
+    <div className="operational-toolbar mt-3 mb-3 flex w-full justify-start sm:mt-4 sm:mb-4">
+      <p className="operational-toolbar-copy w-full !max-w-none min-w-0 text-left">
         <strong className="font-semibold">{activeSectionConfig.title}</strong>
         <br />
         <span className="text-[0.92em]">{activeSectionConfig.description}</span>
@@ -730,6 +758,7 @@ function CompactPdfInput({
 function DocumentRegisterModal({
   children,
   title,
+  maxSizeLabel,
   message,
   onCancel,
   onSubmit,
@@ -739,6 +768,7 @@ function DocumentRegisterModal({
 }: {
   children: ReactNode;
   title: string;
+  maxSizeLabel: string;
   message?: AdminMessage | null;
   onCancel: () => void;
   onSubmit: () => void;
@@ -763,7 +793,7 @@ function DocumentRegisterModal({
       >
         <div className="space-y-2">
           <h3 className="ui-modal-title">{title}</h3>
-          <p className="ui-modal-copy">Completa la información y carga únicamente archivos PDF.</p>
+          <p className="ui-modal-copy">Archivo permitido: PDF · Peso máximo: {maxSizeLabel}</p>
         </div>
 
         <div className="mt-4 grid gap-4">{children}</div>
@@ -799,21 +829,26 @@ function DocumentRegisterModal({
 function RegisterControl({
   isRegistering,
   actionLabel,
+  suggestedValidity,
   onStart,
   onCancel,
 }: {
   isRegistering: boolean;
   actionLabel: string;
+  suggestedValidity: string;
   onStart: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs font-medium leading-5 text-gray-400">
+        <span className="font-semibold text-gray-500">Vigencia sugerida:</span> {suggestedValidity}
+      </p>
       {isRegistering ? (
         <button
           type="button"
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600 text-sm font-medium transition-colors"
+          className="self-start text-gray-400 hover:text-gray-600 text-sm font-medium transition-colors sm:self-auto"
         >
           - Cancelar registro
         </button>
@@ -823,14 +858,6 @@ function RegisterControl({
         </button>
       )}
     </div>
-  );
-}
-
-function UploadPolicyNote({ maxSizeLabel }: { maxSizeLabel: string }) {
-  return (
-    <p className="text-right text-xs font-medium leading-5 text-gray-400">
-      Archivo permitido: PDF · Peso máximo: {maxSizeLabel}
-    </p>
   );
 }
 
@@ -909,7 +936,6 @@ export function CompanyAdminDocumentsView({
   initialStaffMembers,
   initialSanitaryDocumentFiles,
 }: CompanyAdminDocumentsViewProps) {
-  const sanitationPlanInputRef = useRef<HTMLInputElement | null>(null);
   const [activeSection, setActiveSection] = useState<DocumentSectionId | null>(null);
   const [isSaving, startSaving] = useTransition();
   const [isRegistering, setIsRegistering] = useState(false);
@@ -943,12 +969,12 @@ export function CompanyAdminDocumentsView({
     staff_records: getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
   };
   const sectionCountLabels: Record<DocumentSectionId, string> = {
-    sanitation_plan: formatStoredRecordCount(sanitationPlan ? 1 : 0),
-    pest_control: formatStoredRecordCount(pestControlRecords.length),
-    water_tank_cleaning: formatStoredRecordCount(waterTankRecords.length),
-    acu_final_disposal: formatStoredRecordCount(acuHistory.length),
-    staff_records: formatStoredRecordCount(staffMembers.length),
-    chemical_products: formatStoredRecordCount(chemicalProducts.length),
+    sanitation_plan: formatStoredRecordCount("sanitation_plan", sanitationPlan ? 1 : 0),
+    pest_control: formatStoredRecordCount("pest_control", pestControlRecords.length),
+    water_tank_cleaning: formatStoredRecordCount("water_tank_cleaning", waterTankRecords.length),
+    acu_final_disposal: formatStoredRecordCount("acu_final_disposal", acuHistory.length),
+    staff_records: formatStoredRecordCount("staff_records", staffMembers.length),
+    chemical_products: formatStoredRecordCount("chemical_products", chemicalProducts.length),
   };
 
   const resetRegistration = useCallback(() => {
@@ -1030,27 +1056,19 @@ export function CompanyAdminDocumentsView({
     }
   };
 
-  const replaceSanitationPlan = (file: File | null) => {
-    if (!file) {
-      return;
-    }
-
-    const nextFileState = validatePdfFile(file, SANITATION_PLAN_MAX_FILE_SIZE_BYTES);
-
-    if (!nextFileState.file) {
-      updateFormData({ pdf: nextFileState });
+  const saveSanitationPlanRecord = () => {
+    if (!formData.pdf.file) {
       return;
     }
 
     clearActionMessage();
-    updateFormData({ pdf: nextFileState });
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("documentKind", "sanitation_plan");
       if (sanitationPlan?.id) {
         nextFormData.set("documentId", sanitationPlan.id);
       }
-      appendPdfFile(nextFormData, "pdfFile", nextFileState);
+      appendPdfFile(nextFormData, "pdfFile", formData.pdf);
 
       const result = await saveBranchSanitaryDocumentFileAction(nextFormData);
 
@@ -1058,14 +1076,14 @@ export function CompanyAdminDocumentsView({
         return;
       }
 
-      revokeUploadedPdf(nextFileState.file);
+      revokeUploadedPdf(formData.pdf.file);
       setSanitationPlan({
         id: result.file.id,
         name: "Plan de Saneamiento Básico",
         pdf: toStoredPdf(result.file),
         updatedAt: result.file.updatedAt,
       });
-      updateFormData({ pdf: createEmptyFileState() });
+      resetRegistration();
     });
   };
 
@@ -1351,30 +1369,38 @@ export function CompanyAdminDocumentsView({
 
   const renderPlanSection = () => (
     <div className="grid gap-4">
-      <div className="flex justify-end">
-        <input
-          ref={sanitationPlanInputRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          tabIndex={-1}
-          onChange={(event) => {
-            replaceSanitationPlan(event.currentTarget.files?.[0] ?? null);
-            event.currentTarget.value = "";
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => sanitationPlanInputRef.current?.click()}
-          disabled={isSaving}
-          className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          {isSaving ? "Guardando..." : sanitationPlan ? "+ Reemplazar registro" : "+ Crear registro"}
-        </button>
-      </div>
-      <UploadPolicyNote maxSizeLabel="6 MB" />
+      <RegisterControl
+        isRegistering={isRegistering}
+        actionLabel={getDocumentRegisterActionLabel("sanitation_plan", Boolean(sanitationPlan))}
+        suggestedValidity={activeSectionConfig?.suggestedValidity ?? ""}
+        onStart={() => startRegistration()}
+        onCancel={cancelRegistration}
+      />
 
-      {formData.pdf.error ? <p className="text-right text-xs font-medium text-rose-600">{formData.pdf.error}</p> : null}
+      {isRegistering ? (
+        <DocumentRegisterModal
+          title={getDocumentRegisterModalLabel("sanitation_plan", Boolean(sanitationPlan))}
+          maxSizeLabel="6 MB"
+          message={actionMessage}
+          onCancel={cancelRegistration}
+          onSubmit={saveSanitationPlanRecord}
+          disabled={isSaving || !formData.pdf.file}
+          submitLabel={
+            isSaving ? "Guardando..." : getDocumentRegisterModalLabel("sanitation_plan", Boolean(sanitationPlan))
+          }
+        >
+          <CompactPdfInput
+            id="sanitation-plan-pdf"
+            label="Plan de saneamiento PDF"
+            state={formData.pdf}
+            maxSizeBytes={SANITATION_PLAN_MAX_FILE_SIZE_BYTES}
+            onChange={(pdf) => {
+              clearActionMessage();
+              updateFormData({ pdf });
+            }}
+          />
+        </DocumentRegisterModal>
+      ) : null}
 
       <RecordsList>
         <RecordRow>
@@ -1410,6 +1436,7 @@ export function CompanyAdminDocumentsView({
   );
 
   const renderDatedSection = (
+    sectionId: DocumentSectionId,
     records: DatedDocumentRecord[],
     setRecords: (records: DatedDocumentRecord[]) => void,
     monthsToExpire: number,
@@ -1419,20 +1446,21 @@ export function CompanyAdminDocumentsView({
     <div className="grid gap-4">
       <RegisterControl
         isRegistering={isRegistering}
-        actionLabel="+ Crear registro"
+        actionLabel={getDocumentRegisterActionLabel(sectionId)}
+        suggestedValidity={activeSectionConfig?.suggestedValidity ?? ""}
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
       />
-      <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
         <DocumentRegisterModal
-          title={formData.editingId ? "Editar registro" : "Registrar dato"}
+          title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel(sectionId)}
+          maxSizeLabel="1.5 MB"
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={() => saveDatedRecord(records, setRecords, monthsToExpire, prefix)}
           disabled={isSaving || !formData.issuedAt || !formData.pdf.file}
-          submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
+          submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar registro" : getDocumentRegisterModalLabel(sectionId)}
         >
           <CompactPdfInput
             id={`${prefix}-pdf`}
@@ -1516,20 +1544,27 @@ export function CompanyAdminDocumentsView({
     <div className="grid gap-4">
       <RegisterControl
         isRegistering={isRegistering}
-        actionLabel="+ Crear registro"
+        actionLabel={getDocumentRegisterActionLabel("acu_final_disposal")}
+        suggestedValidity={activeSectionConfig?.suggestedValidity ?? ""}
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
       />
-      <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
       {isRegistering ? (
         <DocumentRegisterModal
-          title={formData.editingId ? "Editar registro" : "Registrar dato"}
+          title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel("acu_final_disposal")}
+          maxSizeLabel="1.5 MB"
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={saveAcuRecord}
           disabled={isSaving || !formData.collectedAt || !formData.pdf.file}
-          submitLabel={isSaving ? "Guardando..." : "Guardar registro"}
+          submitLabel={
+            isSaving
+              ? "Guardando..."
+              : formData.editingId
+                ? "Guardar registro"
+                : getDocumentRegisterModalLabel("acu_final_disposal")
+          }
         >
           <CompactPdfInput id="acu-pdf" label="Certificado PDF" state={formData.pdf} onChange={(pdf) => updateFormData({ pdf })} />
           {formData.pdf.file ? (
@@ -1612,20 +1647,27 @@ export function CompanyAdminDocumentsView({
       <div className="grid gap-4">
         <RegisterControl
           isRegistering={isRegistering}
-          actionLabel="+ Crear registro"
+          actionLabel={getDocumentRegisterActionLabel("chemical_products")}
+          suggestedValidity={activeSectionConfig?.suggestedValidity ?? ""}
           onStart={() => startRegistration()}
           onCancel={cancelRegistration}
         />
-        <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
           <DocumentRegisterModal
-            title={formData.editingId ? "Editar producto" : "Registrar producto"}
+            title={formData.editingId ? "Editar producto" : getDocumentRegisterModalLabel("chemical_products")}
+            maxSizeLabel="1.5 MB"
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveChemicalProduct}
             disabled={isSaving || !formData.productName.trim() || !hasChemicalPdf}
-            submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar producto" : "Registrar producto"}
+            submitLabel={
+              isSaving
+                ? "Guardando..."
+                : formData.editingId
+                  ? "Guardar producto"
+                  : getDocumentRegisterModalLabel("chemical_products")
+            }
           >
           <label className="grid gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
@@ -1738,20 +1780,27 @@ export function CompanyAdminDocumentsView({
       <div className="grid gap-4">
         <RegisterControl
           isRegistering={isRegistering}
-          actionLabel="+ Crear registro"
+          actionLabel={getDocumentRegisterActionLabel("staff_records")}
+          suggestedValidity={activeSectionConfig?.suggestedValidity ?? ""}
           onStart={() => startRegistration()}
           onCancel={cancelRegistration}
         />
-        <UploadPolicyNote maxSizeLabel="1.5 MB" />
 
         {isRegistering ? (
           <DocumentRegisterModal
-            title={formData.editingId ? "Editar empleado" : "Registrar empleado"}
+            title={formData.editingId ? "Editar empleado" : getDocumentRegisterModalLabel("staff_records")}
+            maxSizeLabel="1.5 MB"
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveStaffRecord}
             disabled={isSaving || !canSaveStaff}
-            submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar empleado" : "Registrar empleado"}
+            submitLabel={
+              isSaving
+                ? "Guardando..."
+                : formData.editingId
+                  ? "Guardar empleado"
+                  : getDocumentRegisterModalLabel("staff_records")
+            }
             maxWidthClassName="max-w-2xl"
           >
             <label className="grid gap-2">
@@ -1897,11 +1946,25 @@ export function CompanyAdminDocumentsView({
     }
 
     if (sectionId === "pest_control") {
-      return renderDatedSection(pestControlRecords, setPestControlRecords, 3, "pest-control", "Fecha del control");
+      return renderDatedSection(
+        "pest_control",
+        pestControlRecords,
+        setPestControlRecords,
+        3,
+        "pest-control",
+        "Fecha del control",
+      );
     }
 
     if (sectionId === "water_tank_cleaning") {
-      return renderDatedSection(waterTankRecords, setWaterTankRecords, 6, "water-tank", "Fecha de lavado");
+      return renderDatedSection(
+        "water_tank_cleaning",
+        waterTankRecords,
+        setWaterTankRecords,
+        6,
+        "water-tank",
+        "Fecha de lavado",
+      );
     }
 
     if (sectionId === "acu_final_disposal") {
@@ -1918,14 +1981,7 @@ export function CompanyAdminDocumentsView({
   return (
     <section className="grid gap-5 transition-all duration-300 ease-in-out">
       {activeSectionConfig ? (
-        <DocumentsToolbar
-          activeSectionConfig={activeSectionConfig}
-          onBack={() => {
-            resetRegistration();
-            clearActionMessage();
-            setActiveSection(null);
-          }}
-        />
+        <DocumentsToolbar activeSectionConfig={activeSectionConfig} />
       ) : null}
 
       {activeSectionConfig ? (

@@ -68,8 +68,8 @@ type BranchSectionKey = "home" | "operational" | "compliance";
 
 const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
   home: null,
-  operational: "Diligencia los formatos obligatorios y gestiona los puntos de acceso QR para la operación.",
-  compliance: "Monitorea vencimientos, visualiza y gestiona los archivos de soporte del establecimiento.",
+  operational: "Diligencia los formatos normativos y gestiona los puntos de acceso QR para la operación.",
+  compliance: "Monitorea vencimientos, visualiza y gestiona los archivos normativos del establecimiento.",
 };
 const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
 
