@@ -26,9 +26,12 @@ const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
 const DOCUMENT_DATE_INPUT_LABEL = "Fecha expedición";
 const DOCUMENT_VALIDITY_INPUT_LABEL = "Vigencia";
 const DOCUMENT_DATE_PDF_REQUIRED_MESSAGE = "Para asignar la fecha debe subir el PDF";
+const DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE = "Para asignar la vigencia debe subir el PDF";
 const DOCUMENT_VALIDITY_OPTIONS = ["1", "2", "3", "6", "12", "24"] as const;
 const DEFAULT_ACU_VALIDITY_MONTHS = "1";
 const DEFAULT_STAFF_VALIDITY_MONTHS = "12";
+const REQUIRED_NAME_ERROR_INPUT_CLASS =
+  "!border-rose-500 !bg-rose-50 !shadow-[0_0_0_3px_rgb(244_63_94_/_0.18),0_10px_24px_rgb(18_17_15_/_0.07)]";
 
 type UploadedPdf = {
   id: string;
@@ -141,6 +144,12 @@ type DocumentFormData = {
 type AdminMessage = {
   tone: "success" | "error";
   text: string;
+};
+
+type RequiredNameField = "productName" | "fullName";
+
+type DeleteConfirmation = {
+  onConfirm: () => void;
 };
 
 const DOCUMENT_SECTIONS: DocumentSectionMeta[] = [
@@ -712,18 +721,16 @@ function DocumentMenuCard({
     <button
       type="button"
       onClick={() => onSelect(item.sectionId)}
-      className="block w-full cursor-pointer rounded-xl bg-[#fafbfc] px-2 py-4 text-left transition-all duration-200 ease-out hover:scale-[1.015] hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-inset hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-[#2a7f86]/20 active:scale-[0.995]"
+      className="flex w-full cursor-pointer items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 text-left transition-colors last:border-none hover:bg-gray-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2a7f86]/20"
     >
-      <span className="flex items-start gap-3">
-        <span className="min-w-0">
-          <span className="block font-medium text-[15px] text-gray-800">
-            {item.title}
-          </span>
-          <span className="mt-1 block text-xs font-medium text-gray-400">{countLabel}</span>
+      <span className="min-w-0">
+        <span className="block font-medium text-[15px] text-gray-800">
+          {item.title}
         </span>
-        <span className="ml-auto shrink-0 pt-0.5">
-          <DocumentMenuBadge badge={badge} />
-        </span>
+        <span className="mt-1 block text-xs font-medium text-gray-400">{countLabel}</span>
+      </span>
+      <span className="shrink-0 pt-0.5">
+        <DocumentMenuBadge badge={badge} />
       </span>
     </button>
   );
@@ -777,12 +784,14 @@ function CompactPdfInput({
   state,
   onChange,
   maxSizeBytes = BASE_MAX_FILE_SIZE_BYTES,
+  onOpenRequest,
 }: {
   id: string;
   label: string;
   state: FileInputState;
   onChange: (state: FileInputState) => void;
   maxSizeBytes?: number;
+  onOpenRequest?: () => boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -819,8 +828,14 @@ function CompactPdfInput({
         <button
           type="button"
           aria-label={state.file ? "Cambiar PDF" : "Subir PDF"}
-          onClick={() => fileInputRef.current?.click()}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12110f] text-white transition hover:bg-[#1d1b18]"
+          onClick={() => {
+            if (onOpenRequest?.() === false) {
+              return;
+            }
+
+            fileInputRef.current?.click();
+          }}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12110f] text-white transition hover:scale-110 hover:bg-[#1d1b18]"
         >
           <UploadFileIcon />
         </button>
@@ -1005,10 +1020,12 @@ function DocumentValiditySelect({
   value,
   suggestedMonths,
   onChange,
+  onOpenRequest,
 }: {
   value: string;
   suggestedMonths: string;
   onChange: (value: string) => void;
+  onOpenRequest?: () => boolean;
 }) {
   const listboxId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1074,7 +1091,14 @@ function DocumentValiditySelect({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={listboxId}
-        onClick={() => setIsOpen((currentValue) => !currentValue)}
+        onClick={() => {
+          if (onOpenRequest?.() === false) {
+            setIsOpen(false);
+            return;
+          }
+
+          setIsOpen((currentValue) => !currentValue);
+        }}
         className="neutral-select-trigger min-h-11"
       >
         <span>{selectedLabel}</span>
@@ -1210,6 +1234,67 @@ function DocumentRegisterModal({
   );
 }
 
+function DocumentDeleteConfirmationModal({
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: {
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+      <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
+        <div className="space-y-3">
+          <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+              <path
+                d="M9 3.75h6m-8.25 3h10.5m-9.75 0 .75 11.25a1.5 1.5 0 0 0 1.5 1.4h4.5a1.5 1.5 0 0 0 1.5-1.4l.75-11.25m-6 2.25v6.75m3-6.75v6.75"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              />
+            </svg>
+          </div>
+          <div className="space-y-2">
+            <h3 className="ui-modal-title">¿Eliminar?</h3>
+            <div className="ui-modal-copy space-y-3">
+              <p>Si eliminas este registro ya no se podrá restaurar.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="ui-pill-button-secondary ui-modal-action-secondary"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="ui-pill-button-danger w-full sm:w-auto"
+          >
+            {isDeleting ? "Eliminando..." : "Confirmar eliminación"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function RegisterControl({
   isRegistering,
   actionLabel,
@@ -1285,8 +1370,63 @@ function RecordRow({ children }: { children: ReactNode }) {
 function RecordActions({ status, children }: { status: DocumentStatus; children: ReactNode }) {
   return (
     <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+      <RecordActionsMenu>{children}</RecordActionsMenu>
       <DocumentStatusBadge status={status} />
-      <div className="flex flex-wrap items-center justify-end gap-3">{children}</div>
+    </div>
+  );
+}
+
+function RecordActionsMenu({ children }: { children: ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!containerRef.current?.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative -mt-1 flex justify-end">
+      {isOpen ? (
+        <div
+          className="absolute right-full top-1/2 mr-1 flex -translate-y-1/2 items-center gap-1 rounded-full border border-gray-200 bg-white/95 p-1 shadow-[0_10px_24px_rgba(18,17,15,0.12)] backdrop-blur-sm"
+          onClickCapture={() => setIsOpen(false)}
+        >
+          {children}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-label={isOpen ? "Cerrar acciones" : "Abrir acciones"}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((currentValue) => !currentValue)}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-600 transition duration-200 ease-out hover:scale-110 hover:bg-gray-100 hover:text-gray-700"
+      >
+        <EllipsisIcon />
+      </button>
     </div>
   );
 }
@@ -1306,10 +1446,42 @@ function DeleteRecordButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition duration-200 ease-out hover:scale-110 hover:bg-rose-50 hover:text-rose-500 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:scale-100 disabled:hover:bg-transparent"
     >
       <TrashIcon />
     </button>
+  );
+}
+
+function EditRecordButton({ label = "Editar registro", onClick }: { label?: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition duration-200 ease-out hover:scale-110 hover:bg-gray-100 hover:text-gray-700"
+    >
+      <EditIcon />
+    </button>
+  );
+}
+
+function EllipsisIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill="none"
+      className="h-5.5 w-5.5 shrink-0"
+    >
+      <path
+        d="M5 10h.01M10 10h.01M15 10h.01"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.6"
+      />
+    </svg>
   );
 }
 
@@ -1319,10 +1491,36 @@ function TrashIcon() {
       aria-hidden="true"
       viewBox="0 0 20 20"
       fill="none"
-      className="h-4 w-4 shrink-0"
+      className="h-5.5 w-5.5 shrink-0"
     >
       <path
         d="M7.5 4.75h5m-7.25 2h9.5m-8.5 0 .55 8.2a1.5 1.5 0 0 0 1.5 1.4h3.4a1.5 1.5 0 0 0 1.5-1.4l.55-8.2M8.75 9.25v4.25m2.5-4.25v4.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill="none"
+      className="h-5.5 w-5.5 shrink-0"
+    >
+      <path
+        d="M5.25 14.75h2.2l6.7-6.7a1.56 1.56 0 0 0-2.2-2.2l-6.7 6.7v2.2Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+      <path
+        d="m10.95 6.85 2.2 2.2M4.75 16.25h10.5"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -1341,14 +1539,14 @@ function ExternalPdfIcon({ className = "" }: { className?: string }) {
       className={`h-4 w-4 shrink-0 ${className}`}
     >
       <path
-        d="M7.5 5.5H5.75A1.75 1.75 0 0 0 4 7.25v7A1.75 1.75 0 0 0 5.75 16h7a1.75 1.75 0 0 0 1.75-1.75V12.5"
+        d="M2.75 10s2.35-4.25 7.25-4.25S17.25 10 17.25 10 14.9 14.25 10 14.25 2.75 10 2.75 10Z"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.5"
       />
       <path
-        d="M10.5 4H16v5.5M15.5 4.5l-7 7"
+        d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -1413,6 +1611,13 @@ export function CompanyAdminDocumentsView({
   const [isRegistering, setIsRegistering] = useState(false);
   const [formData, setFormData] = useState<DocumentFormData>(createEmptyDocumentFormData);
   const [actionMessage, setActionMessage] = useState<AdminMessage | null>(null);
+  const [missingRequiredNames, setMissingRequiredNames] = useState<Record<RequiredNameField, boolean>>({
+    productName: false,
+    fullName: false,
+  });
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation | null>(null);
+  const productNameInputRef = useRef<HTMLInputElement | null>(null);
+  const staffNameInputRef = useRef<HTMLInputElement | null>(null);
   const staffDateMessageTimeoutsRef = useRef<Partial<Record<"foodHandlingDateMessage" | "medicalExamDateMessage", number>>>({});
   const [sanitationPlan, setSanitationPlan] = useState<SanitationPlanRecord | null>(() =>
     buildSanitationPlanRecord(initialSanitaryDocumentFiles),
@@ -1453,6 +1658,7 @@ export function CompanyAdminDocumentsView({
   const resetRegistration = useCallback(() => {
     setIsRegistering(false);
     setFormData(createEmptyDocumentFormData());
+    setMissingRequiredNames({ productName: false, fullName: false });
     Object.values(staffDateMessageTimeoutsRef.current).forEach((timeoutId) => {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
@@ -1510,10 +1716,85 @@ export function CompanyAdminDocumentsView({
   );
 
   const updateFormData = (nextData: Partial<DocumentFormData>) => {
+    if (nextData.productName !== undefined && nextData.productName.trim()) {
+      setMissingRequiredNames((currentValues) => ({ ...currentValues, productName: false }));
+    }
+
+    if (nextData.fullName !== undefined && nextData.fullName.trim()) {
+      setMissingRequiredNames((currentValues) => ({ ...currentValues, fullName: false }));
+    }
+
     setFormData((currentData) => ({ ...currentData, ...nextData }));
   };
 
-  const showStaffDateMessage = useCallback((field: "foodHandlingDateMessage" | "medicalExamDateMessage") => {
+  const requireProductName = () => {
+    if (formData.productName.trim()) {
+      return true;
+    }
+
+    setMissingRequiredNames((currentValues) => ({ ...currentValues, productName: true }));
+    window.requestAnimationFrame(() => productNameInputRef.current?.focus());
+    return false;
+  };
+
+  const requireStaffFullName = () => {
+    if (formData.fullName.trim()) {
+      return true;
+    }
+
+    setMissingRequiredNames((currentValues) => ({ ...currentValues, fullName: true }));
+    window.requestAnimationFrame(() => staffNameInputRef.current?.focus());
+    return false;
+  };
+
+  const requireDocumentPdf = (fileExists: boolean, message = DOCUMENT_DATE_PDF_REQUIRED_MESSAGE) => {
+    if (fileExists) {
+      return true;
+    }
+
+    showActionMessage({
+      tone: "error",
+      text: message,
+    });
+    return false;
+  };
+
+  const requireStaffPdf = (
+    fileExists: boolean,
+    messageField: "foodHandlingDateMessage" | "medicalExamDateMessage",
+    message = DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+  ) => {
+    if (!requireStaffFullName()) {
+      return false;
+    }
+
+    if (fileExists) {
+      return true;
+    }
+
+    showStaffDateMessage(messageField, message);
+    return false;
+  };
+
+  const requestDeleteConfirmation = (onConfirm: () => void) => {
+    setDeleteConfirmation({ onConfirm });
+  };
+
+  const confirmPendingDelete = () => {
+    const pendingDelete = deleteConfirmation;
+
+    if (!pendingDelete) {
+      return;
+    }
+
+    setDeleteConfirmation(null);
+    pendingDelete.onConfirm();
+  };
+
+  const showStaffDateMessage = useCallback((
+    field: "foodHandlingDateMessage" | "medicalExamDateMessage",
+    message = DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+  ) => {
     const currentTimeoutId = staffDateMessageTimeoutsRef.current[field];
 
     if (currentTimeoutId) {
@@ -1522,7 +1803,7 @@ export function CompanyAdminDocumentsView({
 
     setFormData((currentData) => ({
       ...currentData,
-      [field]: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+      [field]: message,
     }));
 
     staffDateMessageTimeoutsRef.current[field] = window.setTimeout(() => {
@@ -1536,6 +1817,7 @@ export function CompanyAdminDocumentsView({
 
   const startRegistration = (nextData?: Partial<DocumentFormData>) => {
     setFormData({ ...createEmptyDocumentFormData(), ...nextData });
+    setMissingRequiredNames({ productName: false, fullName: false });
     setIsRegistering(true);
     clearActionMessage();
   };
@@ -1955,7 +2237,9 @@ export function CompanyAdminDocumentsView({
                   return;
                 }
 
-                archiveDocumentFile(sanitationPlan.id, () => setSanitationPlan(null));
+                requestDeleteConfirmation(() => {
+                  archiveDocumentFile(sanitationPlan.id, () => setSanitationPlan(null));
+                });
               }}
             />
           </RecordActions>
@@ -2002,23 +2286,9 @@ export function CompanyAdminDocumentsView({
                 <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                 <DocumentDateInput
                   value={formData.issuedAt}
-                  onOpenRequest={() => {
-                    if (!formData.pdf.file) {
-                      showActionMessage({
-                        tone: "error",
-                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                      });
-                      return false;
-                    }
-
-                    return true;
-                  }}
+                  onOpenRequest={() => requireDocumentPdf(Boolean(formData.pdf.file))}
                   onChange={(event) => {
-                    if (!formData.pdf.file) {
-                      showActionMessage({
-                        tone: "error",
-                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                      });
+                    if (!requireDocumentPdf(Boolean(formData.pdf.file))) {
                       return;
                     }
 
@@ -2031,7 +2301,16 @@ export function CompanyAdminDocumentsView({
                 <DocumentValiditySelect
                   value={formData.validityMonths}
                   suggestedMonths={suggestedValidityMonths}
-                  onChange={(validityMonths) => updateFormData({ validityMonths })}
+                  onOpenRequest={() =>
+                    requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)
+                  }
+                  onChange={(validityMonths) => {
+                    if (!requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)) {
+                      return;
+                    }
+
+                    updateFormData({ validityMonths });
+                  }}
                 />
               </label>
             </div>
@@ -2059,8 +2338,8 @@ export function CompanyAdminDocumentsView({
                   </div>
                 </div>
                 <RecordActions status={getDatedRecordStatus(record)}>
-                  <button
-                    type="button"
+                  <EditRecordButton
+                    label="Editar certificado"
                     onClick={() =>
                       startRegistration({
                         editingId: record.id,
@@ -2069,17 +2348,16 @@ export function CompanyAdminDocumentsView({
                         pdf: record.pdf ? { file: record.pdf, error: null } : createEmptyFileState(),
                       })
                     }
-                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
-                  >
-                    Editar
-                  </button>
+                  />
                   <DeleteRecordButton
                     label="Eliminar certificado"
-                    onClick={() =>
-                      archiveDocumentFile(record.id, () =>
-                        setRecords(records.filter((currentRecord) => currentRecord.id !== record.id)),
-                      )
-                    }
+                    onClick={() => {
+                      requestDeleteConfirmation(() => {
+                        archiveDocumentFile(record.id, () =>
+                          setRecords(records.filter((currentRecord) => currentRecord.id !== record.id)),
+                        );
+                      });
+                    }}
                   />
                 </RecordActions>
               </RecordRow>
@@ -2126,23 +2404,9 @@ export function CompanyAdminDocumentsView({
                 <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                 <DocumentDateInput
                   value={formData.collectedAt}
-                  onOpenRequest={() => {
-                    if (!formData.pdf.file) {
-                      showActionMessage({
-                        tone: "error",
-                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                      });
-                      return false;
-                    }
-
-                    return true;
-                  }}
+                  onOpenRequest={() => requireDocumentPdf(Boolean(formData.pdf.file))}
                   onChange={(event) => {
-                    if (!formData.pdf.file) {
-                      showActionMessage({
-                        tone: "error",
-                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                      });
+                    if (!requireDocumentPdf(Boolean(formData.pdf.file))) {
                       return;
                     }
 
@@ -2155,7 +2419,16 @@ export function CompanyAdminDocumentsView({
                 <DocumentValiditySelect
                   value={formData.validityMonths}
                   suggestedMonths={DEFAULT_ACU_VALIDITY_MONTHS}
-                  onChange={(validityMonths) => updateFormData({ validityMonths })}
+                  onOpenRequest={() =>
+                    requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)
+                  }
+                  onChange={(validityMonths) => {
+                    if (!requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)) {
+                      return;
+                    }
+
+                    updateFormData({ validityMonths });
+                  }}
                 />
               </label>
             </div>
@@ -2183,8 +2456,8 @@ export function CompanyAdminDocumentsView({
                   </div>
                 </div>
                 <RecordActions status={getAcuRecordStatus(record)}>
-                  <button
-                    type="button"
+                  <EditRecordButton
+                    label="Editar certificado"
                     onClick={() =>
                       startRegistration({
                         editingId: record.id,
@@ -2193,16 +2466,15 @@ export function CompanyAdminDocumentsView({
                         pdf: { file: record.pdf, error: null },
                       })
                     }
-                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
-                  >
-                    Editar
-                  </button>
+                  />
                   <DeleteRecordButton
                     label="Eliminar certificado"
                     onClick={() => {
-                      archiveDocumentFile(record.id, () =>
-                        setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id)),
-                      );
+                      requestDeleteConfirmation(() => {
+                        archiveDocumentFile(record.id, () =>
+                          setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id)),
+                        );
+                      });
                     }}
                   />
                 </RecordActions>
@@ -2223,6 +2495,7 @@ export function CompanyAdminDocumentsView({
         existingProduct?.technicalSheet.file ||
         existingProduct?.safetySheet.file,
     );
+    const isProductNameMissing = missingRequiredNames.productName && !formData.productName.trim();
 
     return (
       <div className="grid gap-4">
@@ -2251,10 +2524,12 @@ export function CompanyAdminDocumentsView({
             <label className="ui-form-field">
               <span className="ui-form-label">Nombre del producto</span>
               <input
+                ref={productNameInputRef}
                 value={formData.productName}
                 onChange={(event) => updateFormData({ productName: event.currentTarget.value })}
                 placeholder="Ej. Amonio cuaternario"
-                className="ui-form-control"
+                aria-invalid={isProductNameMissing}
+                className={`ui-form-control ${isProductNameMissing ? `ui-form-control-error ${REQUIRED_NAME_ERROR_INPUT_CLASS}` : ""}`}
               />
             </label>
             <DocumentModalDivider />
@@ -2264,6 +2539,7 @@ export function CompanyAdminDocumentsView({
                   id="chemical-technical-sheet"
                   label="Ficha técnica PDF"
                   state={formData.technicalSheet}
+                  onOpenRequest={requireProductName}
                   onChange={(technicalSheet) => updateFormData({ technicalSheet })}
                 />
               </DocumentUploadField>
@@ -2272,6 +2548,7 @@ export function CompanyAdminDocumentsView({
                   id="chemical-safety-sheet"
                   label="Hoja de seguridad PDF"
                   state={formData.safetySheet}
+                  onOpenRequest={requireProductName}
                   onChange={(safetySheet) => updateFormData({ safetySheet })}
                 />
               </DocumentUploadField>
@@ -2291,8 +2568,8 @@ export function CompanyAdminDocumentsView({
                   </div>
                 </div>
                 <RecordActions status={getProductStatus(product)}>
-                  <button
-                    type="button"
+                  <EditRecordButton
+                    label="Editar producto"
                     onClick={() =>
                       startRegistration({
                         editingId: product.id,
@@ -2301,14 +2578,13 @@ export function CompanyAdminDocumentsView({
                         safetySheet: product.safetySheet,
                       })
                     }
-                    className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
-                  >
-                    Editar
-                  </button>
+                  />
                   <DeleteRecordButton
                     label="Eliminar producto"
                     onClick={() => {
-                      archiveChemicalProduct(product.id);
+                      requestDeleteConfirmation(() => {
+                        archiveChemicalProduct(product.id);
+                      });
                     }}
                   />
                 </RecordActions>
@@ -2326,6 +2602,7 @@ export function CompanyAdminDocumentsView({
       : null;
     const hasFoodHandlingPdf = Boolean(formData.foodHandlingPdf.file || existingMember?.foodHandlingPdf.file);
     const hasMedicalExamPdf = Boolean(formData.medicalExamPdf.file || existingMember?.medicalExamPdf.file);
+    const isStaffNameMissing = missingRequiredNames.fullName && !formData.fullName.trim();
     const canSaveStaff = Boolean(
       formData.fullName.trim() &&
         (hasFoodHandlingPdf || hasMedicalExamPdf) &&
@@ -2338,6 +2615,10 @@ export function CompanyAdminDocumentsView({
       field: "foodHandlingIssuedAt" | "medicalExamIssuedAt",
     ) => {
       const messageField = field === "foodHandlingIssuedAt" ? "foodHandlingDateMessage" : "medicalExamDateMessage";
+
+      if (!requireStaffFullName()) {
+        return;
+      }
 
       if (!fileExists) {
         showStaffDateMessage(messageField);
@@ -2384,11 +2665,13 @@ export function CompanyAdminDocumentsView({
           >
             <label className="ui-form-field">
               <input
+                ref={staffNameInputRef}
                 value={formData.fullName}
                 onChange={(event) => updateFormData({ fullName: event.currentTarget.value })}
                 placeholder="Nombre del colaborador"
                 aria-label="Nombre del colaborador"
-                className="ui-form-control"
+                aria-invalid={isStaffNameMissing}
+                className={`ui-form-control ${isStaffNameMissing ? `ui-form-control-error ${REQUIRED_NAME_ERROR_INPUT_CLASS}` : ""}`}
               />
             </label>
             <DocumentModalDivider />
@@ -2398,6 +2681,7 @@ export function CompanyAdminDocumentsView({
                   id="staff-food-handling-pdf"
                   label="PDF curso manipulación"
                   state={formData.foodHandlingPdf}
+                  onOpenRequest={requireStaffFullName}
                   onChange={(foodHandlingPdf) => {
                     clearActionMessage();
                     updateFormData({ foodHandlingPdf, foodHandlingDateMessage: "" });
@@ -2408,14 +2692,7 @@ export function CompanyAdminDocumentsView({
                     <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                     <DocumentDateInput
                       value={formData.foodHandlingIssuedAt}
-                      onOpenRequest={() => {
-                        if (!hasFoodHandlingPdf) {
-                          showStaffDateMessage("foodHandlingDateMessage");
-                          return false;
-                        }
-
-                        return true;
-                      }}
+                      onOpenRequest={() => requireStaffPdf(hasFoodHandlingPdf, "foodHandlingDateMessage")}
                       onChange={(event) =>
                         handleStaffDateChange(
                           event,
@@ -2430,7 +2707,26 @@ export function CompanyAdminDocumentsView({
                     <DocumentValiditySelect
                       value={formData.foodHandlingValidityMonths}
                       suggestedMonths={DEFAULT_STAFF_VALIDITY_MONTHS}
-                      onChange={(foodHandlingValidityMonths) => updateFormData({ foodHandlingValidityMonths })}
+                      onOpenRequest={() =>
+                        requireStaffPdf(
+                          hasFoodHandlingPdf,
+                          "foodHandlingDateMessage",
+                          DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE,
+                        )
+                      }
+                      onChange={(foodHandlingValidityMonths) => {
+                        if (
+                          !requireStaffPdf(
+                            hasFoodHandlingPdf,
+                            "foodHandlingDateMessage",
+                            DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE,
+                          )
+                        ) {
+                          return;
+                        }
+
+                        updateFormData({ foodHandlingValidityMonths });
+                      }}
                     />
                   </label>
                 </div>
@@ -2445,6 +2741,7 @@ export function CompanyAdminDocumentsView({
                   id="staff-medical-exam-pdf"
                   label="PDF examen médico"
                   state={formData.medicalExamPdf}
+                  onOpenRequest={requireStaffFullName}
                   onChange={(medicalExamPdf) => {
                     clearActionMessage();
                     updateFormData({ medicalExamPdf, medicalExamDateMessage: "" });
@@ -2455,14 +2752,7 @@ export function CompanyAdminDocumentsView({
                     <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                     <DocumentDateInput
                       value={formData.medicalExamIssuedAt}
-                      onOpenRequest={() => {
-                        if (!hasMedicalExamPdf) {
-                          showStaffDateMessage("medicalExamDateMessage");
-                          return false;
-                        }
-
-                        return true;
-                      }}
+                      onOpenRequest={() => requireStaffPdf(hasMedicalExamPdf, "medicalExamDateMessage")}
                       onChange={(event) =>
                         handleStaffDateChange(
                           event,
@@ -2477,7 +2767,26 @@ export function CompanyAdminDocumentsView({
                     <DocumentValiditySelect
                       value={formData.medicalExamValidityMonths}
                       suggestedMonths={DEFAULT_STAFF_VALIDITY_MONTHS}
-                      onChange={(medicalExamValidityMonths) => updateFormData({ medicalExamValidityMonths })}
+                      onOpenRequest={() =>
+                        requireStaffPdf(
+                          hasMedicalExamPdf,
+                          "medicalExamDateMessage",
+                          DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE,
+                        )
+                      }
+                      onChange={(medicalExamValidityMonths) => {
+                        if (
+                          !requireStaffPdf(
+                            hasMedicalExamPdf,
+                            "medicalExamDateMessage",
+                            DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE,
+                          )
+                        ) {
+                          return;
+                        }
+
+                        updateFormData({ medicalExamValidityMonths });
+                      }}
                     />
                   </label>
                 </div>
@@ -2511,8 +2820,8 @@ export function CompanyAdminDocumentsView({
                     </div>
                   </div>
                   <RecordActions status={getStaffStatus(member)}>
-                    <button
-                      type="button"
+                    <EditRecordButton
+                      label="Editar empleado"
                       onClick={() =>
                         startRegistration({
                           editingId: member.id,
@@ -2525,14 +2834,13 @@ export function CompanyAdminDocumentsView({
                           medicalExamPdf: member.medicalExamPdf,
                         })
                       }
-                      className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
-                    >
-                      Editar
-                    </button>
+                    />
                     <DeleteRecordButton
                       label="Eliminar empleado"
                       onClick={() => {
-                        archiveStaffMember(member.id);
+                        requestDeleteConfirmation(() => {
+                          archiveStaffMember(member.id);
+                        });
                       }}
                     />
                   </RecordActions>
@@ -2583,26 +2891,27 @@ export function CompanyAdminDocumentsView({
   };
 
   return (
-    <section className="grid gap-5 transition-all duration-300 ease-in-out">
-      {activeSectionConfig ? (
-        <DocumentsToolbar activeSectionConfig={activeSectionConfig} />
-      ) : null}
+    <>
+      <section className="grid gap-5 transition-all duration-300 ease-in-out">
+        {activeSectionConfig ? (
+          <DocumentsToolbar activeSectionConfig={activeSectionConfig} />
+        ) : null}
 
-      {activeSectionConfig ? (
-        <DedicatedSectionScreen>
-          {!isRegistering && actionMessage ? <ActionMessage message={actionMessage} /> : null}
-          {renderActiveSection(activeSectionConfig.id)}
-        </DedicatedSectionScreen>
-      ) : (
-        <div className="mx-auto mt-6 w-full max-w-3xl px-4">
-          <article className="rounded-[1.45rem] p-5 text-left dashboard-card-surface dashboard-card-surface-operational">
-            <h2 className="mb-4 text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#2a7f86]">
-              Seleccione
-            </h2>
-            <div>
-              {DOCUMENT_MENU_ITEMS.map((item, index) => (
-                <div key={item.sectionId}>
+        {activeSectionConfig ? (
+          <DedicatedSectionScreen>
+            {!isRegistering && actionMessage ? <ActionMessage message={actionMessage} /> : null}
+            {renderActiveSection(activeSectionConfig.id)}
+          </DedicatedSectionScreen>
+        ) : (
+          <div className="mx-auto mt-6 w-full max-w-3xl px-4">
+            <article className="rounded-[1.45rem] p-5 text-left dashboard-card-surface dashboard-card-surface-operational">
+              <h2 className="mb-4 text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#2a7f86]">
+                Seleccione
+              </h2>
+              <RecordsList>
+                {DOCUMENT_MENU_ITEMS.map((item) => (
                   <DocumentMenuCard
+                    key={item.sectionId}
                     item={item}
                     badge={sectionStatusBadges[item.sectionId]}
                     countLabel={sectionCountLabels[item.sectionId]}
@@ -2612,15 +2921,20 @@ export function CompanyAdminDocumentsView({
                       setActiveSection(sectionId);
                     }}
                   />
-                  {index < DOCUMENT_MENU_ITEMS.length - 1 ? (
-                    <div className="my-1 border-b border-gray-100" />
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </article>
-        </div>
-      )}
-    </section>
+                ))}
+              </RecordsList>
+            </article>
+          </div>
+        )}
+      </section>
+
+      {deleteConfirmation ? (
+        <DocumentDeleteConfirmationModal
+          isDeleting={isSaving}
+          onCancel={() => setDeleteConfirmation(null)}
+          onConfirm={confirmPendingDelete}
+        />
+      ) : null}
+    </>
   );
 }
