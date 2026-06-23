@@ -296,6 +296,64 @@ create table if not exists public.branch_form_qr_codes (
   constraint branch_form_qr_codes_token_length check (char_length(token) >= 32)
 );
 
+create table if not exists public.resumen_diario_formularios (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete cascade,
+  formulario_id public.operational_form_type not null,
+  fecha date not null,
+  cantidad_registros integer not null default 0,
+  updated_at timestamptz not null default now(),
+  constraint resumen_diario_formularios_cantidad_nonnegative check (cantidad_registros >= 0),
+  unique (sede_id, formulario_id, fecha)
+);
+
+create index if not exists resumen_diario_formularios_lookup_idx
+on public.resumen_diario_formularios (sede_id, formulario_id, fecha);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'sede_documento_categoria'
+  ) then
+    create type public.sede_documento_categoria as enum (
+      'sanitation_plan',
+      'chemical_products',
+      'pest_control',
+      'water_tank_cleaning',
+      'acu_final_disposal',
+      'staff_records'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'sede_documento_estado'
+  ) then
+    create type public.sede_documento_estado as enum ('gris', 'rojo', 'amarillo', 'verde');
+  end if;
+end $$;
+
+create table if not exists public.sedes_categorias_documentos (
+  id uuid primary key default gen_random_uuid(),
+  sede_id uuid not null references public.branches (id) on delete cascade,
+  categoria public.sede_documento_categoria not null,
+  estado_calculado public.sede_documento_estado not null default 'gris',
+  updated_at timestamptz not null default now(),
+  unique (sede_id, categoria)
+);
+
+alter table public.sedes_categorias_documentos
+add column if not exists estado_calculado public.sede_documento_estado not null default 'gris';
+
+create index if not exists sedes_categorias_documentos_lookup_idx
+on public.sedes_categorias_documentos (sede_id, categoria);
+
 create table if not exists public.branch_refrigeration_equipment (
   id uuid primary key default gen_random_uuid(),
   branch_id uuid not null references public.branches (id) on delete cascade,
@@ -727,6 +785,395 @@ begin
 end;
 $$;
 
+create or replace function public.apply_resumen_diario_formularios_delta(
+  p_sede_id uuid,
+  p_formulario_id public.operational_form_type,
+  p_fecha date,
+  p_delta integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_sede_id is null or p_formulario_id is null or p_fecha is null or p_delta = 0 then
+    return;
+  end if;
+
+  insert into public.resumen_diario_formularios (
+    sede_id,
+    formulario_id,
+    fecha,
+    cantidad_registros,
+    updated_at
+  )
+  values (
+    p_sede_id,
+    p_formulario_id,
+    p_fecha,
+    greatest(p_delta, 0),
+    now()
+  )
+  on conflict (sede_id, formulario_id, fecha)
+  do update set
+    cantidad_registros = greatest(public.resumen_diario_formularios.cantidad_registros + p_delta, 0),
+    updated_at = now();
+
+  delete from public.resumen_diario_formularios
+  where sede_id = p_sede_id
+    and formulario_id = p_formulario_id
+    and fecha = p_fecha
+    and cantidad_registros <= 0;
+end;
+$$;
+
+create or replace function public.sync_resumen_diario_formularios()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_fecha date;
+  new_fecha date;
+begin
+  if tg_op = 'DELETE' then
+    old_fecha := (old.fecha_hora_servidor at time zone 'America/Bogota')::date;
+    perform public.apply_resumen_diario_formularios_delta(old.sede_id, old.tipo_formulario, old_fecha, -1);
+    return old;
+  end if;
+
+  if tg_op = 'INSERT' then
+    new_fecha := (new.fecha_hora_servidor at time zone 'America/Bogota')::date;
+    perform public.apply_resumen_diario_formularios_delta(new.sede_id, new.tipo_formulario, new_fecha, 1);
+    return new;
+  end if;
+
+  old_fecha := (old.fecha_hora_servidor at time zone 'America/Bogota')::date;
+  new_fecha := (new.fecha_hora_servidor at time zone 'America/Bogota')::date;
+
+  if old.sede_id is distinct from new.sede_id
+    or old.tipo_formulario is distinct from new.tipo_formulario
+    or old_fecha is distinct from new_fecha
+  then
+    perform public.apply_resumen_diario_formularios_delta(old.sede_id, old.tipo_formulario, old_fecha, -1);
+    perform public.apply_resumen_diario_formularios_delta(new.sede_id, new.tipo_formulario, new_fecha, 1);
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.get_document_category_from_kind(
+  p_document_kind public.branch_sanitary_document_kind
+)
+returns public.sede_documento_categoria
+language sql
+immutable
+set search_path = public
+as $$
+  select case p_document_kind
+    when 'sanitation_plan' then 'sanitation_plan'::public.sede_documento_categoria
+    when 'chemical_technical_sheet' then 'chemical_products'::public.sede_documento_categoria
+    when 'chemical_safety_sheet' then 'chemical_products'::public.sede_documento_categoria
+    when 'pest_control_certificate' then 'pest_control'::public.sede_documento_categoria
+    when 'water_tank_cleaning_certificate' then 'water_tank_cleaning'::public.sede_documento_categoria
+    when 'acu_final_disposal_certificate' then 'acu_final_disposal'::public.sede_documento_categoria
+    when 'food_handling_course' then 'staff_records'::public.sede_documento_categoria
+    when 'medical_fitness_exam' then 'staff_records'::public.sede_documento_categoria
+  end;
+$$;
+
+create or replace function public.recalcular_estado_categoria_documentos(
+  p_sede_id uuid,
+  p_categoria public.sede_documento_categoria
+)
+returns public.sede_documento_estado
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  next_estado public.sede_documento_estado := 'gris';
+begin
+  if p_sede_id is null or p_categoria is null then
+    return next_estado;
+  end if;
+
+  if p_categoria = 'sanitation_plan' then
+    if exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'sanitation_plan'
+        and files.is_active = true
+    ) then
+      next_estado := 'verde';
+    end if;
+  elsif p_categoria = 'pest_control' then
+    if not exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'pest_control_certificate'
+        and files.is_active = true
+    ) then
+      next_estado := 'gris';
+    elsif exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'pest_control_certificate'
+        and files.is_active = true
+        and files.expires_at < current_date
+    ) then
+      next_estado := 'rojo';
+    else
+      next_estado := 'verde';
+    end if;
+  elsif p_categoria = 'water_tank_cleaning' then
+    if not exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'water_tank_cleaning_certificate'
+        and files.is_active = true
+    ) then
+      next_estado := 'gris';
+    elsif exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'water_tank_cleaning_certificate'
+        and files.is_active = true
+        and files.expires_at < current_date
+    ) then
+      next_estado := 'rojo';
+    else
+      next_estado := 'verde';
+    end if;
+  elsif p_categoria = 'acu_final_disposal' then
+    if not exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'acu_final_disposal_certificate'
+        and files.is_active = true
+    ) then
+      next_estado := 'gris';
+    elsif exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind = 'acu_final_disposal_certificate'
+        and files.is_active = true
+        and files.expires_at < current_date
+    ) then
+      next_estado := 'rojo';
+    else
+      next_estado := 'verde';
+    end if;
+  elsif p_categoria = 'chemical_products' then
+    if not exists (
+      select 1
+      from public.branch_chemical_products products
+      where products.branch_id = p_sede_id
+        and products.is_active = true
+    ) then
+      next_estado := 'gris';
+    elsif exists (
+      select 1
+      from public.branch_chemical_products products
+      where products.branch_id = p_sede_id
+        and products.is_active = true
+        and (
+          not exists (
+            select 1
+            from public.branch_sanitary_document_files files
+            where files.chemical_product_id = products.id
+              and files.document_kind = 'chemical_technical_sheet'
+              and files.is_active = true
+          )
+          or not exists (
+            select 1
+            from public.branch_sanitary_document_files files
+            where files.chemical_product_id = products.id
+              and files.document_kind = 'chemical_safety_sheet'
+              and files.is_active = true
+          )
+        )
+    ) then
+      next_estado := 'amarillo';
+    else
+      next_estado := 'verde';
+    end if;
+  elsif p_categoria = 'staff_records' then
+    if not exists (
+      select 1
+      from public.branch_staff_members staff
+      where staff.branch_id = p_sede_id
+        and staff.is_active = true
+    ) then
+      next_estado := 'gris';
+    elsif exists (
+      select 1
+      from public.branch_sanitary_document_files files
+      where files.branch_id = p_sede_id
+        and files.document_kind in ('food_handling_course', 'medical_fitness_exam')
+        and files.is_active = true
+        and files.expires_at < current_date
+    ) then
+      next_estado := 'rojo';
+    elsif exists (
+      select 1
+      from public.branch_staff_members staff
+      where staff.branch_id = p_sede_id
+        and staff.is_active = true
+        and (
+          not exists (
+            select 1
+            from public.branch_sanitary_document_files files
+            where files.staff_member_id = staff.id
+              and files.document_kind = 'food_handling_course'
+              and files.is_active = true
+              and nullif(files.metadata->>'issuedAt', '') is not null
+          )
+          or not exists (
+            select 1
+            from public.branch_sanitary_document_files files
+            where files.staff_member_id = staff.id
+              and files.document_kind = 'medical_fitness_exam'
+              and files.is_active = true
+              and nullif(files.metadata->>'issuedAt', '') is not null
+          )
+        )
+    ) then
+      next_estado := 'amarillo';
+    else
+      next_estado := 'verde';
+    end if;
+  end if;
+
+  insert into public.sedes_categorias_documentos (
+    sede_id,
+    categoria,
+    estado_calculado,
+    updated_at
+  )
+  values (
+    p_sede_id,
+    p_categoria,
+    next_estado,
+    now()
+  )
+  on conflict (sede_id, categoria)
+  do update set
+    estado_calculado = excluded.estado_calculado,
+    updated_at = now();
+
+  return next_estado;
+end;
+$$;
+
+create or replace function public.refresh_sedes_categorias_documentos(p_sede_id uuid default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  branch_record record;
+  category_record record;
+begin
+  for branch_record in
+    select id
+    from public.branches
+    where p_sede_id is null or id = p_sede_id
+  loop
+    for category_record in
+      select unnest(enum_range(null::public.sede_documento_categoria)) as categoria
+    loop
+      perform public.recalcular_estado_categoria_documentos(branch_record.id, category_record.categoria);
+    end loop;
+  end loop;
+end;
+$$;
+
+create or replace function public.sync_sedes_categorias_documentos_from_file()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  old_categoria public.sede_documento_categoria;
+  new_categoria public.sede_documento_categoria;
+begin
+  if tg_op in ('UPDATE', 'DELETE') then
+    old_categoria := public.get_document_category_from_kind(old.document_kind);
+    perform public.recalcular_estado_categoria_documentos(old.branch_id, old_categoria);
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') then
+    new_categoria := public.get_document_category_from_kind(new.document_kind);
+    perform public.recalcular_estado_categoria_documentos(new.branch_id, new_categoria);
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.sync_sedes_categorias_documentos_from_product()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op in ('UPDATE', 'DELETE') then
+    perform public.recalcular_estado_categoria_documentos(old.branch_id, 'chemical_products');
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') then
+    perform public.recalcular_estado_categoria_documentos(new.branch_id, 'chemical_products');
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.sync_sedes_categorias_documentos_from_staff()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op in ('UPDATE', 'DELETE') then
+    perform public.recalcular_estado_categoria_documentos(old.branch_id, 'staff_records');
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') then
+    perform public.recalcular_estado_categoria_documentos(new.branch_id, 'staff_records');
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists set_companies_updated_at on public.companies;
 create trigger set_companies_updated_at
 before update on public.companies
@@ -787,6 +1234,12 @@ before insert or update of branch_id, is_active on public.branch_chemical_produc
 for each row
 execute function public.enforce_branch_chemical_products_limit();
 
+drop trigger if exists sync_sedes_categorias_documentos_from_product on public.branch_chemical_products;
+create trigger sync_sedes_categorias_documentos_from_product
+after insert or update of branch_id, is_active or delete on public.branch_chemical_products
+for each row
+execute function public.sync_sedes_categorias_documentos_from_product();
+
 drop trigger if exists set_branch_staff_members_company_id on public.branch_staff_members;
 create trigger set_branch_staff_members_company_id
 before insert or update of branch_id, company_id on public.branch_staff_members
@@ -805,6 +1258,12 @@ before insert or update of branch_id, is_active on public.branch_staff_members
 for each row
 execute function public.enforce_branch_staff_members_limit();
 
+drop trigger if exists sync_sedes_categorias_documentos_from_staff on public.branch_staff_members;
+create trigger sync_sedes_categorias_documentos_from_staff
+after insert or update of branch_id, is_active or delete on public.branch_staff_members
+for each row
+execute function public.sync_sedes_categorias_documentos_from_staff();
+
 drop trigger if exists set_branch_sanitary_document_files_company_id on public.branch_sanitary_document_files;
 create trigger set_branch_sanitary_document_files_company_id
 before insert or update of branch_id, company_id on public.branch_sanitary_document_files
@@ -822,6 +1281,13 @@ create trigger enforce_branch_sanitary_document_files_limit
 before insert or update of branch_id, document_kind, is_active on public.branch_sanitary_document_files
 for each row
 execute function public.enforce_branch_sanitary_document_files_limit();
+
+drop trigger if exists sync_sedes_categorias_documentos_from_file on public.branch_sanitary_document_files;
+create trigger sync_sedes_categorias_documentos_from_file
+after insert or update of branch_id, document_kind, is_active, expires_at, metadata, chemical_product_id, staff_member_id or delete
+on public.branch_sanitary_document_files
+for each row
+execute function public.sync_sedes_categorias_documentos_from_file();
 
 drop trigger if exists set_branch_form_qr_codes_company_id on public.branch_form_qr_codes;
 create trigger set_branch_form_qr_codes_company_id
@@ -889,6 +1355,30 @@ before insert or update of sede_id, company_id on public.water_quality_records
 for each row
 execute function public.set_company_id_from_branch();
 
+drop trigger if exists sync_resumen_diario_formularios_thermal_control on public.thermal_control_records;
+create trigger sync_resumen_diario_formularios_thermal_control
+after insert or update of sede_id, tipo_formulario, fecha_hora_servidor or delete on public.thermal_control_records
+for each row
+execute function public.sync_resumen_diario_formularios();
+
+drop trigger if exists sync_resumen_diario_formularios_area_sanitation on public.area_sanitation_records;
+create trigger sync_resumen_diario_formularios_area_sanitation
+after insert or update of sede_id, tipo_formulario, fecha_hora_servidor or delete on public.area_sanitation_records
+for each row
+execute function public.sync_resumen_diario_formularios();
+
+drop trigger if exists sync_resumen_diario_formularios_supply_reception on public.supply_reception_records;
+create trigger sync_resumen_diario_formularios_supply_reception
+after insert or update of sede_id, tipo_formulario, fecha_hora_servidor or delete on public.supply_reception_records
+for each row
+execute function public.sync_resumen_diario_formularios();
+
+drop trigger if exists sync_resumen_diario_formularios_water_quality on public.water_quality_records;
+create trigger sync_resumen_diario_formularios_water_quality
+after insert or update of sede_id, tipo_formulario, fecha_hora_servidor or delete on public.water_quality_records
+for each row
+execute function public.sync_resumen_diario_formularios();
+
 create or replace function public.seed_default_branch_dashboard_items()
 returns trigger
 language plpgsql
@@ -948,11 +1438,41 @@ begin
 end;
 $$;
 
+create or replace function public.seed_default_sedes_categorias_documentos()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  insert into public.sedes_categorias_documentos (
+    sede_id,
+    categoria,
+    estado_calculado
+  )
+  select
+    new.id,
+    categories.categoria,
+    'gris'::public.sede_documento_estado
+  from (
+    select unnest(enum_range(null::public.sede_documento_categoria)) as categoria
+  ) categories
+  on conflict (sede_id, categoria) do nothing;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists seed_default_branch_form_qr_codes on public.branches;
 create trigger seed_default_branch_form_qr_codes
 after insert on public.branches
 for each row
 execute function public.seed_default_branch_form_qr_codes();
+
+drop trigger if exists seed_default_sedes_categorias_documentos on public.branches;
+create trigger seed_default_sedes_categorias_documentos
+after insert on public.branches
+for each row
+execute function public.seed_default_sedes_categorias_documentos();
 
 insert into public.branch_dashboard_items (
   branch_id,
@@ -1005,6 +1525,101 @@ cross join (
     ('water_quality'::public.operational_form_type)
 ) as forms(form_type)
 on conflict (branch_id, form_type) do nothing;
+
+insert into public.resumen_diario_formularios (
+  sede_id,
+  formulario_id,
+  fecha,
+  cantidad_registros,
+  updated_at
+)
+select
+  daily.sede_id,
+  daily.formulario_id,
+  daily.fecha,
+  sum(daily.cantidad_registros)::integer,
+  now()
+from (
+  select
+    records.sede_id,
+    records.tipo_formulario as formulario_id,
+    (records.fecha_hora_servidor at time zone 'America/Bogota')::date as fecha,
+    count(*)::integer as cantidad_registros
+  from public.thermal_control_records records
+  group by records.sede_id, records.tipo_formulario, (records.fecha_hora_servidor at time zone 'America/Bogota')::date
+  union all
+  select
+    records.sede_id,
+    records.tipo_formulario as formulario_id,
+    (records.fecha_hora_servidor at time zone 'America/Bogota')::date as fecha,
+    count(*)::integer as cantidad_registros
+  from public.area_sanitation_records records
+  group by records.sede_id, records.tipo_formulario, (records.fecha_hora_servidor at time zone 'America/Bogota')::date
+  union all
+  select
+    records.sede_id,
+    records.tipo_formulario as formulario_id,
+    (records.fecha_hora_servidor at time zone 'America/Bogota')::date as fecha,
+    count(*)::integer as cantidad_registros
+  from public.supply_reception_records records
+  group by records.sede_id, records.tipo_formulario, (records.fecha_hora_servidor at time zone 'America/Bogota')::date
+  union all
+  select
+    records.sede_id,
+    records.tipo_formulario as formulario_id,
+    (records.fecha_hora_servidor at time zone 'America/Bogota')::date as fecha,
+    count(*)::integer as cantidad_registros
+  from public.water_quality_records records
+  group by records.sede_id, records.tipo_formulario, (records.fecha_hora_servidor at time zone 'America/Bogota')::date
+) daily
+group by daily.sede_id, daily.formulario_id, daily.fecha
+on conflict (sede_id, formulario_id, fecha)
+do update set
+  cantidad_registros = excluded.cantidad_registros,
+  updated_at = now();
+
+insert into public.sedes_categorias_documentos (
+  sede_id,
+  categoria,
+  estado_calculado,
+  updated_at
+)
+select
+  b.id,
+  categories.categoria,
+  'gris'::public.sede_documento_estado,
+  now()
+from public.branches b
+cross join (
+  select unnest(enum_range(null::public.sede_documento_categoria)) as categoria
+) categories
+on conflict (sede_id, categoria) do nothing;
+
+select public.refresh_sedes_categorias_documentos();
+
+create extension if not exists pg_cron with schema extensions;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_namespace
+    where nspname = 'cron'
+  ) and not exists (
+    select 1
+    from cron.job
+    where jobname = 'refresh_sedes_categorias_documentos_daily'
+  ) then
+    perform cron.schedule(
+      'refresh_sedes_categorias_documentos_daily',
+      '5 0 * * *',
+      'select public.refresh_sedes_categorias_documentos();'
+    );
+  end if;
+exception
+  when undefined_table or undefined_function or insufficient_privilege then
+    raise notice 'No se pudo programar pg_cron; ejecuta public.refresh_sedes_categorias_documentos() diariamente desde Supabase Scheduled Functions o pg_cron.';
+end $$;
 
 create or replace function public.can_manage_branch_documents(target_branch_id uuid)
 returns boolean
@@ -1208,47 +1823,13 @@ begin
     return completed_dates;
   end if;
 
-  if qr_record.form_type = 'thermal_control' then
-    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
-    into completed_dates
-    from (
-      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
-      from public.thermal_control_records records
-      where records.sede_id = qr_record.branch_id
-        and records.tipo_formulario = qr_record.form_type
-        and records.fecha_hora_servidor >= now() - interval '30 days'
-    ) days;
-  elsif qr_record.form_type = 'area_sanitation' then
-    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
-    into completed_dates
-    from (
-      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
-      from public.area_sanitation_records records
-      where records.sede_id = qr_record.branch_id
-        and records.tipo_formulario = qr_record.form_type
-        and records.fecha_hora_servidor >= now() - interval '30 days'
-    ) days;
-  elsif qr_record.form_type = 'supply_reception' then
-    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
-    into completed_dates
-    from (
-      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
-      from public.supply_reception_records records
-      where records.sede_id = qr_record.branch_id
-        and records.tipo_formulario = qr_record.form_type
-        and records.fecha_hora_servidor >= now() - interval '30 days'
-    ) days;
-  elsif qr_record.form_type = 'water_quality' then
-    select coalesce(jsonb_agg(day_key order by day_key), '[]'::jsonb)
-    into completed_dates
-    from (
-      select distinct to_char(records.fecha_hora_servidor at time zone 'America/Bogota', 'YYYY-MM-DD') as day_key
-      from public.water_quality_records records
-      where records.sede_id = qr_record.branch_id
-        and records.tipo_formulario = qr_record.form_type
-        and records.fecha_hora_servidor >= now() - interval '30 days'
-    ) days;
-  end if;
+  select coalesce(jsonb_agg(to_char(summary.fecha, 'YYYY-MM-DD') order by summary.fecha), '[]'::jsonb)
+  into completed_dates
+  from public.resumen_diario_formularios summary
+  where summary.sede_id = qr_record.branch_id
+    and summary.formulario_id = qr_record.form_type
+    and summary.fecha >= (current_date - 30)
+    and summary.cantidad_registros > 0;
 
   return completed_dates;
 end;
@@ -1816,6 +2397,8 @@ alter table public.branch_sanitary_document_files enable row level security;
 alter table public.branch_form_qr_codes enable row level security;
 alter table public.branch_refrigeration_equipment enable row level security;
 alter table public.branch_sanitation_areas enable row level security;
+alter table public.resumen_diario_formularios enable row level security;
+alter table public.sedes_categorias_documentos enable row level security;
 alter table public.thermal_control_records enable row level security;
 alter table public.area_sanitation_records enable row level security;
 alter table public.supply_reception_records enable row level security;
@@ -2167,6 +2750,18 @@ using (public.can_access_branch(sede_id));
 drop policy if exists "water_quality_records_select_policy" on public.water_quality_records;
 create policy "water_quality_records_select_policy"
 on public.water_quality_records
+for select
+using (public.can_access_branch(sede_id));
+
+drop policy if exists "resumen_diario_formularios_select_policy" on public.resumen_diario_formularios;
+create policy "resumen_diario_formularios_select_policy"
+on public.resumen_diario_formularios
+for select
+using (public.can_access_branch(sede_id));
+
+drop policy if exists "sedes_categorias_documentos_select_policy" on public.sedes_categorias_documentos;
+create policy "sedes_categorias_documentos_select_policy"
+on public.sedes_categorias_documentos
 for select
 using (public.can_access_branch(sede_id));
 

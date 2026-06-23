@@ -60,6 +60,22 @@ export type BranchSanitaryDocumentKind =
   | "food_handling_course"
   | "medical_fitness_exam";
 
+export type BranchSanitaryDocumentCategory =
+  | "sanitation_plan"
+  | "chemical_products"
+  | "pest_control"
+  | "water_tank_cleaning"
+  | "acu_final_disposal"
+  | "staff_records";
+
+export type BranchSanitaryDocumentStatusColor = "gris" | "rojo" | "amarillo" | "verde";
+
+export type BranchSanitaryDocumentCategoryStatusSummary = {
+  branchId: string;
+  category: BranchSanitaryDocumentCategory;
+  calculatedStatus: BranchSanitaryDocumentStatusColor;
+};
+
 export type BranchSanitaryDocumentFileSummary = {
   id: string;
   branchId: string;

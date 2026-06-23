@@ -13,6 +13,8 @@ import {
 } from "@/app/dashboard/actions";
 import type {
   BranchChemicalProductSummary,
+  BranchSanitaryDocumentCategoryStatusSummary,
+  BranchSanitaryDocumentStatusColor,
   BranchSanitaryDocumentFileSummary,
   BranchSanitaryDocumentKind,
   BranchStaffMemberSummary,
@@ -27,6 +29,7 @@ const DOCUMENT_DATE_INPUT_LABEL = "Fecha expedición";
 const DOCUMENT_VALIDITY_INPUT_LABEL = "Vigencia";
 const DOCUMENT_DATE_PDF_REQUIRED_MESSAGE = "Para asignar la fecha debe subir el PDF";
 const DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE = "Para asignar la vigencia debe subir el PDF";
+const DOCUMENT_FUTURE_DATE_ERROR_MESSAGE = "La fecha de expedición no puede ser mayor a la fecha actual.";
 const DOCUMENT_VALIDITY_OPTIONS = ["1", "2", "3", "6", "12", "24"] as const;
 const DEFAULT_ACU_VALIDITY_MONTHS = "1";
 const DEFAULT_STAFF_VALIDITY_MONTHS = "12";
@@ -283,6 +286,19 @@ function formatDateInputValue(value: string) {
   return `${day}/${month}/${year}`;
 }
 
+function getTodayDateValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function isFutureDocumentDate(value: string) {
+  return Boolean(value && value > getTodayDateValue());
+}
+
 function createEmptyFileState(): FileInputState {
   return {
     file: null,
@@ -404,8 +420,26 @@ function getStaffStatus(record: StaffRecord): DocumentStatus {
   return "Al día";
 }
 
-function getLatestDatedRecord(records: DatedDocumentRecord[]) {
-  return records[0] ?? null;
+function getStaffStatusBadges(record: StaffRecord): DocumentStatus[] {
+  const hasCourse = Boolean(record.foodHandlingPdf.file);
+  const hasMedicalExam = Boolean(record.medicalExamPdf.file);
+  const courseExpired = hasCourse && isExpired(record.foodHandlingExpiresAt);
+  const medicalExamExpired = hasMedicalExam && isExpired(record.medicalExamExpiresAt);
+  const isIncomplete = !hasCourse || !hasMedicalExam || !record.foodHandlingIssuedAt || !record.medicalExamIssuedAt;
+
+  if (!hasCourse && !hasMedicalExam) {
+    return ["Sin registro"];
+  }
+
+  if (courseExpired || medicalExamExpired) {
+    return isIncomplete ? ["Vencido", "Incompleto"] : ["Vencido"];
+  }
+
+  if (isIncomplete) {
+    return ["Incompleto"];
+  }
+
+  return ["Al día"];
 }
 
 function getDocumentDateTime(value: string) {
@@ -431,6 +465,42 @@ function getAggregatedProductStatus(products: ChemicalProductRecord[]): Document
   }
 
   return products.every((product) => getProductStatus(product) === "Completo") ? "Completo" : "Incompleto";
+}
+
+function getAggregatedDatedRecordStatus(records: DatedDocumentRecord[]): DocumentStatus {
+  if (records.length === 0) {
+    return "Sin registro";
+  }
+
+  const statuses = records.map(getDatedRecordStatus);
+
+  if (statuses.includes("Vencido")) {
+    return "Vencido";
+  }
+
+  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
+    return "Incompleto";
+  }
+
+  return "Al día";
+}
+
+function getAggregatedAcuStatus(records: AcuCollectionRecord[]): DocumentStatus {
+  if (records.length === 0) {
+    return "Sin registro";
+  }
+
+  const statuses = records.map(getAcuRecordStatus);
+
+  if (statuses.includes("Vencido")) {
+    return "Vencido";
+  }
+
+  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
+    return "Incompleto";
+  }
+
+  return "Al día";
 }
 
 function getAggregatedStaffStatus(records: StaffRecord[]): DocumentStatus {
@@ -464,6 +534,17 @@ function getMenuBadgeFromStatus(status: DocumentStatus): DocumentMenuBadgeState 
     label: status,
     tone: tone[status],
   };
+}
+
+function getMenuBadgeFromStatusColor(statusColor: BranchSanitaryDocumentStatusColor): DocumentMenuBadgeState {
+  const statusByColor = {
+    gris: "Sin registro",
+    rojo: "Vencido",
+    amarillo: "Incompleto",
+    verde: "Al día",
+  } satisfies Record<BranchSanitaryDocumentStatusColor, DocumentStatus>;
+
+  return getMenuBadgeFromStatus(statusByColor[statusColor]);
 }
 
 function getMetadataString(metadata: Record<string, unknown>, key: string) {
@@ -667,14 +748,28 @@ function formatExpirationDetail(expiresAt: string | null | undefined) {
 }
 
 function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
-  const toneClassName = {
-    neutral: "text-gray-500",
-    success: "text-emerald-700",
-    warning: "text-amber-700",
-    danger: "text-rose-700",
-  }[badge.tone ?? "neutral"];
+  const tone = badge.tone ?? "neutral";
+  const dotClassName = {
+    neutral: "bg-gray-400",
+    success: "bg-green-500",
+    warning: "bg-amber-500",
+    danger: "bg-red-500",
+  }[tone];
+  const pingClassName = {
+    neutral: "",
+    success: "bg-green-400",
+    warning: "bg-amber-400",
+    danger: "bg-red-400",
+  }[tone];
 
-  return <span className={`text-xs font-medium ${toneClassName}`}>{badge.label}</span>;
+  return (
+    <span className="relative flex h-2.5 w-2.5" aria-label={badge.label} role="img">
+      {pingClassName ? (
+        <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${pingClassName}`} />
+      ) : null}
+      <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${dotClassName}`} />
+    </span>
+  );
 }
 
 function formatCountLabel(count: number, singularLabel: string, pluralLabel: string, singularAction: string, pluralAction: string) {
@@ -775,6 +870,16 @@ function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
     <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${className}`}>
       {status}
     </span>
+  );
+}
+
+function DocumentStatusBadges({ statuses }: { statuses: DocumentStatus[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {statuses.map((status) => (
+        <DocumentStatusBadge key={status} status={status} />
+      ))}
+    </div>
   );
 }
 
@@ -897,10 +1002,12 @@ function DocumentDateInput({
   value,
   onChange,
   onOpenRequest,
+  max = getTodayDateValue(),
 }: {
   value: string;
   onChange: (value: string) => void;
   onOpenRequest?: () => boolean;
+  max?: string;
 }) {
   const displayValue = formatDateInputValue(value);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1003,6 +1110,7 @@ function DocumentDateInput({
             <DatePicker
               compact
               value={value}
+              max={max}
               onChange={(nextValue) => {
                 onChange(nextValue);
                 setIsOpen(false);
@@ -1367,11 +1475,10 @@ function RecordRow({ children }: { children: ReactNode }) {
   );
 }
 
-function RecordActions({ status, children }: { status: DocumentStatus; children: ReactNode }) {
+function RecordActions({ children }: { children: ReactNode }) {
   return (
     <div className="flex shrink-0 flex-col items-end gap-2 text-right">
       <RecordActionsMenu>{children}</RecordActionsMenu>
-      <DocumentStatusBadge status={status} />
     </div>
   );
 }
@@ -1413,7 +1520,6 @@ function RecordActionsMenu({ children }: { children: ReactNode }) {
       {isOpen ? (
         <div
           className="absolute right-full top-1/2 mr-1 flex -translate-y-1/2 items-center gap-1 rounded-full border border-gray-200 bg-white/95 p-1 shadow-[0_10px_24px_rgba(18,17,15,0.12)] backdrop-blur-sm"
-          onClickCapture={() => setIsOpen(false)}
         >
           {children}
         </div>
@@ -1423,7 +1529,7 @@ function RecordActionsMenu({ children }: { children: ReactNode }) {
         aria-label={isOpen ? "Cerrar acciones" : "Abrir acciones"}
         aria-expanded={isOpen}
         onClick={() => setIsOpen((currentValue) => !currentValue)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-600 transition duration-200 ease-out hover:scale-110 hover:bg-gray-100 hover:text-gray-700"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-600 transition duration-200 ease-out hover:scale-110 hover:bg-gray-100 hover:text-gray-700"
       >
         <EllipsisIcon />
       </button>
@@ -1472,7 +1578,7 @@ function EllipsisIcon() {
       aria-hidden="true"
       viewBox="0 0 20 20"
       fill="none"
-      className="h-5.5 w-5.5 shrink-0"
+      className="h-6 w-6 shrink-0"
     >
       <path
         d="M5 10h.01M10 10h.01M15 10h.01"
@@ -1539,14 +1645,14 @@ function ExternalPdfIcon({ className = "" }: { className?: string }) {
       className={`h-4 w-4 shrink-0 ${className}`}
     >
       <path
-        d="M2.75 10s2.35-4.25 7.25-4.25S17.25 10 17.25 10 14.9 14.25 10 14.25 2.75 10 2.75 10Z"
+        d="M7.5 5.5H5.75A1.75 1.75 0 0 0 4 7.25v7A1.75 1.75 0 0 0 5.75 16h7a1.75 1.75 0 0 0 1.75-1.75V12.5"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="1.5"
       />
       <path
-        d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"
+        d="M10.5 4H16v5.5M15.5 4.5l-7 7"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -1596,6 +1702,7 @@ type CompanyAdminDocumentsViewProps = {
   initialChemicalProducts: BranchChemicalProductSummary[];
   initialStaffMembers: BranchStaffMemberSummary[];
   initialSanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
+  initialSanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[];
 };
 
 export function CompanyAdminDocumentsView({
@@ -1605,6 +1712,7 @@ export function CompanyAdminDocumentsView({
   initialChemicalProducts,
   initialStaffMembers,
   initialSanitaryDocumentFiles,
+  initialSanitaryDocumentCategoryStatuses,
 }: CompanyAdminDocumentsViewProps) {
   const [activeSection, setActiveSection] = useState<DocumentSectionId | null>(null);
   const [isSaving, startSaving] = useTransition();
@@ -1636,15 +1744,20 @@ export function CompanyAdminDocumentsView({
     buildStaffRecords(initialStaffMembers, initialSanitaryDocumentFiles),
   );
   const activeSectionConfig = DOCUMENT_SECTIONS.find((section) => section.id === activeSection) ?? null;
-  const latestPestControl = getLatestDatedRecord(pestControlRecords);
-  const latestWaterTank = getLatestDatedRecord(waterTankRecords);
+  const precomputedSectionStatusBadges = initialSanitaryDocumentCategoryStatuses.reduce<
+    Partial<Record<DocumentSectionId, DocumentMenuBadgeState>>
+  >((statuses, item) => {
+    statuses[item.category] = getMenuBadgeFromStatusColor(item.calculatedStatus);
+    return statuses;
+  }, {});
   const sectionStatusBadges: Record<DocumentSectionId, DocumentMenuBadgeState> = {
-    sanitation_plan: getMenuBadgeFromStatus(sanitationPlan ? "Al día" : "Sin registro"),
-    chemical_products: getMenuBadgeFromStatus(getAggregatedProductStatus(chemicalProducts)),
-    pest_control: getMenuBadgeFromStatus(latestPestControl ? getDatedRecordStatus(latestPestControl) : "Sin registro"),
-    water_tank_cleaning: getMenuBadgeFromStatus(latestWaterTank ? getDatedRecordStatus(latestWaterTank) : "Sin registro"),
-    acu_final_disposal: getMenuBadgeFromStatus(acuHistory.length ? getAcuRecordStatus(acuHistory[0]) : "Sin registro"),
-    staff_records: getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
+    sanitation_plan: precomputedSectionStatusBadges.sanitation_plan ?? getMenuBadgeFromStatus(sanitationPlan ? "Al día" : "Sin registro"),
+    chemical_products: precomputedSectionStatusBadges.chemical_products ?? getMenuBadgeFromStatus(getAggregatedProductStatus(chemicalProducts)),
+    pest_control: precomputedSectionStatusBadges.pest_control ?? getMenuBadgeFromStatus(getAggregatedDatedRecordStatus(pestControlRecords)),
+    water_tank_cleaning:
+      precomputedSectionStatusBadges.water_tank_cleaning ?? getMenuBadgeFromStatus(getAggregatedDatedRecordStatus(waterTankRecords)),
+    acu_final_disposal: precomputedSectionStatusBadges.acu_final_disposal ?? getMenuBadgeFromStatus(getAggregatedAcuStatus(acuHistory)),
+    staff_records: precomputedSectionStatusBadges.staff_records ?? getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
   };
   const sectionCountLabels: Record<DocumentSectionId, string> = {
     sanitation_plan: formatStoredRecordCount("sanitation_plan", sanitationPlan ? 1 : 0),
@@ -1894,6 +2007,11 @@ export function CompanyAdminDocumentsView({
       return;
     }
 
+    if (isFutureDocumentDate(formData.issuedAt)) {
+      showActionMessage({ tone: "error", text: DOCUMENT_FUTURE_DATE_ERROR_MESSAGE });
+      return;
+    }
+
     const expiresAt = getCalculatedExpirationDate(formData.issuedAt, formData.validityMonths);
     const documentKind: BranchSanitaryDocumentKind =
       prefix === "pest-control" ? "pest_control_certificate" : "water_tank_cleaning_certificate";
@@ -1943,6 +2061,11 @@ export function CompanyAdminDocumentsView({
     const selectedPdf = formData.pdf.file ?? existingRecord?.pdf ?? null;
 
     if (!formData.collectedAt || !selectedPdf) {
+      return;
+    }
+
+    if (isFutureDocumentDate(formData.collectedAt)) {
+      showActionMessage({ tone: "error", text: DOCUMENT_FUTURE_DATE_ERROR_MESSAGE });
       return;
     }
 
@@ -2066,6 +2189,14 @@ export function CompanyAdminDocumentsView({
       (formData.medicalExamPdf.file && !formData.medicalExamIssuedAt)
     ) {
       showActionMessage({ tone: "error", text: "Debes indicar la fecha del PDF que vas a guardar." });
+      return;
+    }
+
+    if (
+      isFutureDocumentDate(formData.foodHandlingIssuedAt) ||
+      isFutureDocumentDate(formData.medicalExamIssuedAt)
+    ) {
+      showActionMessage({ tone: "error", text: DOCUMENT_FUTURE_DATE_ERROR_MESSAGE });
       return;
     }
 
@@ -2218,6 +2349,7 @@ export function CompanyAdminDocumentsView({
             <p className="truncate text-sm font-medium text-gray-800">
               {sanitationPlan?.name ?? "Plan de saneamiento básico"}
             </p>
+            <DocumentStatusBadges statuses={[sanitationPlan ? "Al día" : "Sin registro"]} />
             <div className="mt-1">
               <DocumentFileLink
                 file={sanitationPlan?.pdf ?? null}
@@ -2228,7 +2360,7 @@ export function CompanyAdminDocumentsView({
               />
             </div>
           </div>
-          <RecordActions status={sanitationPlan ? "Al día" : "Sin registro"}>
+          <RecordActions>
             <DeleteRecordButton
               label="Eliminar plan de saneamiento"
               disabled={!sanitationPlan}
@@ -2270,7 +2402,7 @@ export function CompanyAdminDocumentsView({
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={() => saveDatedRecord(records, setRecords, prefix)}
-          disabled={isSaving || !formData.issuedAt || !formData.pdf.file}
+          disabled={isSaving || !formData.issuedAt || isFutureDocumentDate(formData.issuedAt) || !formData.pdf.file}
           submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar registro" : getDocumentRegisterModalLabel(sectionId)}
         >
           <DocumentModalDivider />
@@ -2329,6 +2461,7 @@ export function CompanyAdminDocumentsView({
               <RecordRow key={record.id}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-800">{recordTitle}</p>
+                  <DocumentStatusBadges statuses={[getDatedRecordStatus(record)]} />
                   <div className="mt-1">
                     <DocumentFileLink
                       file={record.pdf}
@@ -2337,7 +2470,7 @@ export function CompanyAdminDocumentsView({
                     />
                   </div>
                 </div>
-                <RecordActions status={getDatedRecordStatus(record)}>
+                <RecordActions>
                   <EditRecordButton
                     label="Editar certificado"
                     onClick={() =>
@@ -2382,7 +2515,7 @@ export function CompanyAdminDocumentsView({
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={saveAcuRecord}
-          disabled={isSaving || !formData.collectedAt || !formData.pdf.file}
+          disabled={isSaving || !formData.collectedAt || isFutureDocumentDate(formData.collectedAt) || !formData.pdf.file}
           submitLabel={
             isSaving
               ? "Guardando..."
@@ -2447,6 +2580,7 @@ export function CompanyAdminDocumentsView({
               <RecordRow key={record.id}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-800">Recolección: {formatDate(record.collectedAt)}</p>
+                  <DocumentStatusBadges statuses={[getAcuRecordStatus(record)]} />
                   <div className="mt-1">
                     <DocumentFileLink
                       file={record.pdf}
@@ -2455,7 +2589,7 @@ export function CompanyAdminDocumentsView({
                     />
                   </div>
                 </div>
-                <RecordActions status={getAcuRecordStatus(record)}>
+                <RecordActions>
                   <EditRecordButton
                     label="Editar certificado"
                     onClick={() =>
@@ -2562,12 +2696,13 @@ export function CompanyAdminDocumentsView({
               <RecordRow key={product.id}>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-gray-800">{product.name}</p>
+                  <DocumentStatusBadges statuses={[getProductStatus(product)]} />
                   <div className="mt-1 grid gap-1">
                     <DocumentFileLink file={product.technicalSheet.file} label="Ficha técnica" />
                     <DocumentFileLink file={product.safetySheet.file} label="Hoja de seguridad" />
                   </div>
                 </div>
-                <RecordActions status={getProductStatus(product)}>
+                <RecordActions>
                   <EditRecordButton
                     label="Editar producto"
                     onClick={() =>
@@ -2607,7 +2742,9 @@ export function CompanyAdminDocumentsView({
       formData.fullName.trim() &&
         (hasFoodHandlingPdf || hasMedicalExamPdf) &&
         (!hasFoodHandlingPdf || formData.foodHandlingIssuedAt) &&
-        (!hasMedicalExamPdf || formData.medicalExamIssuedAt),
+        (!hasMedicalExamPdf || formData.medicalExamIssuedAt) &&
+        !isFutureDocumentDate(formData.foodHandlingIssuedAt) &&
+        !isFutureDocumentDate(formData.medicalExamIssuedAt),
     );
     const handleStaffDateChange = (
       value: string,
@@ -2806,6 +2943,7 @@ export function CompanyAdminDocumentsView({
                 <RecordRow key={member.id}>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-gray-800">{member.fullName}</p>
+                    <DocumentStatusBadges statuses={getStaffStatusBadges(member)} />
                     <div className="mt-1 grid gap-1">
                       <DocumentFileLink
                         file={member.foodHandlingPdf.file}
@@ -2819,7 +2957,7 @@ export function CompanyAdminDocumentsView({
                       />
                     </div>
                   </div>
-                  <RecordActions status={getStaffStatus(member)}>
+                  <RecordActions>
                     <EditRecordButton
                       label="Editar empleado"
                       onClick={() =>

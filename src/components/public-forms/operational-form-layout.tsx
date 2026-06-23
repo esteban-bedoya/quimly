@@ -2,6 +2,9 @@
 
 import { useEffect, type ReactNode } from "react";
 
+import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
+import type { OperationalRecordDateStatus } from "@/lib/operational-record-dates";
+
 export const operationalFormStyles = {
   page: "min-h-screen min-h-dvh bg-[#12110F] px-0 pb-5 pt-12 text-[#111816]",
   shell: "mx-auto flex w-full max-w-lg flex-col",
@@ -64,7 +67,7 @@ export function OperationalFormLayout({
   companyName,
   branchName,
   dateLabel,
-  hasPendingDates,
+  recordDateStatus,
   isDateModified,
   onDateEdit,
   children,
@@ -74,7 +77,7 @@ export function OperationalFormLayout({
   companyName: string;
   branchName: string;
   dateLabel?: string;
-  hasPendingDates?: boolean;
+  recordDateStatus?: OperationalRecordDateStatus;
   isDateModified?: boolean;
   onDateEdit?: () => void;
   children: ReactNode;
@@ -99,7 +102,7 @@ export function OperationalFormLayout({
             companyName={companyName}
             branchName={branchName}
             dateLabel={dateLabel}
-            hasPendingDates={hasPendingDates}
+            recordDateStatus={recordDateStatus}
             isDateModified={isDateModified}
             onDateEdit={onDateEdit}
           />
@@ -117,7 +120,7 @@ export function OperationalFormHeader({
   companyName,
   branchName,
   dateLabel,
-  hasPendingDates,
+  recordDateStatus,
   isDateModified,
   onDateEdit,
 }: {
@@ -126,7 +129,7 @@ export function OperationalFormHeader({
   companyName: string;
   branchName: string;
   dateLabel?: string;
-  hasPendingDates?: boolean;
+  recordDateStatus?: OperationalRecordDateStatus;
   isDateModified?: boolean;
   onDateEdit?: () => void;
 }) {
@@ -147,12 +150,7 @@ export function OperationalFormHeader({
         >
           <span className="block">Cambiar fecha y hora:</span>
           <span className="mt-1 flex items-center justify-end gap-2 tracking-[0.16em]">
-            {hasPendingDates ? (
-              <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
-            ) : null}
+            {recordDateStatus ? <OperationalRecordStatusDot status={recordDateStatus} /> : null}
             <span className={isDateModified ? "text-[#48c7d2]" : "text-white"}>{dateLabel}</span>
           </span>
         </button>

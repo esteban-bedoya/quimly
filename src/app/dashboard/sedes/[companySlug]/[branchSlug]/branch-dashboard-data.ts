@@ -1,5 +1,10 @@
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { operationalFormTypes } from "@/lib/operational-forms";
+import {
+  getOperationalRecordDateLimits,
+  getOperationalRecordDateStatus,
+  type OperationalRecordDateStatus,
+} from "@/lib/operational-record-dates";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type {
@@ -9,6 +14,9 @@ import type {
   BranchChemicalProductSummary,
   BranchDocumentSummary,
   BranchFormQrSummary,
+  BranchSanitaryDocumentCategory,
+  BranchSanitaryDocumentCategoryStatusSummary,
+  BranchSanitaryDocumentStatusColor,
   BranchSanitaryDocumentFileSummary,
   BranchSanitaryDocumentKind,
   BranchStaffMemberSummary,
@@ -90,6 +98,18 @@ type BranchSanitaryDocumentFileRow = {
   updated_at: string;
 };
 
+type OperationalRecordSummaryRow = {
+  formulario_id: OperationalFormType;
+  fecha: string;
+  cantidad_registros: number;
+};
+
+type BranchDocumentCategoryStatusRow = {
+  sede_id: string;
+  categoria: BranchSanitaryDocumentCategory;
+  estado_calculado: BranchSanitaryDocumentStatusColor;
+};
+
 function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
   return (
     qrRows?.map((qrCode) => ({
@@ -101,6 +121,72 @@ function mapQrRows(qrRows: BranchFormQrRow[] | null | undefined) {
       isActive: qrCode.is_active,
     })) ?? []
   );
+}
+
+function getEmptyOperationalRecordDateStatuses() {
+  return operationalFormTypes.reduce<Partial<Record<OperationalFormType, OperationalRecordDateStatus>>>(
+    (statuses, formType) => {
+      statuses[formType] = "missing";
+      return statuses;
+    },
+    {},
+  );
+}
+
+async function loadOperationalRecordDateStatuses({
+  supabase,
+  branchId,
+  companyId,
+  companySlug,
+  branchSlug,
+}: {
+  supabase: Awaited<ReturnType<typeof getSupabaseRlsClient>>;
+  branchId: string;
+  companyId: string;
+  companySlug: string;
+  branchSlug: string;
+}) {
+  const statuses = getEmptyOperationalRecordDateStatuses();
+  const now = new Date();
+  const recordDateLimits = getOperationalRecordDateLimits(30, now);
+  const minDate = recordDateLimits.min.slice(0, 10);
+  const maxDate = recordDateLimits.max.slice(0, 10);
+
+  if (!supabase) {
+    return statuses;
+  }
+
+  const result = await supabase
+    .from("resumen_diario_formularios")
+    .select("formulario_id, fecha, cantidad_registros")
+    .eq("sede_id", branchId)
+    .gte("fecha", minDate)
+    .lte("fecha", maxDate)
+    .gt("cantidad_registros", 0)
+    .returns<OperationalRecordSummaryRow[]>();
+
+  if (result.error) {
+    logServerError("branch.view.operational_record_summary_failed", result.error, {
+      branchId,
+      companyId,
+      companySlug,
+      branchSlug,
+    });
+    return statuses;
+  }
+
+  for (const formType of operationalFormTypes) {
+    statuses[formType] = getOperationalRecordDateStatus({
+      completedDateKeys:
+        result.data
+          ?.filter((record) => record.formulario_id === formType && record.cantidad_registros > 0)
+          .map((record) => record.fecha) ?? [],
+      min: recordDateLimits.min,
+      max: recordDateLimits.max,
+    });
+  }
+
+  return statuses;
 }
 
 async function ensureBranchQrCodes({
@@ -204,6 +290,8 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   let chemicalProducts: BranchChemicalProductSummary[] = [];
   let staffMembers: BranchStaffMemberSummary[] = [];
   let sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[] = [];
+  let sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[] = [];
+  let operationalRecordDateStatuses = getEmptyOperationalRecordDateStatuses();
 
   if (supabase) {
     logServerInfo("branch.view.load.start", {
@@ -222,6 +310,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       chemicalProductRowsResult,
       staffMemberRowsResult,
       sanitaryDocumentFileRowsResult,
+      sanitaryDocumentCategoryStatusRowsResult,
     ] = await Promise.all([
       supabase
         .from("branch_dashboard_items")
@@ -283,6 +372,11 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         .eq("is_active", true)
         .order("uploaded_at", { ascending: false })
         .returns<BranchSanitaryDocumentFileRow[]>(),
+      supabase
+        .from("sedes_categorias_documentos")
+        .select("sede_id, categoria, estado_calculado")
+        .eq("sede_id", branch.id)
+        .returns<BranchDocumentCategoryStatusRow[]>(),
     ]);
 
     const queryResults = {
@@ -294,6 +388,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       chemicalProductRows: chemicalProductRowsResult,
       staffMemberRows: staffMemberRowsResult,
       sanitaryDocumentFileRows: sanitaryDocumentFileRowsResult,
+      sanitaryDocumentCategoryStatusRows: sanitaryDocumentCategoryStatusRowsResult,
     };
 
     for (const [queryName, result] of Object.entries(queryResults)) {
@@ -316,6 +411,13 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       branchSlug,
       existingQrRows: branchQrCodesResult.data,
     });
+    operationalRecordDateStatuses = await loadOperationalRecordDateStatuses({
+      supabase,
+      branchId: branch.id,
+      companyId: company.id,
+      companySlug,
+      branchSlug,
+    });
 
     const dashboardItems = dashboardItemsResult.data;
     const branchDocuments = branchDocumentsResult.data;
@@ -324,6 +426,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     const chemicalProductRows = chemicalProductRowsResult.data;
     const staffMemberRows = staffMemberRowsResult.data;
     const sanitaryDocumentFileRows = sanitaryDocumentFileRowsResult.data;
+    const sanitaryDocumentCategoryStatusRows = sanitaryDocumentCategoryStatusRowsResult.data;
 
     operationalItems =
       dashboardItems
@@ -418,6 +521,13 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         updatedAt: item.updated_at,
       })) ?? [];
 
+    sanitaryDocumentCategoryStatuses =
+      sanitaryDocumentCategoryStatusRows?.map((item) => ({
+        branchId: item.sede_id,
+        category: item.categoria,
+        calculatedStatus: item.estado_calculado,
+      })) ?? [];
+
     logServerInfo("branch.view.load.done", {
       branchId: branch.id,
       companyId: company.id,
@@ -426,10 +536,12 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       qrCount: qrCodes.length,
       documentCount: documents.length,
       sanitaryDocumentFileCount: sanitaryDocumentFiles.length,
+      sanitaryDocumentCategoryStatusCount: sanitaryDocumentCategoryStatuses.length,
       chemicalProductCount: chemicalProducts.length,
       staffMemberCount: staffMembers.length,
       refrigerationEquipmentCount: refrigerationEquipment.length,
       sanitationAreaCount: sanitationAreas.length,
+      operationalRecordDateStatuses,
     });
   } else {
     logServerError("branch.view.rls_client_missing", new Error("Supabase RLS client is not configured."), {
@@ -447,10 +559,12 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     complianceItems,
     documents,
     qrCodes,
+    operationalRecordDateStatuses,
     refrigerationEquipment,
     sanitationAreas,
     chemicalProducts,
     staffMembers,
     sanitaryDocumentFiles,
+    sanitaryDocumentCategoryStatuses,
   };
 }

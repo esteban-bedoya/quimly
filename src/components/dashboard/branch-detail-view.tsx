@@ -15,8 +15,10 @@ import {
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { CompanyAdminDocumentsView } from "@/components/dashboard/company-admin-documents-view";
+import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
 import { logout } from "@/app/login/actions";
 import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
+import type { OperationalRecordDateStatus } from "@/lib/operational-record-dates";
 import { printableQrInstructions } from "@/lib/qr/printable";
 import type {
   BranchCatalogItemSummary,
@@ -25,6 +27,7 @@ import type {
   BranchDocumentSummary,
   BranchFormQrSummary,
   BranchRefrigerationEquipmentType,
+  BranchSanitaryDocumentCategoryStatusSummary,
   BranchSanitaryDocumentFileSummary,
   BranchStaffMemberSummary,
   CompanySummary,
@@ -51,11 +54,13 @@ type BranchDetailViewProps = {
   complianceItems?: BranchModuleItem[];
   documents: BranchDocumentSummary[];
   qrCodes: BranchFormQrSummary[];
+  operationalRecordDateStatuses: Partial<Record<OperationalFormType, OperationalRecordDateStatus>>;
   refrigerationEquipment: BranchCatalogItemSummary[];
   sanitationAreas: BranchCatalogItemSummary[];
   chemicalProducts: BranchChemicalProductSummary[];
   staffMembers: BranchStaffMemberSummary[];
   sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
+  sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[];
 };
 
 type BranchSectionMeta = {
@@ -1074,19 +1079,26 @@ function OperationalFlowCard({
   formType,
   configuration,
   formPath,
+  recordDateStatus,
 }: {
   formType: OperationalFormType;
   configuration?: ReactNode;
   formPath?: string;
+  recordDateStatus?: OperationalRecordDateStatus;
 }) {
   const label = operationalFormLabels[formType];
   const instructions = printableQrInstructions[formType];
 
   return (
-    <article className={`rounded-[1.45rem] p-5 ${productCardSurface} dashboard-card-surface-operational`}>
+    <article className={`relative rounded-[1.45rem] p-5 ${productCardSurface} dashboard-card-surface-operational`}>
+      {recordDateStatus ? (
+        <span className="absolute right-4 top-4">
+          <OperationalRecordStatusDot status={recordDateStatus} />
+        </span>
+      ) : null}
       <div className="space-y-4">
         <div>
-          <p className="text-sm font-semibold leading-5 tracking-[0.08em] text-[#2a7f86]">
+          <p className="pr-8 text-sm font-semibold leading-5 tracking-[0.08em] text-[#2a7f86]">
             {label.title}
           </p>
 
@@ -1210,6 +1222,7 @@ export function BranchOperationalView({
   qrCodes,
   refrigerationEquipment,
   sanitationAreas,
+  operationalRecordDateStatuses,
 }: BranchDetailViewProps) {
   const activeOperationalQrCodes = qrCodes.filter((qrCode) => qrCode.isActive);
   const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
@@ -1264,6 +1277,7 @@ export function BranchOperationalView({
         key={formType}
         formType={formType}
         formPath={formPath}
+        recordDateStatus={operationalRecordDateStatuses[formType]}
         configuration={configuration}
       />
     );
@@ -1314,6 +1328,7 @@ export function BranchComplianceView({
   chemicalProducts,
   staffMembers,
   sanitaryDocumentFiles,
+  sanitaryDocumentCategoryStatuses,
 }: BranchDetailViewProps) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="compliance">
@@ -1324,6 +1339,7 @@ export function BranchComplianceView({
         initialChemicalProducts={chemicalProducts}
         initialStaffMembers={staffMembers}
         initialSanitaryDocumentFiles={sanitaryDocumentFiles}
+        initialSanitaryDocumentCategoryStatuses={sanitaryDocumentCategoryStatuses}
       />
     </BranchLayout>
   );

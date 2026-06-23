@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
 import { formatDateKeyFromParts } from "@/lib/operational-record-dates";
 
 type DateTimePickerProps = {
@@ -37,6 +38,8 @@ type DateTimeParts = {
 const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const weekdayLabels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
 const emptyCompletedDateKeys: string[] = [];
+const hour12Options = [12, ...Array.from({ length: 11 }, (_, index) => index + 1)];
+const meridiemOptions = ["AM", "PM"] as const;
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -194,8 +197,12 @@ function hasSelectableDayInMonth(monthKey: number, minDateKey: number, maxDateKe
   return lastDateKey >= minDateKey && firstDateKey <= maxDateKey;
 }
 
-function getHourOptions() {
-  return Array.from({ length: 24 }, (_, hour) => hour);
+function getHour24(hour12: number, meridiem: (typeof meridiemOptions)[number]) {
+  if (meridiem === "AM") {
+    return hour12 === 12 ? 0 : hour12;
+  }
+
+  return hour12 === 12 ? 12 : hour12 + 12;
 }
 
 export function DatePicker({ value, min, max, onChange, compact = false }: DatePickerProps) {
@@ -324,6 +331,127 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
   );
 }
 
+function TimeDropdown({
+  selectedHour,
+  isHourDisabled,
+  onSelectHour,
+}: {
+  selectedHour: number;
+  isHourDisabled: (hour: number) => boolean;
+  onSelectHour: (hour: number) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const selectedOptionRef = useRef<HTMLButtonElement | null>(null);
+  const timeOptions = useMemo(
+    () =>
+      meridiemOptions.flatMap((meridiem) =>
+        hour12Options.map((hour12) => ({
+          hour: getHour24(hour12, meridiem),
+          label: `${String(hour12).padStart(2, "0")} ${meridiem}`,
+        })),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const listElement = listRef.current;
+    const selectedOptionElement = selectedOptionRef.current;
+
+    if (listElement && selectedOptionElement) {
+      listElement.scrollTop =
+        selectedOptionElement.offsetTop - (listElement.clientHeight - selectedOptionElement.clientHeight) / 2;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (!containerRef.current?.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, selectedHour]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        onClick={() => setIsOpen((currentValue) => !currentValue)}
+        className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-neutral-300 bg-white px-3 text-base font-black text-neutral-950 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10 active:scale-[0.99]"
+      >
+        <span>{formatHourLabel(selectedHour)}</span>
+        <span className={`text-sm transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true">
+          ^
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div
+          ref={listRef}
+          className="absolute inset-x-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-2 shadow-[0_18px_48px_rgba(17,24,22,0.16)]"
+          role="listbox"
+          aria-label="Hora"
+        >
+          {timeOptions.map(({ hour, label }) => {
+            const isSelected = hour === selectedHour;
+            const isDisabled = isHourDisabled(hour);
+
+            return (
+              <button
+                key={hour}
+                ref={isSelected ? selectedOptionRef : null}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                disabled={isDisabled}
+                onClick={() => {
+                  if (isDisabled) {
+                    return;
+                  }
+
+                  onSelectHour(hour);
+                  setIsOpen(false);
+                }}
+                className={[
+                  "flex min-h-10 w-full items-center justify-center rounded-xl text-sm font-black transition",
+                  isSelected
+                    ? "bg-neutral-200 text-neutral-950 ring-1 ring-neutral-300"
+                    : isDisabled
+                      ? "cursor-not-allowed text-neutral-300 line-through"
+                      : "text-neutral-950 hover:bg-neutral-100",
+                ].join(" ")}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function DateTimePicker({
   completedDateKeys = emptyCompletedDateKeys,
   value,
@@ -345,7 +473,6 @@ export function DateTimePicker({
   const minDateKey = minParts ? getDateKey(minParts) : Number.NEGATIVE_INFINITY;
   const maxDateKey = maxParts ? getDateKey(maxParts) : Number.POSITIVE_INFINITY;
   const completedDateKeySet = useMemo(() => new Set(completedDateKeys), [completedDateKeys]);
-  const hourOptions = useMemo(() => getHourOptions(), []);
   const [visibleMonthKey, setVisibleMonthKey] = useState(() => getMonthKey(selectedParts));
   const visibleMonth = getMonthPartsFromKey(visibleMonthKey);
   const calendarCells = useMemo(
@@ -429,7 +556,7 @@ export function DateTimePicker({
           const recordDateKey = formatDateKeyFromParts(dayParts);
           const isSelected = dateKey === selectedDateKey;
           const isDisabled = isDayDisabled(date);
-          const recordStatus = isDisabled ? null : completedDateKeySet.has(recordDateKey) ? "completed" : "pending";
+          const recordStatus = isDisabled ? null : completedDateKeySet.has(recordDateKey) ? "complete" : "missing";
 
           return (
             <button
@@ -449,13 +576,7 @@ export function DateTimePicker({
             >
               <span>{dayParts.day}</span>
               {recordStatus ? (
-                <span
-                  className={[
-                    "h-1.5 w-1.5 rounded-full",
-                    recordStatus === "completed" ? "bg-green-500" : "animate-pulse bg-red-500",
-                  ].join(" ")}
-                  aria-hidden="true"
-                />
+                <OperationalRecordStatusDot status={recordStatus} size="sm" />
               ) : null}
             </button>
           );
@@ -465,17 +586,7 @@ export function DateTimePicker({
       <div className="grid gap-3">
         <label className="grid gap-2">
           <span className="text-xs font-black uppercase tracking-[0.12em] text-neutral-500">Hora</span>
-          <select
-            value={selectedParts.hour}
-            onChange={(event) => selectHour(Number(event.target.value))}
-            className="min-h-12 rounded-2xl border border-neutral-300 bg-white px-3 text-base font-black text-neutral-950 outline-none transition focus:border-neutral-950 focus:ring-2 focus:ring-neutral-950/10 active:scale-[0.99]"
-          >
-            {hourOptions.map((hour) => (
-              <option key={hour} value={hour} disabled={isHourDisabled(hour)}>
-                {formatHourLabel(hour)}
-              </option>
-            ))}
-          </select>
+          <TimeDropdown selectedHour={selectedParts.hour} isHourDisabled={isHourDisabled} onSelectHour={selectHour} />
         </label>
       </div>
 

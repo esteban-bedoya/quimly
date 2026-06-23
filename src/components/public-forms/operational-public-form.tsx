@@ -16,7 +16,10 @@ import {
 import { FinalRegistrationConfirmation } from "@/components/public-forms/final-registration-confirmation";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { operationalFormLabels, type OperationalFormType } from "@/lib/operational-forms";
-import { hasPendingRecordDates } from "@/lib/operational-record-dates";
+import {
+  getOperationalRecordDateLimits,
+  getOperationalRecordDateStatus,
+} from "@/lib/operational-record-dates";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 type CatalogItem = {
@@ -188,16 +191,6 @@ function floorToHour(date: Date) {
   return nextDate;
 }
 
-function ceilToHour(date: Date) {
-  const nextDate = floorToHour(date);
-
-  if (date.getMinutes() > 0 || date.getSeconds() > 0 || date.getMilliseconds() > 0) {
-    nextDate.setHours(nextDate.getHours() + 1);
-  }
-
-  return nextDate;
-}
-
 function normalizeDateTimeLocalToHour(value: string) {
   const date = new Date(value);
 
@@ -208,14 +201,16 @@ function normalizeDateTimeLocalToHour(value: string) {
   return toDateTimeLocalValue(floorToHour(date));
 }
 
-function getRecordDateLimits(maxPastDays = 5) {
-  const now = new Date();
-  const minDate = new Date(now.getTime() - maxPastDays * 24 * 60 * 60 * 1000);
+function clampDateTimeLocalValue(value: string, min: string, max: string) {
+  if (value < min) {
+    return min;
+  }
 
-  return {
-    min: toDateTimeLocalValue(ceilToHour(minDate)),
-    max: toDateTimeLocalValue(floorToHour(now)),
-  };
+  if (value > max) {
+    return max;
+  }
+
+  return value;
 }
 
 function formatRecordDateLabel(value: string) {
@@ -569,7 +564,7 @@ export function OperationalPublicForm({
   const [phInteger, setPhInteger] = useState<number | null>(null);
   const [phDecimal, setPhDecimal] = useState<number | null>(null);
   const [recordedAtLocalValue, setRecordedAtLocalValue] = useState(() => toDateTimeLocalValue(new Date()));
-  const [recordDateLimits, setRecordDateLimits] = useState(() => getRecordDateLimits(adminContext ? 30 : 5));
+  const [recordDateLimits, setRecordDateLimits] = useState(() => getOperationalRecordDateLimits(adminContext ? 30 : 5));
   const [datePickerValue, setDatePickerValue] = useState(recordedAtLocalValue);
   const [hasCustomRecordedAt, setHasCustomRecordedAt] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -707,15 +702,23 @@ export function OperationalPublicForm({
   const recordedAtDisplay = formatRecordDateLabel(recordedAtLocalValue);
   const recordedAtIsoValue = hasCustomRecordedAt ? toIsoDateTime(recordedAtLocalValue) : "";
   const completedDateKeys = completedRecordDateKeys ?? emptyCompletedRecordDateKeys;
-  const tieneDiasPendientes = useMemo(
+  const recordDateStatus = useMemo(
     () =>
-      hasPendingRecordDates({
+      getOperationalRecordDateStatus({
         completedDateKeys,
         min: recordDateLimits.min,
         max: recordDateLimits.max,
       }),
     [completedDateKeys, recordDateLimits.max, recordDateLimits.min],
   );
+  const normalizedDatePickerValue = normalizeDateTimeLocalToHour(datePickerValue);
+  const clampedDatePickerValue = clampDateTimeLocalValue(
+    normalizedDatePickerValue,
+    recordDateLimits.min,
+    recordDateLimits.max,
+  );
+  const normalizedRecordedAtLocalValue = normalizeDateTimeLocalToHour(recordedAtLocalValue);
+  const hasDatePickerChanges = clampedDatePickerValue !== normalizedRecordedAtLocalValue;
 
   useEffect(() => {
     if (hasCustomRecordedAt || showDatePicker) {
@@ -724,7 +727,7 @@ export function OperationalPublicForm({
 
     const intervalId = window.setInterval(() => {
       setRecordedAtLocalValue(toDateTimeLocalValue(new Date()));
-      setRecordDateLimits(getRecordDateLimits(recordBackdateDays));
+      setRecordDateLimits(getOperationalRecordDateLimits(recordBackdateDays));
     }, 30_000);
 
     return () => window.clearInterval(intervalId);
@@ -889,19 +892,23 @@ export function OperationalPublicForm({
   }
 
   function openDatePicker() {
-    const nextLimits = getRecordDateLimits(recordBackdateDays);
+    const nextLimits = getOperationalRecordDateLimits(recordBackdateDays);
     setRecordDateLimits(nextLimits);
     setDatePickerValue(normalizeDateTimeLocalToHour(recordedAtLocalValue));
     setShowDatePicker(true);
   }
 
   function saveDatePickerValue() {
-    const nextLimits = getRecordDateLimits(recordBackdateDays);
+    const nextLimits = getOperationalRecordDateLimits(recordBackdateDays);
     const hourValue = normalizeDateTimeLocalToHour(datePickerValue);
-    const clampedValue =
-      hourValue < nextLimits.min ? nextLimits.min : hourValue > nextLimits.max ? nextLimits.max : hourValue;
+    const clampedValue = clampDateTimeLocalValue(hourValue, nextLimits.min, nextLimits.max);
 
     setRecordDateLimits(nextLimits);
+
+    if (clampedValue === normalizeDateTimeLocalToHour(recordedAtLocalValue)) {
+      return;
+    }
+
     setRecordedAtLocalValue(clampedValue);
     setHasCustomRecordedAt(true);
     setShowDatePicker(false);
@@ -1164,7 +1171,7 @@ export function OperationalPublicForm({
       companyName={companyName}
       branchName={branchName}
       dateLabel={recordedAtDisplay}
-      hasPendingDates={tieneDiasPendientes}
+      recordDateStatus={recordDateStatus}
       isDateModified={hasCustomRecordedAt}
       onDateEdit={openDatePicker}
     >
@@ -2133,8 +2140,9 @@ export function OperationalPublicForm({
               </button>
               <button
                 type="button"
+                disabled={!hasDatePickerChanges}
                 onClick={saveDatePickerValue}
-                className="min-h-12 rounded-2xl bg-[#111816] px-4 text-sm font-black text-white transition active:scale-[0.98]"
+                className="min-h-12 rounded-2xl bg-[#111816] px-4 text-sm font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
               >
                 Guardar
               </button>
