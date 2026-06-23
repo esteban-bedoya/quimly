@@ -12,6 +12,19 @@ type DateTimePickerProps = {
   onChange: (value: string) => void;
 };
 
+type DatePickerProps = {
+  value: string;
+  min?: string;
+  max?: string;
+  onChange: (value: string) => void;
+};
+
+type DateParts = {
+  year: number;
+  monthIndex: number;
+  day: number;
+};
+
 type DateTimeParts = {
   year: number;
   monthIndex: number;
@@ -55,8 +68,35 @@ function parseDateTimeValue(value: string): DateTimeParts | null {
   return { year, monthIndex, day, hour, minute };
 }
 
+function parseDateValue(value: string): DateParts | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== monthIndex ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, monthIndex, day };
+}
+
 function formatDateTimeValue(parts: DateTimeParts) {
   return `${parts.year}-${pad(parts.monthIndex + 1)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
+function formatDateValue(parts: DateParts) {
+  return `${parts.year}-${pad(parts.monthIndex + 1)}-${pad(parts.day)}`;
 }
 
 function formatHourLabel(hour: number) {
@@ -116,6 +156,18 @@ function clampDateTimeValue(value: string, min: string, max: string) {
   return value;
 }
 
+function clampDateValue(value: string, min?: string, max?: string) {
+  if (min && value < min) {
+    return min;
+  }
+
+  if (max && value > max) {
+    return max;
+  }
+
+  return value;
+}
+
 function buildCalendarCells(year: number, monthIndex: number) {
   const firstDay = new Date(year, monthIndex, 1);
   const leadingEmptyCells = (firstDay.getDay() + 6) % 7;
@@ -143,6 +195,109 @@ function hasSelectableDayInMonth(monthKey: number, minDateKey: number, maxDateKe
 
 function getHourOptions() {
   return Array.from({ length: 24 }, (_, hour) => hour);
+}
+
+export function DatePicker({ value, min, max, onChange }: DatePickerProps) {
+  const todayParts = {
+    year: new Date().getFullYear(),
+    monthIndex: new Date().getMonth(),
+    day: new Date().getDate(),
+  };
+  const minParts = parseDateValue(min ?? "");
+  const maxParts = parseDateValue(max ?? "");
+  const valueParts = parseDateValue(value);
+  const selectedParts = valueParts ?? maxParts ?? todayParts;
+  const selectedDateKey = valueParts ? getDateKey(valueParts) : null;
+  const minDateKey = minParts ? getDateKey(minParts) : Number.NEGATIVE_INFINITY;
+  const maxDateKey = maxParts ? getDateKey(maxParts) : Number.POSITIVE_INFINITY;
+  const [visibleMonthKey, setVisibleMonthKey] = useState(() => getMonthKey(selectedParts));
+  const visibleMonth = getMonthPartsFromKey(visibleMonthKey);
+  const calendarCells = useMemo(
+    () => buildCalendarCells(visibleMonth.year, visibleMonth.monthIndex),
+    [visibleMonth.monthIndex, visibleMonth.year],
+  );
+  const canShowPreviousMonth = hasSelectableDayInMonth(visibleMonthKey - 1, minDateKey, maxDateKey);
+  const canShowNextMonth = hasSelectableDayInMonth(visibleMonthKey + 1, minDateKey, maxDateKey);
+
+  function isDayDisabled(date: Date) {
+    const dateKey = getDateKey(getDatePartsFromDate(date));
+    return dateKey < minDateKey || dateKey > maxDateKey;
+  }
+
+  function selectDate(date: Date) {
+    if (isDayDisabled(date)) {
+      return;
+    }
+
+    onChange(clampDateValue(formatDateValue(getDatePartsFromDate(date)), min, max));
+  }
+
+  return (
+    <div className="grid gap-4 rounded-3xl border border-neutral-200 bg-white p-3 text-neutral-950 shadow-[0_24px_80px_rgba(17,24,22,0.18)]">
+      <div className="flex min-h-11 items-center justify-between gap-3">
+        <button
+          type="button"
+          disabled={!canShowPreviousMonth}
+          onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey - 1)}
+          className="grid h-10 w-10 place-items-center rounded-2xl border border-neutral-200 bg-white text-lg font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300"
+          aria-label="Mes anterior"
+        >
+          {"<"}
+        </button>
+        <p className="text-center text-sm font-black uppercase tracking-[0.12em] text-neutral-950">
+          {monthLabels[visibleMonth.monthIndex]} {visibleMonth.year}
+        </p>
+        <button
+          type="button"
+          disabled={!canShowNextMonth}
+          onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey + 1)}
+          className="grid h-10 w-10 place-items-center rounded-2xl border border-neutral-200 bg-white text-lg font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300"
+          aria-label="Mes siguiente"
+        >
+          {">"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {weekdayLabels.map((weekdayLabel) => (
+          <span key={weekdayLabel} className="py-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-neutral-500">
+            {weekdayLabel}
+          </span>
+        ))}
+
+        {calendarCells.map((date, index) => {
+          if (!date) {
+            return <span key={`empty-${index}`} className="aspect-square" aria-hidden="true" />;
+          }
+
+          const dayParts = getDatePartsFromDate(date);
+          const dateKey = getDateKey(dayParts);
+          const isSelected = dateKey === selectedDateKey;
+          const isDisabled = isDayDisabled(date);
+
+          return (
+            <button
+              key={dateKey}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => selectDate(date)}
+              className={[
+                "flex aspect-square items-center justify-center rounded-2xl border text-sm font-black transition active:scale-[0.94]",
+                isSelected
+                  ? "border-neutral-950 bg-neutral-950 text-white"
+                  : isDisabled
+                    ? "cursor-not-allowed border-neutral-100 bg-neutral-50 text-neutral-300 line-through"
+                    : "border-neutral-200 bg-white text-neutral-950 hover:border-neutral-950 active:bg-neutral-100",
+              ].join(" ")}
+              aria-pressed={isSelected}
+            >
+              {dayParts.day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function DateTimePicker({

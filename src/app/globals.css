@@ -392,12 +392,6 @@ body:has([data-dashboard-shell]) {
   line-height: 1rem;
 }
 
-.ui-document-form-label {
-  color: var(--ui-text-strong);
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
 .ui-form-control {
   min-height: 2.75rem;
   width: 100%;
@@ -422,21 +416,27 @@ body:has([data-dashboard-shell]) {
   box-shadow: 0 0 0 3px rgb(188 196 202 / 0.16), 0 10px 24px rgb(18 17 15 / 0.07);
 }
 
-.ui-document-form-control {
-  min-height: 2.75rem;
-  width: 100%;
-  border-radius: 1rem;
-  border: 1px solid rgb(255 255 255 / 0.8);
-  background-color: rgb(255 255 255 / 0.8);
-  padding: 0.75rem 1rem;
-  color: var(--ui-text-strong);
-  font-size: 0.875rem;
-  outline: none;
-  transition: border-color 150ms ease;
+.ui-document-date-field {
+  position: relative;
 }
 
-.ui-document-form-control:focus {
-  border-color: rgb(42 127 134 / 0.35);
+.ui-document-date-field:focus-within .ui-form-control {
+  border-color: var(--ui-muted-action-border-hover);
+  box-shadow: 0 0 0 3px rgb(188 196 202 / 0.16), 0 10px 24px rgb(18 17 15 / 0.07);
+}
+
+.ui-document-modal .ui-form-control,
+.ui-document-modal .ui-document-file-control,
+.ui-document-modal .neutral-select-trigger {
+  border-color: #e3e8ec;
+}
+
+.ui-document-modal .ui-form-control:focus,
+.ui-document-modal .ui-document-date-field:focus-within .ui-form-control,
+.ui-document-modal .ui-document-file-control:focus-within,
+.ui-document-modal .neutral-select-trigger:hover,
+.ui-document-modal .neutral-select-trigger:focus {
+  border-color: #c9d1d8;
 }
 
 .ui-pill-button-secondary {
@@ -547,26 +547,25 @@ body:has([data-dashboard-shell]) {
   background-color: rgb(255 255 255 / 0.7);
 }
 
-.ui-file-input {
-  display: block;
-  width: 100%;
-  color: var(--ui-text-description);
-  font-size: 0.875rem;
+.ui-document-file-control {
+  display: flex;
+  min-height: 2.75rem;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  border: 1px solid var(--ui-muted-action-border);
+  background-color: white;
+  padding: 0.5rem 0.875rem;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.82), 0 10px 24px rgb(18 17 15 / 0.055);
+  transition-duration: 150ms;
+  transition-property: border-color, background-color, color, opacity, box-shadow;
 }
 
-.ui-file-input::file-selector-button {
-  margin-right: 1rem;
-  border-radius: 9999px;
-  border: 0;
-  background-color: var(--ui-text-strong);
-  padding: 0.5rem 1rem;
-  color: white;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.ui-file-input:hover::file-selector-button {
-  background-color: #1d1b18;
+.ui-document-file-control:focus-within {
+  border-color: var(--ui-muted-action-border-hover);
+  box-shadow: 0 0 0 3px rgb(188 196 202 / 0.16), 0 10px 24px rgb(18 17 15 / 0.07);
 }
 
 .operational-toolbar-copy {
@@ -714,6 +713,7 @@ body:has([data-dashboard-shell]) {
   width: 100%;
   align-items: center;
   justify-content: flex-start;
+  border: 0;
   border-radius: 0.9rem;
   padding: 0.5rem 0.75rem;
   color: var(--ui-text-muted);
@@ -731,6 +731,18 @@ body:has([data-dashboard-shell]) {
 .neutral-select-option-selected {
   background-color: var(--ui-muted-action-bg);
   color: var(--ui-text-strong);
+}
+
+.neutral-select-option-suggested {
+  background-color: #f0fbf5;
+  color: #357864;
+}
+
+.neutral-select-option-suggested:hover,
+.neutral-select-option-suggested:focus-visible,
+.neutral-select-option-suggested.neutral-select-option-selected {
+  background-color: #e6f8ef;
+  color: #2a6e5a;
 }
 
 .status-select-menu {

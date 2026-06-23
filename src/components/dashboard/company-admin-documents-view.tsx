@@ -17,14 +17,14 @@ import type {
   BranchSanitaryDocumentKind,
   BranchStaffMemberSummary,
 } from "@/types/auth";
+import { DatePicker } from "@/components/ui/date-time-picker";
 
 const BASE_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
 const ACTION_MESSAGE_AUTO_DISMISS_MS = 8000;
 const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
-const DOCUMENT_MODAL_DIVIDER_CLASS = "border-t border-gray-200";
-const DOCUMENT_DATE_INPUT_LABEL = "FECHA EXPEDICIÓN";
-const DOCUMENT_VALIDITY_INPUT_LABEL = "VIGENCIA";
+const DOCUMENT_DATE_INPUT_LABEL = "Fecha expedición";
+const DOCUMENT_VALIDITY_INPUT_LABEL = "Vigencia";
 const DOCUMENT_DATE_PDF_REQUIRED_MESSAGE = "Para asignar la fecha debe subir el PDF";
 const DOCUMENT_VALIDITY_OPTIONS = ["1", "2", "3", "6", "12", "24"] as const;
 const DEFAULT_ACU_VALIDITY_MONTHS = "1";
@@ -260,6 +260,20 @@ function formatDate(value: string) {
   return `${day} ${month} ${year}`;
 }
 
+function formatDateInputValue(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) {
+    return "";
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
 function createEmptyFileState(): FileInputState {
   return {
     file: null,
@@ -318,9 +332,13 @@ function getValidityMonthsNumber(value: string) {
   return Number.isFinite(months) && months > 0 ? months : 0;
 }
 
-function getValidityOptionLabel(value: string, suggestedMonths: string) {
+function getValidityOptionBaseLabel(value: string) {
   const months = getValidityMonthsNumber(value);
-  const label = months === 1 ? "1 mes" : `${months} meses`;
+  return months === 1 ? "1 mes" : `${months} meses`;
+}
+
+function getValidityOptionLabel(value: string, suggestedMonths: string) {
+  const label = getValidityOptionBaseLabel(value);
   return value === suggestedMonths ? `${label} (Sugerido)` : label;
 }
 
@@ -770,12 +788,12 @@ function CompactPdfInput({
 
   return (
     <div className="grid min-w-0 gap-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">{label}</span>
       <input
         ref={fileInputRef}
         id={id}
         type="file"
         accept="application/pdf"
+        aria-label={label}
         className="hidden"
         tabIndex={-1}
         onChange={(event) => {
@@ -789,7 +807,7 @@ function CompactPdfInput({
           event.currentTarget.value = "";
         }}
       />
-      <div className="flex min-h-12 min-w-0 items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-4 py-2">
+      <div className="ui-document-file-control">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-gray-800">
             {state.file ? state.file.name : "Selecciona un PDF"}
@@ -801,12 +819,142 @@ function CompactPdfInput({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="shrink-0 rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold text-white transition hover:scale-[1.02]"
+          className="shrink-0 rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d1b18]"
         >
           {state.file ? "Cambiar" : "Subir"}
         </button>
       </div>
-      {state.error ? <p className="text-xs font-medium text-rose-600">{state.error}</p> : null}
+      {state.error ? <p className="ui-inline-alert ui-inline-alert-error">{state.error}</p> : null}
+    </div>
+  );
+}
+
+function DocumentUploadField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <article className="rounded-[1.45rem] p-5 text-left dashboard-card-surface dashboard-card-surface-operational">
+      <div className="space-y-3">
+        <p className="text-sm font-semibold leading-5 tracking-[0.08em] text-[#12110f]">{label}</p>
+        <div className="grid gap-3">{children}</div>
+      </div>
+    </article>
+  );
+}
+
+function DocumentModalDivider({ className = "" }: { className?: string }) {
+  return <div className={`border-t border-[#12110f]/[0.12] ${className}`} />;
+}
+
+function DocumentDateInput({
+  value,
+  onChange,
+  onOpenRequest,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onOpenRequest?: () => boolean;
+}) {
+  const displayValue = formatDateInputValue(value);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const updatePickerPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+
+    if (!trigger) {
+      return;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+    const pickerWidth = Math.min(320, window.innerWidth - 24);
+    const estimatedPickerHeight = 340;
+    const bottomTop = rect.bottom + 8;
+    const top = bottomTop + estimatedPickerHeight > window.innerHeight ? rect.top - estimatedPickerHeight - 8 : bottomTop;
+
+    setPickerPosition({
+      left: Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12),
+      top: Math.max(12, top),
+      width: pickerWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    updatePickerPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+
+      if (triggerRef.current?.contains(target) || pickerRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    window.addEventListener("resize", updatePickerPosition);
+    window.addEventListener("scroll", updatePickerPosition, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", updatePickerPosition);
+      window.removeEventListener("scroll", updatePickerPosition, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, updatePickerPosition]);
+
+  return (
+    <div className="ui-document-date-field">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={() => {
+          if (onOpenRequest?.() === false) {
+            setIsOpen(false);
+            return;
+          }
+
+          updatePickerPosition();
+          setIsOpen((currentValue) => !currentValue);
+        }}
+        className={`ui-form-control flex items-center text-left ${displayValue ? "" : "text-[#a0a7ad]"}`}
+      >
+        {displayValue || "DD/MM/AAAA"}
+      </button>
+      {isOpen && pickerPosition && typeof document !== "undefined" ? createPortal(
+        <div
+          ref={pickerRef}
+          style={{
+            left: pickerPosition.left,
+            top: pickerPosition.top,
+            width: pickerPosition.width,
+          }}
+          className="fixed z-[140]"
+        >
+          <DatePicker
+            value={value}
+            onChange={(nextValue) => {
+              onChange(nextValue);
+              setIsOpen(false);
+            }}
+          />
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }
@@ -931,9 +1079,11 @@ function DocumentValiditySelect({
                   onChange(optionValue);
                   setIsOpen(false);
                 }}
-                className={`neutral-select-option ${
-                  isSuggested ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 focus-visible:bg-emerald-100" : ""
-                } ${isSelected && !isSuggested ? "neutral-select-option-selected" : ""}`}
+                className={[
+                  "neutral-select-option",
+                  isSuggested ? "neutral-select-option-suggested" : "",
+                  isSelected ? "neutral-select-option-selected" : "",
+                ].join(" ")}
               >
                 <span>{isSelected ? `✓ ${optionLabel}` : optionLabel}</span>
               </button>
@@ -949,7 +1099,7 @@ function DocumentValiditySelect({
 function DocumentRegisterModal({
   children,
   title,
-  maxSizeLabel,
+  titleClassName = "ui-modal-title",
   message,
   onCancel,
   onSubmit,
@@ -959,7 +1109,7 @@ function DocumentRegisterModal({
 }: {
   children: ReactNode;
   title: string;
-  maxSizeLabel: string;
+  titleClassName?: string;
   message?: AdminMessage | null;
   onCancel: () => void;
   onSubmit: () => void;
@@ -978,17 +1128,15 @@ function DocumentRegisterModal({
           event.preventDefault();
           onSubmit();
         }}
-        className={`ui-modal-surface w-full ${maxWidthClassName} max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[1.7rem] p-6 text-left transition-all duration-300 ease-in-out animate-fadeIn`}
+        className={`ui-document-modal ui-modal-surface w-full ${maxWidthClassName} max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[1.7rem] p-6 text-left transition-all duration-300 ease-in-out animate-fadeIn`}
         aria-modal="true"
         role="dialog"
       >
         <div className="space-y-2">
-          <h3 className="ui-modal-title">{title}</h3>
-          <p className="ui-modal-copy">Archivo permitido: PDF · Peso máximo: {maxSizeLabel}</p>
+          <h3 className={titleClassName}>{title}</h3>
         </div>
-        <div className="mt-4 border-t border-gray-200" />
 
-        <div className="mt-4 grid gap-4">{children}</div>
+        <div className="mt-4 grid gap-3">{children}</div>
 
         {message ? (
           <div className="mt-4">
@@ -996,7 +1144,9 @@ function DocumentRegisterModal({
           </div>
         ) : null}
 
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <DocumentModalDivider className="mt-5" />
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
@@ -1069,11 +1219,11 @@ function RecordsList({
   emptyLabel?: string;
 }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       {children ? (
         children
       ) : (
-        <div className="flex items-center justify-between py-4 px-6 border-b border-gray-50 last:border-none hover:bg-gray-50/50 transition-colors">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 transition-colors last:border-none hover:bg-gray-50/70">
           <span className="text-sm text-gray-500">{emptyLabel}</span>
           <DocumentStatusBadge status="Sin registro" />
         </div>
@@ -1084,7 +1234,7 @@ function RecordsList({
 
 function RecordRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-4 px-6 border-b border-gray-50 last:border-none hover:bg-gray-50/50 transition-colors">
+    <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 transition-colors last:border-none hover:bg-gray-50/70">
       {children}
     </div>
   );
@@ -1673,7 +1823,6 @@ export function CompanyAdminDocumentsView({
       {isRegistering ? (
         <DocumentRegisterModal
           title={getDocumentRegisterModalLabel("sanitation_plan", Boolean(sanitationPlan))}
-          maxSizeLabel="6 MB"
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={saveSanitationPlanRecord}
@@ -1682,16 +1831,19 @@ export function CompanyAdminDocumentsView({
             isSaving ? "Guardando..." : getDocumentRegisterModalLabel("sanitation_plan", Boolean(sanitationPlan))
           }
         >
-          <CompactPdfInput
-            id="sanitation-plan-pdf"
-            label="Plan de saneamiento PDF"
-            state={formData.pdf}
-            maxSizeBytes={SANITATION_PLAN_MAX_FILE_SIZE_BYTES}
-            onChange={(pdf) => {
-              clearActionMessage();
-              updateFormData({ pdf });
-            }}
-          />
+          <DocumentModalDivider />
+          <DocumentUploadField label="Plan de saneamiento pdf">
+            <CompactPdfInput
+              id="sanitation-plan-pdf"
+              label="Plan de saneamiento PDF"
+              state={formData.pdf}
+              maxSizeBytes={SANITATION_PLAN_MAX_FILE_SIZE_BYTES}
+              onChange={(pdf) => {
+                clearActionMessage();
+                updateFormData({ pdf });
+              }}
+            />
+          </DocumentUploadField>
         </DocumentRegisterModal>
       ) : null}
 
@@ -1751,65 +1903,64 @@ export function CompanyAdminDocumentsView({
       {isRegistering ? (
         <DocumentRegisterModal
           title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel(sectionId)}
-          maxSizeLabel="1.5 MB"
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={() => saveDatedRecord(records, setRecords, prefix)}
           disabled={isSaving || !formData.issuedAt || !formData.pdf.file}
           submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar registro" : getDocumentRegisterModalLabel(sectionId)}
         >
-          <CompactPdfInput
-            id={`${prefix}-pdf`}
-            label="Certificado PDF"
-            state={formData.pdf}
-            onChange={(pdf) => updateFormData({ pdf })}
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                {DOCUMENT_DATE_INPUT_LABEL}
-              </span>
-              <input
-                type="date"
-                value={formData.issuedAt}
-                onFocus={() => {
-                  if (!formData.pdf.file) {
-                    showActionMessage({
-                      tone: "error",
-                      text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                    });
-                  }
-                }}
-                onChange={(event) => {
-                  if (!formData.pdf.file) {
-                    showActionMessage({
-                      tone: "error",
-                      text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                    });
-                    return;
-                  }
+          <DocumentModalDivider />
+          <DocumentUploadField label="Certificado pdf">
+            <CompactPdfInput
+              id={`${prefix}-pdf`}
+              label="Certificado PDF"
+              state={formData.pdf}
+              onChange={(pdf) => updateFormData({ pdf })}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="ui-form-field">
+                <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
+                <DocumentDateInput
+                  value={formData.issuedAt}
+                  onOpenRequest={() => {
+                    if (!formData.pdf.file) {
+                      showActionMessage({
+                        tone: "error",
+                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+                      });
+                      return false;
+                    }
 
-                  updateFormData({ issuedAt: event.currentTarget.value });
-                }}
-                className="ui-document-form-control"
-              />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                {DOCUMENT_VALIDITY_INPUT_LABEL}
-              </span>
-              <DocumentValiditySelect
-                value={formData.validityMonths}
-                suggestedMonths={suggestedValidityMonths}
-                onChange={(validityMonths) => updateFormData({ validityMonths })}
-              />
-            </label>
-          </div>
-          {formData.pdf.file && formData.issuedAt ? (
-            <p className="text-xs font-medium text-gray-400">
-              Vencimiento: {formatDate(getCalculatedExpirationDate(formData.issuedAt, formData.validityMonths))}
-            </p>
-          ) : null}
+                    return true;
+                  }}
+                  onChange={(event) => {
+                    if (!formData.pdf.file) {
+                      showActionMessage({
+                        tone: "error",
+                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+                      });
+                      return;
+                    }
+
+                    updateFormData({ issuedAt: event });
+                  }}
+                />
+              </label>
+              <label className="ui-form-field">
+                <span className="ui-form-label">{DOCUMENT_VALIDITY_INPUT_LABEL}</span>
+                <DocumentValiditySelect
+                  value={formData.validityMonths}
+                  suggestedMonths={suggestedValidityMonths}
+                  onChange={(validityMonths) => updateFormData({ validityMonths })}
+                />
+              </label>
+            </div>
+            {formData.pdf.file && formData.issuedAt ? (
+              <p className="text-xs font-medium text-gray-400">
+                Vencimiento: {formatDate(getCalculatedExpirationDate(formData.issuedAt, formData.validityMonths))}
+              </p>
+            ) : null}
+          </DocumentUploadField>
         </DocumentRegisterModal>
       ) : null}
 
@@ -1873,7 +2024,6 @@ export function CompanyAdminDocumentsView({
       {isRegistering ? (
         <DocumentRegisterModal
           title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel("acu_final_disposal")}
-          maxSizeLabel="1.5 MB"
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={saveAcuRecord}
@@ -1886,53 +2036,58 @@ export function CompanyAdminDocumentsView({
                 : getDocumentRegisterModalLabel("acu_final_disposal")
           }
         >
-          <CompactPdfInput id="acu-pdf" label="Certificado PDF" state={formData.pdf} onChange={(pdf) => updateFormData({ pdf })} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                {DOCUMENT_DATE_INPUT_LABEL}
-              </span>
-              <input
-                type="date"
-                value={formData.collectedAt}
-                onFocus={() => {
-                  if (!formData.pdf.file) {
-                    showActionMessage({
-                      tone: "error",
-                      text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                    });
-                  }
-                }}
-                onChange={(event) => {
-                  if (!formData.pdf.file) {
-                    showActionMessage({
-                      tone: "error",
-                      text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
-                    });
-                    return;
-                  }
+          <DocumentModalDivider />
+          <DocumentUploadField label="Certificado pdf">
+            <CompactPdfInput
+              id="acu-pdf"
+              label="Certificado PDF"
+              state={formData.pdf}
+              onChange={(pdf) => updateFormData({ pdf })}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="ui-form-field">
+                <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
+                <DocumentDateInput
+                  value={formData.collectedAt}
+                  onOpenRequest={() => {
+                    if (!formData.pdf.file) {
+                      showActionMessage({
+                        tone: "error",
+                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+                      });
+                      return false;
+                    }
 
-                  updateFormData({ collectedAt: event.currentTarget.value });
-                }}
-                className="ui-document-form-control"
-              />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                {DOCUMENT_VALIDITY_INPUT_LABEL}
-              </span>
-              <DocumentValiditySelect
-                value={formData.validityMonths}
-                suggestedMonths={DEFAULT_ACU_VALIDITY_MONTHS}
-                onChange={(validityMonths) => updateFormData({ validityMonths })}
-              />
-            </label>
-          </div>
-          {formData.pdf.file && formData.collectedAt ? (
-            <p className="text-xs font-medium text-gray-400">
-              Vencimiento: {formatDate(getCalculatedExpirationDate(formData.collectedAt, formData.validityMonths))}
-            </p>
-          ) : null}
+                    return true;
+                  }}
+                  onChange={(event) => {
+                    if (!formData.pdf.file) {
+                      showActionMessage({
+                        tone: "error",
+                        text: DOCUMENT_DATE_PDF_REQUIRED_MESSAGE,
+                      });
+                      return;
+                    }
+
+                    updateFormData({ collectedAt: event });
+                  }}
+                />
+              </label>
+              <label className="ui-form-field">
+                <span className="ui-form-label">{DOCUMENT_VALIDITY_INPUT_LABEL}</span>
+                <DocumentValiditySelect
+                  value={formData.validityMonths}
+                  suggestedMonths={DEFAULT_ACU_VALIDITY_MONTHS}
+                  onChange={(validityMonths) => updateFormData({ validityMonths })}
+                />
+              </label>
+            </div>
+            {formData.pdf.file && formData.collectedAt ? (
+              <p className="text-xs font-medium text-gray-400">
+                Vencimiento: {formatDate(getCalculatedExpirationDate(formData.collectedAt, formData.validityMonths))}
+              </p>
+            ) : null}
+          </DocumentUploadField>
         </DocumentRegisterModal>
       ) : null}
 
@@ -2007,7 +2162,6 @@ export function CompanyAdminDocumentsView({
         {isRegistering ? (
           <DocumentRegisterModal
             title={formData.editingId ? "Editar producto" : getDocumentRegisterModalLabel("chemical_products")}
-            maxSizeLabel="1.5 MB"
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveChemicalProduct}
@@ -2020,31 +2174,34 @@ export function CompanyAdminDocumentsView({
                   : getDocumentRegisterModalLabel("chemical_products")
             }
           >
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-              Nombre del producto
-            </span>
-            <input
-              value={formData.productName}
-              onChange={(event) => updateFormData({ productName: event.currentTarget.value })}
-              placeholder="Ej. Amonio cuaternario"
-              className="ui-document-form-control"
-            />
-          </label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <CompactPdfInput
-              id="chemical-technical-sheet"
-              label="Ficha técnica PDF"
-              state={formData.technicalSheet}
-              onChange={(technicalSheet) => updateFormData({ technicalSheet })}
-            />
-            <CompactPdfInput
-              id="chemical-safety-sheet"
-              label="Hoja de seguridad PDF"
-              state={formData.safetySheet}
-              onChange={(safetySheet) => updateFormData({ safetySheet })}
-            />
-          </div>
+            <label className="ui-form-field">
+              <span className="ui-form-label">Nombre del producto</span>
+              <input
+                value={formData.productName}
+                onChange={(event) => updateFormData({ productName: event.currentTarget.value })}
+                placeholder="Ej. Amonio cuaternario"
+                className="ui-form-control"
+              />
+            </label>
+            <DocumentModalDivider />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DocumentUploadField label="Ficha técnica pdf">
+                <CompactPdfInput
+                  id="chemical-technical-sheet"
+                  label="Ficha técnica PDF"
+                  state={formData.technicalSheet}
+                  onChange={(technicalSheet) => updateFormData({ technicalSheet })}
+                />
+              </DocumentUploadField>
+              <DocumentUploadField label="Hoja de seguridad pdf">
+                <CompactPdfInput
+                  id="chemical-safety-sheet"
+                  label="Hoja de seguridad PDF"
+                  state={formData.safetySheet}
+                  onChange={(safetySheet) => updateFormData({ safetySheet })}
+                />
+              </DocumentUploadField>
+            </div>
           </DocumentRegisterModal>
         ) : null}
 
@@ -2141,7 +2298,7 @@ export function CompanyAdminDocumentsView({
         {isRegistering ? (
           <DocumentRegisterModal
             title={formData.editingId ? "Editar empleado" : getDocumentRegisterModalLabel("staff_records")}
-            maxSizeLabel="1.5 MB"
+            titleClassName="text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#12110f]"
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveStaffRecord}
@@ -2155,18 +2312,18 @@ export function CompanyAdminDocumentsView({
             }
             maxWidthClassName="max-w-2xl"
           >
-            <label className="grid gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Nombre</span>
+            <label className="ui-form-field">
               <input
                 value={formData.fullName}
                 onChange={(event) => updateFormData({ fullName: event.currentTarget.value })}
-                placeholder="Nombre del empleado"
-                className="ui-document-form-control"
+                placeholder="Nombre del colaborador"
+                aria-label="Nombre del colaborador"
+                className="ui-form-control"
               />
             </label>
-            <div className={DOCUMENT_MODAL_DIVIDER_CLASS} />
-            <div className="grid gap-5">
-              <div className="grid gap-4">
+            <DocumentModalDivider />
+            <div className="grid gap-3">
+              <DocumentUploadField label="Curso manipulación alimentos">
                 <CompactPdfInput
                   id="staff-food-handling-pdf"
                   label="PDF curso manipulación"
@@ -2176,33 +2333,30 @@ export function CompanyAdminDocumentsView({
                     updateFormData({ foodHandlingPdf, foodHandlingDateMessage: "" });
                   }}
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="grid min-w-0 gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                      {DOCUMENT_DATE_INPUT_LABEL}
-                    </span>
-                    <input
-                      type="date"
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="ui-form-field min-w-0">
+                    <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
+                    <DocumentDateInput
                       value={formData.foodHandlingIssuedAt}
-                      onFocus={() => {
+                      onOpenRequest={() => {
                         if (!hasFoodHandlingPdf) {
                           showStaffDateMessage("foodHandlingDateMessage");
+                          return false;
                         }
+
+                        return true;
                       }}
                       onChange={(event) =>
                         handleStaffDateChange(
-                          event.currentTarget.value,
+                          event,
                           hasFoodHandlingPdf,
                           "foodHandlingIssuedAt",
                         )
                       }
-                      className="ui-document-form-control"
                     />
                   </label>
-                  <label className="grid min-w-0 gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                      {DOCUMENT_VALIDITY_INPUT_LABEL}
-                    </span>
+                  <label className="ui-form-field min-w-0">
+                    <span className="ui-form-label">{DOCUMENT_VALIDITY_INPUT_LABEL}</span>
                     <DocumentValiditySelect
                       value={formData.foodHandlingValidityMonths}
                       suggestedMonths={DEFAULT_STAFF_VALIDITY_MONTHS}
@@ -2215,9 +2369,8 @@ export function CompanyAdminDocumentsView({
                     {formData.foodHandlingDateMessage}
                   </p>
                 ) : null}
-              </div>
-              <div className={DOCUMENT_MODAL_DIVIDER_CLASS} />
-              <div className="grid gap-4">
+              </DocumentUploadField>
+              <DocumentUploadField label="Exámenes médicos de aptitud">
                 <CompactPdfInput
                   id="staff-medical-exam-pdf"
                   label="PDF examen médico"
@@ -2227,33 +2380,30 @@ export function CompanyAdminDocumentsView({
                     updateFormData({ medicalExamPdf, medicalExamDateMessage: "" });
                   }}
                 />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="grid min-w-0 gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                      {DOCUMENT_DATE_INPUT_LABEL}
-                    </span>
-                    <input
-                      type="date"
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="ui-form-field min-w-0">
+                    <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
+                    <DocumentDateInput
                       value={formData.medicalExamIssuedAt}
-                      onFocus={() => {
+                      onOpenRequest={() => {
                         if (!hasMedicalExamPdf) {
                           showStaffDateMessage("medicalExamDateMessage");
+                          return false;
                         }
+
+                        return true;
                       }}
                       onChange={(event) =>
                         handleStaffDateChange(
-                          event.currentTarget.value,
+                          event,
                           hasMedicalExamPdf,
                           "medicalExamIssuedAt",
                         )
                       }
-                      className="ui-document-form-control"
                     />
                   </label>
-                  <label className="grid min-w-0 gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                      {DOCUMENT_VALIDITY_INPUT_LABEL}
-                    </span>
+                  <label className="ui-form-field min-w-0">
+                    <span className="ui-form-label">{DOCUMENT_VALIDITY_INPUT_LABEL}</span>
                     <DocumentValiditySelect
                       value={formData.medicalExamValidityMonths}
                       suggestedMonths={DEFAULT_STAFF_VALIDITY_MONTHS}
@@ -2266,7 +2416,7 @@ export function CompanyAdminDocumentsView({
                     {formData.medicalExamDateMessage}
                   </p>
                 ) : null}
-              </div>
+              </DocumentUploadField>
             </div>
           </DocumentRegisterModal>
         ) : null}
@@ -2280,12 +2430,12 @@ export function CompanyAdminDocumentsView({
                     <div className="mt-1 grid gap-1">
                       <DocumentFileLink
                         file={member.foodHandlingPdf.file}
-                        label="Curso manipulación alimentos"
+                        label="Curso"
                         detail={formatExpirationDetail(member.foodHandlingExpiresAt)}
                       />
                       <DocumentFileLink
                         file={member.medicalExamPdf.file}
-                        label="Examen aptitud médica"
+                        label="Examen"
                         detail={formatExpirationDetail(member.medicalExamExpiresAt)}
                       />
                     </div>
