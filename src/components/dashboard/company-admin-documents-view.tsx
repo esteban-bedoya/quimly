@@ -810,7 +810,7 @@ function CompactPdfInput({
       <div className="ui-document-file-control">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-gray-800">
-            {state.file ? state.file.name : "Selecciona un PDF"}
+            {state.file ? state.file.name : "Seleccionar archivo"}
           </p>
           <p className="text-xs text-gray-400">
             PDF · Máx {formatFileLimitLabel(maxSizeBytes)}
@@ -818,14 +818,48 @@ function CompactPdfInput({
         </div>
         <button
           type="button"
+          aria-label={state.file ? "Cambiar PDF" : "Subir PDF"}
           onClick={() => fileInputRef.current?.click()}
-          className="shrink-0 rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1d1b18]"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#12110f] text-white transition hover:bg-[#1d1b18]"
         >
-          {state.file ? "Cambiar" : "Subir"}
+          <UploadFileIcon />
         </button>
       </div>
       {state.error ? <p className="ui-inline-alert ui-inline-alert-error">{state.error}</p> : null}
     </div>
+  );
+}
+
+function UploadFileIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill="none"
+      className="h-5 w-5 shrink-0"
+    >
+      <path
+        d="M6.25 16.25h7.5A2.25 2.25 0 0 0 16 14v-1.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M10 12.75V4.25m0 0L6.75 7.5M10 4.25l3.25 3.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M4.75 11.25v3A1.75 1.75 0 0 0 6.5 16h7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+    </svg>
   );
 }
 
@@ -867,8 +901,8 @@ function DocumentDateInput({
     }
 
     const rect = trigger.getBoundingClientRect();
-    const pickerWidth = Math.min(320, window.innerWidth - 24);
-    const estimatedPickerHeight = 340;
+    const pickerWidth = Math.min(284, window.innerWidth - 24);
+    const estimatedPickerHeight = 292;
     const bottomTop = rect.bottom + 8;
     const top = bottomTop + estimatedPickerHeight > window.innerHeight ? rect.top - estimatedPickerHeight - 8 : bottomTop;
 
@@ -936,23 +970,31 @@ function DocumentDateInput({
         {displayValue || "DD/MM/AAAA"}
       </button>
       {isOpen && pickerPosition && typeof document !== "undefined" ? createPortal(
-        <div
-          ref={pickerRef}
-          style={{
-            left: pickerPosition.left,
-            top: pickerPosition.top,
-            width: pickerPosition.width,
-          }}
-          className="fixed z-[140]"
-        >
-          <DatePicker
-            value={value}
-            onChange={(nextValue) => {
-              onChange(nextValue);
-              setIsOpen(false);
-            }}
+        <>
+          <div
+            className="fixed inset-0 z-[130] bg-[#12110f]/10 backdrop-blur-sm"
+            role="presentation"
+            onMouseDown={() => setIsOpen(false)}
           />
-        </div>,
+          <div
+            ref={pickerRef}
+            style={{
+              left: pickerPosition.left,
+              top: pickerPosition.top,
+              width: pickerPosition.width,
+            }}
+            className="fixed z-[140]"
+          >
+            <DatePicker
+              compact
+              value={value}
+              onChange={(nextValue) => {
+                onChange(nextValue);
+                setIsOpen(false);
+              }}
+            />
+          </div>
+        </>,
         document.body,
       ) : null}
     </div>
@@ -1099,7 +1141,7 @@ function DocumentValiditySelect({
 function DocumentRegisterModal({
   children,
   title,
-  titleClassName = "ui-modal-title",
+  titleClassName = "text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#12110f]",
   message,
   onCancel,
   onSubmit,
@@ -1133,7 +1175,7 @@ function DocumentRegisterModal({
         role="dialog"
       >
         <div className="space-y-2">
-          <h3 className={titleClassName}>{title}</h3>
+          <h3 className={titleClassName}>{title.toLocaleUpperCase("es-CO")}</h3>
         </div>
 
         <div className="mt-4 grid gap-3">{children}</div>
@@ -1246,6 +1288,47 @@ function RecordActions({ status, children }: { status: DocumentStatus; children:
       <DocumentStatusBadge status={status} />
       <div className="flex flex-wrap items-center justify-end gap-3">{children}</div>
     </div>
+  );
+}
+
+function DeleteRecordButton({
+  label = "Eliminar registro",
+  disabled,
+  onClick,
+}: {
+  label?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
+    >
+      <TrashIcon />
+    </button>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill="none"
+      className="h-4 w-4 shrink-0"
+    >
+      <path
+        d="M7.5 4.75h5m-7.25 2h9.5m-8.5 0 .55 8.2a1.5 1.5 0 0 0 1.5 1.4h3.4a1.5 1.5 0 0 0 1.5-1.4l.55-8.2M8.75 9.25v4.25m2.5-4.25v4.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+    </svg>
   );
 }
 
@@ -1864,8 +1947,8 @@ export function CompanyAdminDocumentsView({
             </div>
           </div>
           <RecordActions status={sanitationPlan ? "Al día" : "Sin registro"}>
-            <button
-              type="button"
+            <DeleteRecordButton
+              label="Eliminar plan de saneamiento"
               disabled={!sanitationPlan}
               onClick={() => {
                 if (!sanitationPlan) {
@@ -1874,10 +1957,7 @@ export function CompanyAdminDocumentsView({
 
                 archiveDocumentFile(sanitationPlan.id, () => setSanitationPlan(null));
               }}
-              className="text-xs font-medium text-rose-500 transition hover:text-rose-700 disabled:text-gray-300"
-            >
-              Eliminar
-            </button>
+            />
           </RecordActions>
         </RecordRow>
       </RecordsList>
@@ -1993,17 +2073,14 @@ export function CompanyAdminDocumentsView({
                   >
                     Editar
                   </button>
-                  <button
-                    type="button"
+                  <DeleteRecordButton
+                    label="Eliminar certificado"
                     onClick={() =>
                       archiveDocumentFile(record.id, () =>
                         setRecords(records.filter((currentRecord) => currentRecord.id !== record.id)),
                       )
                     }
-                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
-                  >
-                    Eliminar
-                  </button>
+                  />
                 </RecordActions>
               </RecordRow>
             ))
@@ -2120,17 +2197,14 @@ export function CompanyAdminDocumentsView({
                   >
                     Editar
                   </button>
-                  <button
-                    type="button"
+                  <DeleteRecordButton
+                    label="Eliminar certificado"
                     onClick={() => {
                       archiveDocumentFile(record.id, () =>
                         setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id)),
                       );
                     }}
-                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
-                  >
-                    Eliminar
-                  </button>
+                  />
                 </RecordActions>
               </RecordRow>
             ))
@@ -2231,15 +2305,12 @@ export function CompanyAdminDocumentsView({
                   >
                     Editar
                   </button>
-                  <button
-                    type="button"
+                  <DeleteRecordButton
+                    label="Eliminar producto"
                     onClick={() => {
                       archiveChemicalProduct(product.id);
                     }}
-                    className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
-                  >
-                    Eliminar
-                  </button>
+                  />
                 </RecordActions>
               </RecordRow>
               ))
@@ -2298,7 +2369,6 @@ export function CompanyAdminDocumentsView({
         {isRegistering ? (
           <DocumentRegisterModal
             title={formData.editingId ? "Editar empleado" : getDocumentRegisterModalLabel("staff_records")}
-            titleClassName="text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#12110f]"
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveStaffRecord}
@@ -2459,15 +2529,12 @@ export function CompanyAdminDocumentsView({
                     >
                       Editar
                     </button>
-                    <button
-                      type="button"
+                    <DeleteRecordButton
+                      label="Eliminar empleado"
                       onClick={() => {
                         archiveStaffMember(member.id);
                       }}
-                      className="text-xs font-medium text-rose-500 transition hover:text-rose-700"
-                    >
-                      Eliminar
-                    </button>
+                    />
                   </RecordActions>
                 </RecordRow>
               ))

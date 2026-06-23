@@ -17,6 +17,7 @@ type DatePickerProps = {
   min?: string;
   max?: string;
   onChange: (value: string) => void;
+  compact?: boolean;
 };
 
 type DateParts = {
@@ -197,7 +198,7 @@ function getHourOptions() {
   return Array.from({ length: 24 }, (_, hour) => hour);
 }
 
-export function DatePicker({ value, min, max, onChange }: DatePickerProps) {
+export function DatePicker({ value, min, max, onChange, compact = false }: DatePickerProps) {
   const todayParts = {
     year: new Date().getFullYear(),
     monthIndex: new Date().getMonth(),
@@ -233,34 +234,56 @@ export function DatePicker({ value, min, max, onChange }: DatePickerProps) {
   }
 
   return (
-    <div className="grid gap-4 rounded-3xl border border-neutral-200 bg-white p-3 text-neutral-950 shadow-[0_24px_80px_rgba(17,24,22,0.18)]">
-      <div className="flex min-h-11 items-center justify-between gap-3">
+    <div
+      className={[
+        "grid border border-neutral-200 bg-white text-neutral-950 shadow-[0_24px_80px_rgba(17,24,22,0.18)]",
+        compact ? "gap-3 rounded-2xl p-2.5" : "gap-4 rounded-3xl p-3",
+      ].join(" ")}
+    >
+      <div className={`flex items-center justify-between gap-3 ${compact ? "min-h-9" : "min-h-11"}`}>
         <button
           type="button"
           disabled={!canShowPreviousMonth}
           onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey - 1)}
-          className="grid h-10 w-10 place-items-center rounded-2xl border border-neutral-200 bg-white text-lg font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300"
+          className={[
+            "grid place-items-center border border-neutral-200 bg-white font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300",
+            compact ? "h-8 w-8 rounded-xl text-base" : "h-10 w-10 rounded-2xl text-lg",
+          ].join(" ")}
           aria-label="Mes anterior"
         >
           {"<"}
         </button>
-        <p className="text-center text-sm font-black uppercase tracking-[0.12em] text-neutral-950">
+        <p
+          className={[
+            "text-center font-black uppercase tracking-[0.12em] text-neutral-950",
+            compact ? "text-xs" : "text-sm",
+          ].join(" ")}
+        >
           {monthLabels[visibleMonth.monthIndex]} {visibleMonth.year}
         </p>
         <button
           type="button"
           disabled={!canShowNextMonth}
           onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey + 1)}
-          className="grid h-10 w-10 place-items-center rounded-2xl border border-neutral-200 bg-white text-lg font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300"
+          className={[
+            "grid place-items-center border border-neutral-200 bg-white font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300",
+            compact ? "h-8 w-8 rounded-xl text-base" : "h-10 w-10 rounded-2xl text-lg",
+          ].join(" ")}
           aria-label="Mes siguiente"
         >
           {">"}
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className={`grid grid-cols-7 ${compact ? "gap-0.5" : "gap-1"}`}>
         {weekdayLabels.map((weekdayLabel) => (
-          <span key={weekdayLabel} className="py-1 text-center text-[10px] font-black uppercase tracking-[0.08em] text-neutral-500">
+          <span
+            key={weekdayLabel}
+            className={[
+              "text-center font-black uppercase tracking-[0.08em] text-neutral-500",
+              compact ? "py-0.5 text-[9px]" : "py-1 text-[10px]",
+            ].join(" ")}
+          >
             {weekdayLabel}
           </span>
         ))}
@@ -282,7 +305,8 @@ export function DatePicker({ value, min, max, onChange }: DatePickerProps) {
               disabled={isDisabled}
               onClick={() => selectDate(date)}
               className={[
-                "flex aspect-square items-center justify-center rounded-2xl border text-sm font-black transition active:scale-[0.94]",
+                "flex aspect-square items-center justify-center border font-black transition active:scale-[0.94]",
+                compact ? "rounded-xl text-xs" : "rounded-2xl text-sm",
                 isSelected
                   ? "border-neutral-950 bg-neutral-950 text-white"
                   : isDisabled
