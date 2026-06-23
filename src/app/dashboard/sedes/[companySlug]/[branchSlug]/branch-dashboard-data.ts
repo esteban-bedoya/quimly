@@ -15,7 +15,7 @@ import type {
   BranchDocumentSummary,
   BranchFormQrSummary,
   BranchSanitaryDocumentCategory,
-  BranchSanitaryDocumentCategoryStatusSummary,
+  BranchSanitaryDocumentCategoryStatusMap,
   BranchSanitaryDocumentStatusColor,
   BranchSanitaryDocumentFileSummary,
   BranchSanitaryDocumentKind,
@@ -131,6 +131,13 @@ function getEmptyOperationalRecordDateStatuses() {
     },
     {},
   );
+}
+
+function mapDocumentCategoryStatusRows(rows: BranchDocumentCategoryStatusRow[] | null | undefined) {
+  return (rows ?? []).reduce<BranchSanitaryDocumentCategoryStatusMap>((statuses, item) => {
+    statuses[item.categoria] = item.estado_calculado;
+    return statuses;
+  }, {} as BranchSanitaryDocumentCategoryStatusMap);
 }
 
 async function loadOperationalRecordDateStatuses({
@@ -290,7 +297,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   let chemicalProducts: BranchChemicalProductSummary[] = [];
   let staffMembers: BranchStaffMemberSummary[] = [];
   let sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[] = [];
-  let sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[] = [];
+  let sanitaryDocumentCategoryStatuses = {} as BranchSanitaryDocumentCategoryStatusMap;
   let operationalRecordDateStatuses = getEmptyOperationalRecordDateStatuses();
 
   if (supabase) {
@@ -521,12 +528,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
         updatedAt: item.updated_at,
       })) ?? [];
 
-    sanitaryDocumentCategoryStatuses =
-      sanitaryDocumentCategoryStatusRows?.map((item) => ({
-        branchId: item.sede_id,
-        category: item.categoria,
-        calculatedStatus: item.estado_calculado,
-      })) ?? [];
+    sanitaryDocumentCategoryStatuses = mapDocumentCategoryStatusRows(sanitaryDocumentCategoryStatusRows);
 
     logServerInfo("branch.view.load.done", {
       branchId: branch.id,
@@ -536,7 +538,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       qrCount: qrCodes.length,
       documentCount: documents.length,
       sanitaryDocumentFileCount: sanitaryDocumentFiles.length,
-      sanitaryDocumentCategoryStatusCount: sanitaryDocumentCategoryStatuses.length,
+      sanitaryDocumentCategoryStatusCount: sanitaryDocumentCategoryStatusRows?.length ?? 0,
       chemicalProductCount: chemicalProducts.length,
       staffMemberCount: staffMembers.length,
       refrigerationEquipmentCount: refrigerationEquipment.length,

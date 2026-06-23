@@ -13,7 +13,7 @@ import {
 } from "@/app/dashboard/actions";
 import type {
   BranchChemicalProductSummary,
-  BranchSanitaryDocumentCategoryStatusSummary,
+  BranchSanitaryDocumentCategoryStatusMap,
   BranchSanitaryDocumentStatusColor,
   BranchSanitaryDocumentFileSummary,
   BranchSanitaryDocumentKind,
@@ -399,27 +399,6 @@ function getProductStatus(product: ChemicalProductRecord): DocumentStatus {
   return product.technicalSheet.file && product.safetySheet.file ? "Completo" : "Incompleto";
 }
 
-function getStaffStatus(record: StaffRecord): DocumentStatus {
-  const hasCourse = Boolean(record.foodHandlingPdf.file);
-  const hasMedicalExam = Boolean(record.medicalExamPdf.file);
-  const courseExpired = hasCourse && isExpired(record.foodHandlingExpiresAt);
-  const medicalExamExpired = hasMedicalExam && isExpired(record.medicalExamExpiresAt);
-
-  if (!hasCourse && !hasMedicalExam) {
-    return "Sin registro";
-  }
-
-  if (courseExpired || medicalExamExpired) {
-    return "Vencido";
-  }
-
-  if (!hasCourse || !hasMedicalExam || !record.foodHandlingIssuedAt || !record.medicalExamIssuedAt) {
-    return "Incompleto";
-  }
-
-  return "Al día";
-}
-
 function getStaffStatusBadges(record: StaffRecord): DocumentStatus[] {
   const hasCourse = Boolean(record.foodHandlingPdf.file);
   const hasMedicalExam = Boolean(record.medicalExamPdf.file);
@@ -459,92 +438,15 @@ function sortAcuHistoryByCollectedAt(records: AcuCollectionRecord[]) {
   });
 }
 
-function getAggregatedProductStatus(products: ChemicalProductRecord[]): DocumentStatus {
-  if (products.length === 0) {
-    return "Sin registro";
-  }
-
-  return products.every((product) => getProductStatus(product) === "Completo") ? "Completo" : "Incompleto";
-}
-
-function getAggregatedDatedRecordStatus(records: DatedDocumentRecord[]): DocumentStatus {
-  if (records.length === 0) {
-    return "Sin registro";
-  }
-
-  const statuses = records.map(getDatedRecordStatus);
-
-  if (statuses.includes("Vencido")) {
-    return "Vencido";
-  }
-
-  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
-    return "Incompleto";
-  }
-
-  return "Al día";
-}
-
-function getAggregatedAcuStatus(records: AcuCollectionRecord[]): DocumentStatus {
-  if (records.length === 0) {
-    return "Sin registro";
-  }
-
-  const statuses = records.map(getAcuRecordStatus);
-
-  if (statuses.includes("Vencido")) {
-    return "Vencido";
-  }
-
-  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
-    return "Incompleto";
-  }
-
-  return "Al día";
-}
-
-function getAggregatedStaffStatus(records: StaffRecord[]): DocumentStatus {
-  if (records.length === 0) {
-    return "Sin registro";
-  }
-
-  const statuses = records.map(getStaffStatus);
-
-  if (statuses.includes("Vencido")) {
-    return "Vencido";
-  }
-
-  if (statuses.includes("Incompleto") || statuses.includes("Sin registro")) {
-    return "Incompleto";
-  }
-
-  return "Al día";
-}
-
-function getMenuBadgeFromStatus(status: DocumentStatus): DocumentMenuBadgeState {
-  const tone = {
-    "Al día": "success",
-    Completo: "success",
-    Vencido: "danger",
-    Incompleto: "warning",
-    "Sin registro": "neutral",
-  } satisfies Record<DocumentStatus, NonNullable<DocumentMenuBadgeState["tone"]>>;
-
-  return {
-    label: status,
-    tone: tone[status],
-  };
-}
-
 function getMenuBadgeFromStatusColor(statusColor: BranchSanitaryDocumentStatusColor): DocumentMenuBadgeState {
-  const statusByColor = {
-    gris: "Sin registro",
-    rojo: "Vencido",
-    amarillo: "Incompleto",
-    verde: "Al día",
-  } satisfies Record<BranchSanitaryDocumentStatusColor, DocumentStatus>;
+  const badgeByColor = {
+    gris: { label: "Sin registro", tone: "neutral" },
+    rojo: { label: "Vencido", tone: "danger" },
+    amarillo: { label: "Incompleto", tone: "warning" },
+    verde: { label: "Al día", tone: "success" },
+  } satisfies Record<BranchSanitaryDocumentStatusColor, DocumentMenuBadgeState>;
 
-  return getMenuBadgeFromStatus(statusByColor[statusColor]);
+  return badgeByColor[statusColor];
 }
 
 function getMetadataString(metadata: Record<string, unknown>, key: string) {
@@ -1702,7 +1604,7 @@ type CompanyAdminDocumentsViewProps = {
   initialChemicalProducts: BranchChemicalProductSummary[];
   initialStaffMembers: BranchStaffMemberSummary[];
   initialSanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
-  initialSanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[];
+  initialSanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusMap;
 };
 
 export function CompanyAdminDocumentsView({
@@ -1744,20 +1646,13 @@ export function CompanyAdminDocumentsView({
     buildStaffRecords(initialStaffMembers, initialSanitaryDocumentFiles),
   );
   const activeSectionConfig = DOCUMENT_SECTIONS.find((section) => section.id === activeSection) ?? null;
-  const precomputedSectionStatusBadges = initialSanitaryDocumentCategoryStatuses.reduce<
-    Partial<Record<DocumentSectionId, DocumentMenuBadgeState>>
-  >((statuses, item) => {
-    statuses[item.category] = getMenuBadgeFromStatusColor(item.calculatedStatus);
-    return statuses;
-  }, {});
   const sectionStatusBadges: Record<DocumentSectionId, DocumentMenuBadgeState> = {
-    sanitation_plan: precomputedSectionStatusBadges.sanitation_plan ?? getMenuBadgeFromStatus(sanitationPlan ? "Al día" : "Sin registro"),
-    chemical_products: precomputedSectionStatusBadges.chemical_products ?? getMenuBadgeFromStatus(getAggregatedProductStatus(chemicalProducts)),
-    pest_control: precomputedSectionStatusBadges.pest_control ?? getMenuBadgeFromStatus(getAggregatedDatedRecordStatus(pestControlRecords)),
-    water_tank_cleaning:
-      precomputedSectionStatusBadges.water_tank_cleaning ?? getMenuBadgeFromStatus(getAggregatedDatedRecordStatus(waterTankRecords)),
-    acu_final_disposal: precomputedSectionStatusBadges.acu_final_disposal ?? getMenuBadgeFromStatus(getAggregatedAcuStatus(acuHistory)),
-    staff_records: precomputedSectionStatusBadges.staff_records ?? getMenuBadgeFromStatus(getAggregatedStaffStatus(staffMembers)),
+    sanitation_plan: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.sanitation_plan),
+    chemical_products: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.chemical_products),
+    pest_control: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.pest_control),
+    water_tank_cleaning: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.water_tank_cleaning),
+    acu_final_disposal: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.acu_final_disposal),
+    staff_records: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.staff_records),
   };
   const sectionCountLabels: Record<DocumentSectionId, string> = {
     sanitation_plan: formatStoredRecordCount("sanitation_plan", sanitationPlan ? 1 : 0),

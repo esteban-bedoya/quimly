@@ -27,7 +27,7 @@ import type {
   BranchDocumentSummary,
   BranchFormQrSummary,
   BranchRefrigerationEquipmentType,
-  BranchSanitaryDocumentCategoryStatusSummary,
+  BranchSanitaryDocumentCategoryStatusMap,
   BranchSanitaryDocumentFileSummary,
   BranchStaffMemberSummary,
   CompanySummary,
@@ -60,7 +60,7 @@ type BranchDetailViewProps = {
   chemicalProducts: BranchChemicalProductSummary[];
   staffMembers: BranchStaffMemberSummary[];
   sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
-  sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusSummary[];
+  sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusMap;
 };
 
 type BranchSectionMeta = {

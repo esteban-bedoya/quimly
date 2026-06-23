@@ -70,11 +70,10 @@ export type BranchSanitaryDocumentCategory =
 
 export type BranchSanitaryDocumentStatusColor = "gris" | "rojo" | "amarillo" | "verde";
 
-export type BranchSanitaryDocumentCategoryStatusSummary = {
-  branchId: string;
-  category: BranchSanitaryDocumentCategory;
-  calculatedStatus: BranchSanitaryDocumentStatusColor;
-};
+export type BranchSanitaryDocumentCategoryStatusMap = Record<
+  BranchSanitaryDocumentCategory,
+  BranchSanitaryDocumentStatusColor
+>;
 
 export type BranchSanitaryDocumentFileSummary = {
   id: string;
