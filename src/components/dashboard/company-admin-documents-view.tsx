@@ -32,6 +32,8 @@ const DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE = "Para asignar la vigencia debe su
 const DOCUMENT_FUTURE_DATE_ERROR_MESSAGE = "La fecha de expedición no puede ser mayor a la fecha actual.";
 const DOCUMENT_VALIDITY_OPTIONS = ["1", "2", "3", "6", "12", "24"] as const;
 const DEFAULT_STAFF_VALIDITY_MONTHS = "12";
+const DOCUMENT_MODAL_TITLE_CLASS = "text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#12110f]";
+const DOCUMENT_SECTION_TITLE_CLASS = "text-base font-bold uppercase leading-6 tracking-[0.08em] text-[#2a7f86]";
 const REQUIRED_NAME_ERROR_INPUT_CLASS =
   "!border-rose-500 !bg-rose-50 !shadow-[0_0_0_3px_rgb(244_63_94_/_0.18),0_10px_24px_rgb(18_17_15_/_0.07)]";
 
@@ -74,7 +76,15 @@ type DocumentMenuBadgeState = {
   tone?: "neutral" | "success" | "warning" | "danger";
 };
 
-type DocumentStatus = "Al día" | "Vigente" | "Archivo" | "Vencido" | "Incompleto" | "Sin registro" | "Completo";
+type DocumentStatus =
+  | "Al día"
+  | "Vigente"
+  | "Archivo"
+  | "Histórico"
+  | "Vencido"
+  | "Incompleto"
+  | "Sin registro"
+  | "Completo";
 
 type SanitationPlanRecord = {
   id: string;
@@ -225,13 +235,13 @@ const DOCUMENT_REGISTER_ACTION_LABELS: Record<DocumentSectionId, { create: strin
     create: "Agregar producto",
   },
   pest_control: {
-    create: "Agregar certificado",
+    create: "Agregar certificado control de plagas",
   },
   water_tank_cleaning: {
-    create: "Agregar certificado",
+    create: "Agregar certificado lavado tanques",
   },
   acu_final_disposal: {
-    create: "Agregar certificado",
+    create: "Agregar certificado ACU",
   },
   staff_records: {
     create: "Agregar colaborador",
@@ -370,7 +380,7 @@ function getCalculatedExpirationDate(issuedAt: string, validityMonths: string) {
 
 function getDatedHistoryRecordStatus(record: DatedDocumentRecord, recordIndex: number): DocumentStatus {
   if (recordIndex > 0) {
-    return "Archivo";
+    return "Histórico";
   }
 
   if (!record.pdf) {
@@ -381,7 +391,7 @@ function getDatedHistoryRecordStatus(record: DatedDocumentRecord, recordIndex: n
 }
 
 function getAcuRecordStatus(recordIndex: number): DocumentStatus {
-  return recordIndex === 0 ? "Vigente" : "Archivo";
+  return recordIndex === 0 ? "Vigente" : "Histórico";
 }
 
 function getProductStatus(product: ChemicalProductRecord): DocumentStatus {
@@ -653,6 +663,20 @@ function formatExpirationDetail(expiresAt: string | null | undefined) {
   return `${isExpired(expiresAt) ? "Vencido" : "Vence"}: ${formatDate(expiresAt)}`;
 }
 
+function formatIssuedRecordTitle(issuedAt: string) {
+  return `Expedido el día: ${formatDate(issuedAt)}`;
+}
+
+function formatAcuExpirationDetail(records: AcuCollectionRecord[], recordIndex: number) {
+  if (recordIndex === 0) {
+    return "Vence: Con la siguiente entrega.";
+  }
+
+  const closingRecord = records[recordIndex - 1];
+
+  return `Vencido el: ${formatDate(closingRecord?.collectedAt ?? "")}`;
+}
+
 function DocumentMenuBadge({ badge }: { badge: DocumentMenuBadgeState }) {
   const tone = badge.tone ?? "neutral";
   const dotClassName = {
@@ -707,6 +731,22 @@ function getDocumentRegisterModalLabel(sectionId: DocumentSectionId, hasExisting
   return hasExistingRecord && labels.replace ? labels.replace : labels.create;
 }
 
+function getDatedDocumentEditModalLabel(sectionId: DocumentSectionId) {
+  if (sectionId === "pest_control") {
+    return "Editar registro control de plagas";
+  }
+
+  return sectionId === "water_tank_cleaning" ? "Editar registro lavado tanques" : "Editar registro";
+}
+
+function getDatedDocumentUploadFieldLabel(sectionId: DocumentSectionId) {
+  if (sectionId === "pest_control") {
+    return "Certificado control de plagas";
+  }
+
+  return sectionId === "water_tank_cleaning" ? "Certificado lavado de tranques de agua" : "Certificado pdf";
+}
+
 function DocumentMenuCard({
   item,
   badge,
@@ -737,14 +777,28 @@ function DocumentMenuCard({
   );
 }
 
+function DocumentTitle({
+  children,
+  as = "h2",
+  variant = "modal",
+}: {
+  children: string;
+  as?: "h2" | "h3";
+  variant?: "modal" | "section";
+}) {
+  const TitleTag = as;
+  const className = variant === "section" ? DOCUMENT_SECTION_TITLE_CLASS : DOCUMENT_MODAL_TITLE_CLASS;
+
+  return <TitleTag className={className}>{children.toLocaleUpperCase("es-CO")}</TitleTag>;
+}
+
 function DocumentsToolbar({ activeSectionConfig }: { activeSectionConfig: DocumentSectionMeta }) {
   return (
     <div className="operational-toolbar mt-3 mb-3 flex w-full justify-start sm:mt-4 sm:mb-4">
-      <p className="operational-toolbar-copy w-full !max-w-none min-w-0 text-left">
-        <strong className="font-semibold">{activeSectionConfig.title}</strong>
-        <br />
-        <span className="text-[0.92em]">{activeSectionConfig.description}</span>
-      </p>
+      <div className="operational-toolbar-copy grid w-full !max-w-none min-w-0 gap-1 text-left">
+        <DocumentTitle variant="section">{activeSectionConfig.title}</DocumentTitle>
+        <p className="text-[0.92em]">{activeSectionConfig.description}</p>
+      </div>
     </div>
   );
 }
@@ -768,6 +822,7 @@ function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
     "Al día": "bg-emerald-50 text-emerald-700 ring-emerald-100",
     Vigente: "bg-emerald-50 text-emerald-700 ring-emerald-100",
     Archivo: "bg-gray-50 text-gray-500 ring-gray-100",
+    Histórico: "bg-gray-50 text-gray-500 ring-gray-100",
     Completo: "bg-emerald-50 text-emerald-700 ring-emerald-100",
     Vencido: "bg-rose-50 text-rose-700 ring-rose-100",
     Incompleto: "bg-amber-50 text-amber-700 ring-amber-100",
@@ -1181,7 +1236,6 @@ function DocumentValiditySelect({
 function DocumentRegisterModal({
   children,
   title,
-  titleClassName = "text-sm font-semibold uppercase leading-5 tracking-[0.08em] text-[#12110f]",
   message,
   onCancel,
   onSubmit,
@@ -1191,7 +1245,6 @@ function DocumentRegisterModal({
 }: {
   children: ReactNode;
   title: string;
-  titleClassName?: string;
   message?: AdminMessage | null;
   onCancel: () => void;
   onSubmit: () => void;
@@ -1215,7 +1268,7 @@ function DocumentRegisterModal({
         role="dialog"
       >
         <div className="space-y-2">
-          <h3 className={titleClassName}>{title.toLocaleUpperCase("es-CO")}</h3>
+          <DocumentTitle as="h3">{title}</DocumentTitle>
         </div>
 
         <div className="mt-4 grid gap-3">{children}</div>
@@ -2281,7 +2334,6 @@ export function CompanyAdminDocumentsView({
     setRecords: (records: DatedDocumentRecord[]) => void,
     suggestedValidityMonths: string,
     prefix: string,
-    recordTitlePrefix: string,
   ) => (
     <div className="grid gap-4">
       <RegisterControl
@@ -2293,7 +2345,7 @@ export function CompanyAdminDocumentsView({
 
       {isRegistering ? (
         <DocumentRegisterModal
-          title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel(sectionId)}
+          title={formData.editingId ? getDatedDocumentEditModalLabel(sectionId) : getDocumentRegisterModalLabel(sectionId)}
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={() => saveDatedRecord(records, setRecords, prefix)}
@@ -2301,14 +2353,14 @@ export function CompanyAdminDocumentsView({
           submitLabel={isSaving ? "Guardando..." : formData.editingId ? "Guardar registro" : getDocumentRegisterModalLabel(sectionId)}
         >
           <DocumentModalDivider />
-          <DocumentUploadField label="Certificado pdf">
+          <DocumentUploadField label={getDatedDocumentUploadFieldLabel(sectionId)}>
             <CompactPdfInput
               id={`${prefix}-pdf`}
               label="Certificado PDF"
               state={formData.pdf}
               onChange={(pdf) => updateFormData({ pdf })}
             />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <label className="ui-form-field">
                 <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                 <DocumentDateInput
@@ -2355,9 +2407,7 @@ export function CompanyAdminDocumentsView({
           ? records.map((record, recordIndex) => (
               <RecordRow key={record.id}>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800">
-                    {recordTitlePrefix} - {formatDate(record.issuedAt)}
-                  </p>
+                  <p className="text-sm font-medium text-gray-800">{formatIssuedRecordTitle(record.issuedAt)}</p>
                   <DocumentStatusBadges statuses={[getDatedHistoryRecordStatus(record, recordIndex)]} />
                   <div className="mt-1">
                     <DocumentFileLink
@@ -2408,7 +2458,7 @@ export function CompanyAdminDocumentsView({
 
       {isRegistering ? (
         <DocumentRegisterModal
-          title={formData.editingId ? "Editar registro" : getDocumentRegisterModalLabel("acu_final_disposal")}
+          title={formData.editingId ? "Editar registro ACU" : getDocumentRegisterModalLabel("acu_final_disposal")}
           message={actionMessage}
           onCancel={cancelRegistration}
           onSubmit={saveAcuRecord}
@@ -2422,7 +2472,7 @@ export function CompanyAdminDocumentsView({
           }
         >
           <DocumentModalDivider />
-          <DocumentUploadField label="Certificado pdf">
+          <DocumentUploadField label="Certificado disposición final de aceites">
             <CompactPdfInput
               id="acu-pdf"
               label="Certificado PDF"
@@ -2454,13 +2504,13 @@ export function CompanyAdminDocumentsView({
           ? acuHistory.map((record, recordIndex) => (
               <RecordRow key={record.id}>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800">Recolección - {formatDate(record.collectedAt)}</p>
+                  <p className="text-sm font-medium text-gray-800">{formatIssuedRecordTitle(record.collectedAt)}</p>
                   <DocumentStatusBadges statuses={[getAcuRecordStatus(recordIndex)]} />
                   <div className="mt-1">
                     <DocumentFileLink
                       file={record.pdf}
                       label="Certificado"
-                      detail={`Expedición: ${formatDate(record.collectedAt)}`}
+                      detail={formatAcuExpirationDetail(acuHistory, recordIndex)}
                     />
                   </div>
                 </div>
@@ -2534,18 +2584,17 @@ export function CompanyAdminDocumentsView({
             }
           >
             <label className="ui-form-field">
-              <span className="ui-form-label">Nombre del producto</span>
               <input
                 ref={productNameInputRef}
                 value={formData.productName}
                 onChange={(event) => updateFormData({ productName: event.currentTarget.value })}
-                placeholder="Ej. Amonio cuaternario"
+                placeholder="Nombre del producto"
                 aria-invalid={isProductNameMissing}
                 className={`ui-form-control ${isProductNameMissing ? `ui-form-control-error ${REQUIRED_NAME_ERROR_INPUT_CLASS}` : ""}`}
               />
             </label>
             <DocumentModalDivider />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3">
               <DocumentUploadField label="Ficha técnica pdf">
                 <CompactPdfInput
                   id="chemical-technical-sheet"
@@ -2664,7 +2713,7 @@ export function CompanyAdminDocumentsView({
 
         {isRegistering ? (
           <DocumentRegisterModal
-            title={formData.editingId ? "Editar empleado" : getDocumentRegisterModalLabel("staff_records")}
+            title={formData.editingId ? "Editar colaborador" : getDocumentRegisterModalLabel("staff_records")}
             message={actionMessage}
             onCancel={cancelRegistration}
             onSubmit={saveStaffRecord}
@@ -2880,7 +2929,6 @@ export function CompanyAdminDocumentsView({
         setPestControlRecords,
         "3",
         "pest-control",
-        "Fumigación",
       );
     }
 
@@ -2891,7 +2939,6 @@ export function CompanyAdminDocumentsView({
         setWaterTankRecords,
         "6",
         "water-tank",
-        "Lavado Tanques",
       );
     }
 
