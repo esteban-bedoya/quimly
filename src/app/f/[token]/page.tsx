@@ -95,22 +95,29 @@ async function loadCompletedRecordDateKeys(token: string) {
     return [];
   }
 
-  const { data, error } = await withPublicFormTimeout(
-    supabase.rpc("get_public_operational_form_completed_dates", {
-      p_token: token,
-    }),
-    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
-    "get_public_operational_form_completed_dates",
-  );
+  try {
+    const { data, error } = await withPublicFormTimeout(
+      supabase.rpc("get_public_operational_form_completed_dates", {
+        p_token: token,
+      }),
+      PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
+      "get_public_operational_form_completed_dates",
+    );
 
-  if (error) {
+    if (error) {
+      logServerError("public_form.page.completed_dates_lookup_failed", error, {
+        tokenLength: token.length,
+      });
+      return [];
+    }
+
+    return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
+  } catch (error) {
     logServerError("public_form.page.completed_dates_lookup_failed", error, {
       tokenLength: token.length,
     });
     return [];
   }
-
-  return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
 }
 
 function getAdminDisplayName(fullName: string | null, email: string) {
