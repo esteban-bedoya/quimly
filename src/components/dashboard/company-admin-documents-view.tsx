@@ -368,20 +368,16 @@ function getCalculatedExpirationDate(issuedAt: string, validityMonths: string) {
   return addMonthsToDate(issuedAt, getValidityMonthsNumber(validityMonths));
 }
 
-function getDateStatus(expiresAt: string): DocumentStatus {
-  if (!expiresAt) {
-    return "Sin registro";
+function getDatedHistoryRecordStatus(record: DatedDocumentRecord, recordIndex: number): DocumentStatus {
+  if (recordIndex > 0) {
+    return "Archivo";
   }
 
-  return isExpired(expiresAt) ? "Vencido" : "Al día";
-}
-
-function getDatedRecordStatus(record: DatedDocumentRecord): DocumentStatus {
   if (!record.pdf) {
     return "Sin registro";
   }
 
-  return getDateStatus(record.expiresAt);
+  return isExpired(record.expiresAt) ? "Vencido" : "Vigente";
 }
 
 function getAcuRecordStatus(recordIndex: number): DocumentStatus {
@@ -426,7 +422,13 @@ function getDocumentTimestamp(value: string) {
 
 function sortDatedRecordsByIssuedAt(records: DatedDocumentRecord[]) {
   return [...records].sort((leftRecord, rightRecord) => {
-    return getDocumentDateTime(rightRecord.issuedAt) - getDocumentDateTime(leftRecord.issuedAt);
+    const issuedAtDelta = getDocumentDateTime(rightRecord.issuedAt) - getDocumentDateTime(leftRecord.issuedAt);
+
+    if (issuedAtDelta !== 0) {
+      return issuedAtDelta;
+    }
+
+    return getDocumentTimestamp(rightRecord.updatedAt) - getDocumentTimestamp(leftRecord.updatedAt);
   });
 }
 
@@ -2279,7 +2281,7 @@ export function CompanyAdminDocumentsView({
     setRecords: (records: DatedDocumentRecord[]) => void,
     suggestedValidityMonths: string,
     prefix: string,
-    recordTitle: string,
+    recordTitlePrefix: string,
   ) => (
     <div className="grid gap-4">
       <RegisterControl
@@ -2350,11 +2352,13 @@ export function CompanyAdminDocumentsView({
 
       <RecordsList>
         {records.length
-          ? records.map((record) => (
+          ? records.map((record, recordIndex) => (
               <RecordRow key={record.id}>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{recordTitle}</p>
-                  <DocumentStatusBadges statuses={[getDatedRecordStatus(record)]} />
+                  <p className="text-sm font-medium text-gray-800">
+                    {recordTitlePrefix} - {formatDate(record.issuedAt)}
+                  </p>
+                  <DocumentStatusBadges statuses={[getDatedHistoryRecordStatus(record, recordIndex)]} />
                   <div className="mt-1">
                     <DocumentFileLink
                       file={record.pdf}
@@ -2876,7 +2880,7 @@ export function CompanyAdminDocumentsView({
         setPestControlRecords,
         "3",
         "pest-control",
-        "Control de plagas",
+        "Fumigación",
       );
     }
 
@@ -2887,7 +2891,7 @@ export function CompanyAdminDocumentsView({
         setWaterTankRecords,
         "6",
         "water-tank",
-        "Lavado de tanques",
+        "Lavado Tanques",
       );
     }
 

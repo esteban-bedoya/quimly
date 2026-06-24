@@ -912,47 +912,47 @@ begin
       next_estado := 'verde';
     end if;
   elsif p_categoria = 'pest_control' then
-    if not exists (
-      select 1
+    select case
+      when latest_file.expires_at < current_date then 'rojo'::public.sede_documento_estado
+      else 'verde'::public.sede_documento_estado
+    end
+    into next_estado
+    from (
+      select files.expires_at
       from public.branch_sanitary_document_files files
       where files.branch_id = p_sede_id
         and files.document_kind = 'pest_control_certificate'
         and files.is_active = true
-    ) then
-      next_estado := 'gris';
-    elsif exists (
-      select 1
-      from public.branch_sanitary_document_files files
-      where files.branch_id = p_sede_id
-        and files.document_kind = 'pest_control_certificate'
-        and files.is_active = true
-        and files.expires_at < current_date
-    ) then
-      next_estado := 'rojo';
-    else
-      next_estado := 'verde';
-    end if;
+      order by
+        nullif(files.metadata->>'issuedAt', '') desc nulls last,
+        files.updated_at desc,
+        files.uploaded_at desc,
+        files.id desc
+      limit 1
+    ) latest_file;
+
+    next_estado := coalesce(next_estado, 'gris'::public.sede_documento_estado);
   elsif p_categoria = 'water_tank_cleaning' then
-    if not exists (
-      select 1
+    select case
+      when latest_file.expires_at < current_date then 'rojo'::public.sede_documento_estado
+      else 'verde'::public.sede_documento_estado
+    end
+    into next_estado
+    from (
+      select files.expires_at
       from public.branch_sanitary_document_files files
       where files.branch_id = p_sede_id
         and files.document_kind = 'water_tank_cleaning_certificate'
         and files.is_active = true
-    ) then
-      next_estado := 'gris';
-    elsif exists (
-      select 1
-      from public.branch_sanitary_document_files files
-      where files.branch_id = p_sede_id
-        and files.document_kind = 'water_tank_cleaning_certificate'
-        and files.is_active = true
-        and files.expires_at < current_date
-    ) then
-      next_estado := 'rojo';
-    else
-      next_estado := 'verde';
-    end if;
+      order by
+        nullif(files.metadata->>'issuedAt', '') desc nulls last,
+        files.updated_at desc,
+        files.uploaded_at desc,
+        files.id desc
+      limit 1
+    ) latest_file;
+
+    next_estado := coalesce(next_estado, 'gris'::public.sede_documento_estado);
   elsif p_categoria = 'acu_final_disposal' then
     if exists (
       select 1
