@@ -954,24 +954,13 @@ begin
       next_estado := 'verde';
     end if;
   elsif p_categoria = 'acu_final_disposal' then
-    if not exists (
+    if exists (
       select 1
       from public.branch_sanitary_document_files files
       where files.branch_id = p_sede_id
         and files.document_kind = 'acu_final_disposal_certificate'
         and files.is_active = true
     ) then
-      next_estado := 'gris';
-    elsif exists (
-      select 1
-      from public.branch_sanitary_document_files files
-      where files.branch_id = p_sede_id
-        and files.document_kind = 'acu_final_disposal_certificate'
-        and files.is_active = true
-        and files.expires_at < current_date
-    ) then
-      next_estado := 'rojo';
-    else
       next_estado := 'verde';
     end if;
   elsif p_categoria = 'chemical_products' then

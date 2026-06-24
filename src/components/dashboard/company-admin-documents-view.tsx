@@ -31,7 +31,6 @@ const DOCUMENT_DATE_PDF_REQUIRED_MESSAGE = "Para asignar la fecha debe subir el 
 const DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE = "Para asignar la vigencia debe subir el PDF";
 const DOCUMENT_FUTURE_DATE_ERROR_MESSAGE = "La fecha de expedición no puede ser mayor a la fecha actual.";
 const DOCUMENT_VALIDITY_OPTIONS = ["1", "2", "3", "6", "12", "24"] as const;
-const DEFAULT_ACU_VALIDITY_MONTHS = "1";
 const DEFAULT_STAFF_VALIDITY_MONTHS = "12";
 const REQUIRED_NAME_ERROR_INPUT_CLASS =
   "!border-rose-500 !bg-rose-50 !shadow-[0_0_0_3px_rgb(244_63_94_/_0.18),0_10px_24px_rgb(18_17_15_/_0.07)]";
@@ -75,7 +74,7 @@ type DocumentMenuBadgeState = {
   tone?: "neutral" | "success" | "warning" | "danger";
 };
 
-type DocumentStatus = "Al día" | "Vencido" | "Incompleto" | "Sin registro" | "Completo";
+type DocumentStatus = "Al día" | "Vigente" | "Archivo" | "Vencido" | "Incompleto" | "Sin registro" | "Completo";
 
 type SanitationPlanRecord = {
   id: string;
@@ -96,8 +95,6 @@ type DatedDocumentRecord = {
 type AcuCollectionRecord = {
   id: string;
   collectedAt: string;
-  expiresAt: string;
-  validityMonths: string;
   pdf: UploadedPdf;
   updatedAt: string;
 };
@@ -387,12 +384,8 @@ function getDatedRecordStatus(record: DatedDocumentRecord): DocumentStatus {
   return getDateStatus(record.expiresAt);
 }
 
-function getAcuRecordStatus(record: AcuCollectionRecord): DocumentStatus {
-  return record.expiresAt ? getDateStatus(record.expiresAt) : "Al día";
-}
-
-function formatAcuExpirationDetail(record: AcuCollectionRecord) {
-  return record.expiresAt ? formatExpirationDetail(record.expiresAt) : "Vence: hasta la próxima recolección";
+function getAcuRecordStatus(recordIndex: number): DocumentStatus {
+  return recordIndex === 0 ? "Vigente" : "Archivo";
 }
 
 function getProductStatus(product: ChemicalProductRecord): DocumentStatus {
@@ -426,6 +419,11 @@ function getDocumentDateTime(value: string) {
   return Number.isNaN(time) ? 0 : time;
 }
 
+function getDocumentTimestamp(value: string) {
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function sortDatedRecordsByIssuedAt(records: DatedDocumentRecord[]) {
   return [...records].sort((leftRecord, rightRecord) => {
     return getDocumentDateTime(rightRecord.issuedAt) - getDocumentDateTime(leftRecord.issuedAt);
@@ -434,7 +432,13 @@ function sortDatedRecordsByIssuedAt(records: DatedDocumentRecord[]) {
 
 function sortAcuHistoryByCollectedAt(records: AcuCollectionRecord[]) {
   return [...records].sort((leftRecord, rightRecord) => {
-    return getDocumentDateTime(rightRecord.collectedAt) - getDocumentDateTime(leftRecord.collectedAt);
+    const collectedAtDelta = getDocumentDateTime(rightRecord.collectedAt) - getDocumentDateTime(leftRecord.collectedAt);
+
+    if (collectedAtDelta !== 0) {
+      return collectedAtDelta;
+    }
+
+    return getDocumentTimestamp(rightRecord.updatedAt) - getDocumentTimestamp(leftRecord.updatedAt);
   });
 }
 
@@ -548,8 +552,6 @@ function buildAcuHistory(files: BranchSanitaryDocumentFileSummary[]): AcuCollect
     .map((file) => ({
       id: file.id,
       collectedAt: getMetadataString(file.metadata, "collectedAt"),
-      expiresAt: file.expiresAt ?? "",
-      validityMonths: getMetadataValidityMonths(file.metadata, DEFAULT_ACU_VALIDITY_MONTHS),
       pdf: toStoredPdf(file),
       updatedAt: file.updatedAt,
     }));
@@ -762,6 +764,8 @@ function DedicatedSectionScreen({
 function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
   const className = {
     "Al día": "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    Vigente: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    Archivo: "bg-gray-50 text-gray-500 ring-gray-100",
     Completo: "bg-emerald-50 text-emerald-700 ring-emerald-100",
     Vencido: "bg-rose-50 text-rose-700 ring-rose-100",
     Incompleto: "bg-amber-50 text-amber-700 ring-amber-100",
@@ -1964,18 +1968,14 @@ export function CompanyAdminDocumentsView({
       return;
     }
 
-    const expiresAt = getCalculatedExpirationDate(formData.collectedAt, formData.validityMonths);
-
     clearActionMessage();
     startSaving(async () => {
       const nextFormData = createBaseFormData();
       nextFormData.set("documentKind", "acu_final_disposal_certificate");
-      nextFormData.set("expiresAt", expiresAt);
       nextFormData.set(
         "metadata",
         JSON.stringify({
           collectedAt: formData.collectedAt,
-          validityMonths: formData.validityMonths,
         }),
       );
       if (formData.editingId) {
@@ -1993,8 +1993,6 @@ export function CompanyAdminDocumentsView({
       const nextRecord: AcuCollectionRecord = {
         id: result.file.id,
         collectedAt: formData.collectedAt,
-        expiresAt: result.file.expiresAt ?? expiresAt,
-        validityMonths: formData.validityMonths,
         pdf: toStoredPdf(result.file),
         updatedAt: result.file.updatedAt,
       };
@@ -2400,7 +2398,7 @@ export function CompanyAdminDocumentsView({
       <RegisterControl
         isRegistering={isRegistering}
         actionLabel={getDocumentRegisterActionLabel("acu_final_disposal")}
-        onStart={() => startRegistration({ validityMonths: DEFAULT_ACU_VALIDITY_MONTHS })}
+        onStart={() => startRegistration()}
         onCancel={cancelRegistration}
       />
 
@@ -2427,7 +2425,7 @@ export function CompanyAdminDocumentsView({
               state={formData.pdf}
               onChange={(pdf) => updateFormData({ pdf })}
             />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <label className="ui-form-field">
                 <span className="ui-form-label">{DOCUMENT_DATE_INPUT_LABEL}</span>
                 <DocumentDateInput
@@ -2442,45 +2440,23 @@ export function CompanyAdminDocumentsView({
                   }}
                 />
               </label>
-              <label className="ui-form-field">
-                <span className="ui-form-label">{DOCUMENT_VALIDITY_INPUT_LABEL}</span>
-                <DocumentValiditySelect
-                  value={formData.validityMonths}
-                  suggestedMonths={DEFAULT_ACU_VALIDITY_MONTHS}
-                  onOpenRequest={() =>
-                    requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)
-                  }
-                  onChange={(validityMonths) => {
-                    if (!requireDocumentPdf(Boolean(formData.pdf.file), DOCUMENT_VALIDITY_PDF_REQUIRED_MESSAGE)) {
-                      return;
-                    }
-
-                    updateFormData({ validityMonths });
-                  }}
-                />
-              </label>
             </div>
-            {formData.pdf.file && formData.collectedAt ? (
-              <p className="text-xs font-medium text-gray-400">
-                Vencimiento: {formatDate(getCalculatedExpirationDate(formData.collectedAt, formData.validityMonths))}
-              </p>
-            ) : null}
           </DocumentUploadField>
         </DocumentRegisterModal>
       ) : null}
 
       <RecordsList>
         {acuHistory.length
-          ? acuHistory.map((record) => (
+          ? acuHistory.map((record, recordIndex) => (
               <RecordRow key={record.id}>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800">Recolección: {formatDate(record.collectedAt)}</p>
-                  <DocumentStatusBadges statuses={[getAcuRecordStatus(record)]} />
+                  <p className="text-sm font-medium text-gray-800">Recolección - {formatDate(record.collectedAt)}</p>
+                  <DocumentStatusBadges statuses={[getAcuRecordStatus(recordIndex)]} />
                   <div className="mt-1">
                     <DocumentFileLink
                       file={record.pdf}
                       label="Certificado"
-                      detail={formatAcuExpirationDetail(record)}
+                      detail={`Expedición: ${formatDate(record.collectedAt)}`}
                     />
                   </div>
                 </div>
@@ -2491,7 +2467,6 @@ export function CompanyAdminDocumentsView({
                       startRegistration({
                         editingId: record.id,
                         collectedAt: record.collectedAt,
-                        validityMonths: record.validityMonths,
                         pdf: { file: record.pdf, error: null },
                       })
                     }
@@ -2501,7 +2476,11 @@ export function CompanyAdminDocumentsView({
                     onClick={() => {
                       requestDeleteConfirmation(() => {
                         archiveDocumentFile(record.id, () =>
-                          setAcuHistory(acuHistory.filter((currentRecord) => currentRecord.id !== record.id)),
+                          setAcuHistory((currentRecords) =>
+                            sortAcuHistoryByCollectedAt(
+                              currentRecords.filter((currentRecord) => currentRecord.id !== record.id),
+                            ),
+                          ),
                         );
                       });
                     }}

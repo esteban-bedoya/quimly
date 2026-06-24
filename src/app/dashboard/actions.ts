@@ -721,6 +721,7 @@ export async function saveBranchSanitaryDocumentFileAction(
     branchId,
     documentKind,
   });
+  const sanitizedExpiresAt = documentKind === "acu_final_disposal_certificate" ? null : expiresAt;
 
   try {
     if (
@@ -772,7 +773,7 @@ export async function saveBranchSanitaryDocumentFileAction(
         .update({
           ...nextFileValues,
           metadata,
-          expires_at: expiresAt,
+          expires_at: sanitizedExpiresAt,
           is_active: true,
         })
         .eq("id", documentId)
@@ -813,7 +814,7 @@ export async function saveBranchSanitaryDocumentFileAction(
         file_size_bytes: nextFileValues.file_size_bytes,
         mime_type: "application/pdf",
         metadata,
-        expires_at: expiresAt,
+        expires_at: sanitizedExpiresAt,
         is_active: true,
       })
       .select(getSanitaryDocumentFileSelect())
