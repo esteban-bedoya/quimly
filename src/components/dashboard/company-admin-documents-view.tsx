@@ -961,6 +961,24 @@ function DocumentModalDivider({ className = "" }: { className?: string }) {
   return <div className={`border-t border-[#12110f]/[0.12] ${className}`} />;
 }
 
+function DocumentExpirationPreview({
+  issuedAt,
+  validityMonths,
+}: {
+  issuedAt: string;
+  validityMonths: string;
+}) {
+  if (!issuedAt) {
+    return null;
+  }
+
+  return (
+    <p className="text-xs font-medium text-gray-400">
+      Vencimiento: {formatDate(getCalculatedExpirationDate(issuedAt, validityMonths))}
+    </p>
+  );
+}
+
 function DocumentDateInput({
   value,
   onChange,
@@ -2393,10 +2411,8 @@ export function CompanyAdminDocumentsView({
                 />
               </label>
             </div>
-            {formData.pdf.file && formData.issuedAt ? (
-              <p className="text-xs font-medium text-gray-400">
-                Vencimiento: {formatDate(getCalculatedExpirationDate(formData.issuedAt, formData.validityMonths))}
-              </p>
+            {formData.pdf.file ? (
+              <DocumentExpirationPreview issuedAt={formData.issuedAt} validityMonths={formData.validityMonths} />
             ) : null}
           </DocumentUploadField>
         </DocumentRegisterModal>
@@ -2794,6 +2810,12 @@ export function CompanyAdminDocumentsView({
                     />
                   </label>
                 </div>
+                {hasFoodHandlingPdf ? (
+                  <DocumentExpirationPreview
+                    issuedAt={formData.foodHandlingIssuedAt}
+                    validityMonths={formData.foodHandlingValidityMonths}
+                  />
+                ) : null}
                 {formData.foodHandlingDateMessage ? (
                   <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
                     {formData.foodHandlingDateMessage}
@@ -2854,6 +2876,12 @@ export function CompanyAdminDocumentsView({
                     />
                   </label>
                 </div>
+                {hasMedicalExamPdf ? (
+                  <DocumentExpirationPreview
+                    issuedAt={formData.medicalExamIssuedAt}
+                    validityMonths={formData.medicalExamValidityMonths}
+                  />
+                ) : null}
                 {formData.medicalExamDateMessage ? (
                   <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
                     {formData.medicalExamDateMessage}
