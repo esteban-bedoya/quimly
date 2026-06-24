@@ -1863,6 +1863,26 @@ drop function if exists public.submit_public_operational_form(
   text,
   date,
   numeric,
+  numeric,
+  timestamptz
+);
+
+drop function if exists public.submit_public_operational_form(
+  text,
+  text,
+  uuid,
+  numeric,
+  uuid,
+  boolean,
+  text,
+  text,
+  boolean,
+  boolean,
+  text,
+  text,
+  text,
+  date,
+  numeric,
   numeric
 );
 

@@ -92,32 +92,25 @@ async function loadCompletedRecordDateKeys(token: string) {
   const supabase = getSupabasePublicClient();
 
   if (!supabase) {
-    return [];
+    throw new Error("Supabase public client is not configured.");
   }
 
-  try {
-    const { data, error } = await withPublicFormTimeout(
-      supabase.rpc("get_public_operational_form_completed_dates", {
-        p_token: token,
-      }),
-      PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
-      "get_public_operational_form_completed_dates",
-    );
+  const { data, error } = await withPublicFormTimeout(
+    supabase.rpc("get_public_operational_form_completed_dates", {
+      p_token: token,
+    }),
+    PUBLIC_FORM_REQUIRED_LOAD_TIMEOUT_MS,
+    "get_public_operational_form_completed_dates",
+  );
 
-    if (error) {
-      logServerError("public_form.page.completed_dates_lookup_failed", error, {
-        tokenLength: token.length,
-      });
-      return [];
-    }
-
-    return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
-  } catch (error) {
+  if (error) {
     logServerError("public_form.page.completed_dates_lookup_failed", error, {
       tokenLength: token.length,
     });
-    return [];
+    throw new Error("No fue posible cargar el estado diario del formulario.");
   }
+
+  return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
 }
 
 function getAdminDisplayName(fullName: string | null, email: string) {
