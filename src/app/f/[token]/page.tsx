@@ -3,7 +3,7 @@ import { cache } from "react";
 
 import { OperationalPublicForm } from "@/components/public-forms/operational-public-form";
 import { getCurrentUserContext } from "@/lib/auth/user-context";
-import { isOperationalFormType, operationalFormLabels } from "@/lib/operational-forms";
+import { isOperationalFormType } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
@@ -11,6 +11,9 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
+
+const PUBLIC_FORM_REQUIRED_LOAD_TIMEOUT_MS = 8_000;
+const PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS = 4_000;
 
 type PublicOperationalFormPayload = {
   form_type: string;
@@ -41,6 +44,37 @@ type RefrigerationEquipmentRow = {
   equipment_type: BranchRefrigerationEquipmentType;
 };
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === "string" ? message : "No fue posible cargar el formulario.";
+  }
+
+  return "No fue posible cargar el formulario.";
+}
+
+async function withPublicFormTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, operation: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Public form operation timed out: ${operation}`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 const loadPublicOperationalFormPayload = cache(async (token: string) => {
   const supabase = getSupabasePublicClient();
 
@@ -51,21 +85,19 @@ const loadPublicOperationalFormPayload = cache(async (token: string) => {
     };
   }
 
-  const { data, error } = await supabase.rpc("get_public_operational_form", {
-    p_token: token,
-  });
+  const { data, error } = await withPublicFormTimeout(
+    supabase.rpc("get_public_operational_form", {
+      p_token: token,
+    }),
+    PUBLIC_FORM_REQUIRED_LOAD_TIMEOUT_MS,
+    "get_public_operational_form",
+  );
 
   return {
     payload: data as PublicOperationalFormPayload | null,
     error,
   };
 });
-
-function getPublicFormBrowserTitle(formType: string | undefined) {
-  return formType && isOperationalFormType(formType)
-    ? operationalFormLabels[formType].title
-    : "Quimly";
-}
 
 async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: CatalogRow[]) {
   const supabase = getSupabaseServerClient();
@@ -74,12 +106,16 @@ async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: 
     return fallbackEquipment;
   }
 
-  const { data: qrRow, error: qrError } = await supabase
-    .from("branch_form_qr_codes")
-    .select("branch_id")
-    .eq("token", token)
-    .eq("is_active", true)
-    .maybeSingle<PublicQrBranchRow>();
+  const { data: qrRow, error: qrError } = await withPublicFormTimeout(
+    supabase
+      .from("branch_form_qr_codes")
+      .select("branch_id")
+      .eq("token", token)
+      .eq("is_active", true)
+      .maybeSingle<PublicQrBranchRow>(),
+    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
+    "thermal_qr_branch_lookup",
+  );
 
   if (qrError) {
     logServerError("public_form.page.qr_branch_lookup_failed", qrError, { tokenLength: token.length });
@@ -90,13 +126,17 @@ async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: 
     return fallbackEquipment;
   }
 
-  const { data, error } = await supabase
-    .from("branch_refrigeration_equipment")
-    .select("id, name, equipment_type")
-    .eq("branch_id", qrRow.branch_id)
-    .eq("status", "active")
-    .order("name", { ascending: true })
-    .returns<RefrigerationEquipmentRow[]>();
+  const { data, error } = await withPublicFormTimeout(
+    supabase
+      .from("branch_refrigeration_equipment")
+      .select("id, name, equipment_type")
+      .eq("branch_id", qrRow.branch_id)
+      .eq("status", "active")
+      .order("name", { ascending: true })
+      .returns<RefrigerationEquipmentRow[]>(),
+    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
+    "thermal_equipment_lookup",
+  );
 
   if (error) {
     logServerError("public_form.page.thermal_equipment_lookup_failed", error, {
@@ -123,10 +163,13 @@ async function loadCompletedRecordDateKeys(token: string) {
     return [];
   }
 
-  const { data, error } = await supabase
-    .rpc("get_public_operational_form_completed_dates", {
+  const { data, error } = await withPublicFormTimeout(
+    supabase.rpc("get_public_operational_form_completed_dates", {
       p_token: token,
-    });
+    }),
+    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
+    "get_public_operational_form_completed_dates",
+  );
 
   if (error) {
     logServerError("public_form.page.completed_dates_lookup_failed", error, {
@@ -171,12 +214,16 @@ async function loadOperationalFormAdminContext({
     return null;
   }
 
-  const { data: qrRow, error: qrError } = await supabase
-    .from("branch_form_qr_codes")
-    .select("id")
-    .eq("token", token)
-    .eq("is_active", true)
-    .maybeSingle<AdminAccessibleQrRow>();
+  const { data: qrRow, error: qrError } = await withPublicFormTimeout(
+    supabase
+      .from("branch_form_qr_codes")
+      .select("id")
+      .eq("token", token)
+      .eq("is_active", true)
+      .maybeSingle<AdminAccessibleQrRow>(),
+    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
+    "admin_qr_lookup",
+  );
 
   if (qrError) {
     logServerError("public_form.page.admin_qr_lookup_failed", qrError, { tokenLength: token.length });
@@ -192,23 +239,10 @@ async function loadOperationalFormAdminContext({
   };
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
-  const { token } = await params;
-  const { payload, error } = await loadPublicOperationalFormPayload(token);
-
-  if (error) {
-    logServerError("public_form.metadata.load_failed", error, { tokenLength: token.length });
-  }
-
-  return {
-    title: getPublicFormBrowserTitle(payload?.form_type),
-    robots: { index: false, follow: false },
-  };
-}
+export const metadata = {
+  title: "Formulario Quimly",
+  robots: { index: false, follow: false },
+};
 
 export default async function PublicOperationalFormPage({
   params,
@@ -223,19 +257,24 @@ export default async function PublicOperationalFormPage({
 
   if (error) {
     logServerError("public_form.page.load_failed", error, { tokenLength: token.length });
-    throw new Error(error.message);
+    throw new Error(getErrorMessage(error));
   }
 
   if (!payload || !isOperationalFormType(payload.form_type)) {
     notFound();
   }
 
-  const equipment =
+  const equipmentPromise =
     payload.form_type === "thermal_control"
-      ? await loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
-      : payload.equipment ?? [];
-  const completedRecordDateKeys = await loadCompletedRecordDateKeys(token);
-  const adminContext = await loadOperationalFormAdminContext({ admin, source, token });
+      ? loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
+      : Promise.resolve(payload.equipment ?? []);
+  const completedRecordDateKeysPromise = loadCompletedRecordDateKeys(token);
+  const adminContextPromise = loadOperationalFormAdminContext({ admin, source, token });
+  const [equipment, completedRecordDateKeys, adminContext] = await Promise.all([
+    equipmentPromise,
+    completedRecordDateKeysPromise,
+    adminContextPromise,
+  ]);
 
   return (
     <OperationalPublicForm
