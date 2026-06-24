@@ -7,7 +7,6 @@ import { isOperationalFormType } from "@/lib/operational-forms";
 import { logServerError } from "@/lib/server/logging";
 import { getSupabasePublicClient } from "@/lib/supabase/public";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { BranchRefrigerationEquipmentType } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
@@ -30,18 +29,8 @@ type CatalogRow = {
   equipment_type?: BranchRefrigerationEquipmentType | null;
 };
 
-type PublicQrBranchRow = {
-  branch_id: string;
-};
-
 type AdminAccessibleQrRow = {
   id: string;
-};
-
-type RefrigerationEquipmentRow = {
-  id: string;
-  name: string;
-  equipment_type: BranchRefrigerationEquipmentType;
 };
 
 function getErrorMessage(error: unknown) {
@@ -98,63 +87,6 @@ const loadPublicOperationalFormPayload = cache(async (token: string) => {
     error,
   };
 });
-
-async function loadThermalEquipmentFromBranch(token: string, fallbackEquipment: CatalogRow[]) {
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return fallbackEquipment;
-  }
-
-  const { data: qrRow, error: qrError } = await withPublicFormTimeout(
-    supabase
-      .from("branch_form_qr_codes")
-      .select("branch_id")
-      .eq("token", token)
-      .eq("is_active", true)
-      .maybeSingle<PublicQrBranchRow>(),
-    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
-    "thermal_qr_branch_lookup",
-  );
-
-  if (qrError) {
-    logServerError("public_form.page.qr_branch_lookup_failed", qrError, { tokenLength: token.length });
-    return fallbackEquipment;
-  }
-
-  if (!qrRow?.branch_id) {
-    return fallbackEquipment;
-  }
-
-  const { data, error } = await withPublicFormTimeout(
-    supabase
-      .from("branch_refrigeration_equipment")
-      .select("id, name, equipment_type")
-      .eq("branch_id", qrRow.branch_id)
-      .eq("status", "active")
-      .order("name", { ascending: true })
-      .returns<RefrigerationEquipmentRow[]>(),
-    PUBLIC_FORM_OPTIONAL_LOAD_TIMEOUT_MS,
-    "thermal_equipment_lookup",
-  );
-
-  if (error) {
-    logServerError("public_form.page.thermal_equipment_lookup_failed", error, {
-      branchId: qrRow.branch_id,
-      tokenLength: token.length,
-    });
-    return fallbackEquipment;
-  }
-
-  return (
-    data?.map((item) => ({
-      id: item.id,
-      name: item.name,
-      equipment_type: item.equipment_type,
-      equipmentType: item.equipment_type,
-    })) ?? fallbackEquipment
-  );
-}
 
 async function loadCompletedRecordDateKeys(token: string) {
   const supabase = getSupabasePublicClient();
@@ -264,14 +196,10 @@ export default async function PublicOperationalFormPage({
     notFound();
   }
 
-  const equipmentPromise =
-    payload.form_type === "thermal_control"
-      ? loadThermalEquipmentFromBranch(token, payload.equipment ?? [])
-      : Promise.resolve(payload.equipment ?? []);
+  const equipment = payload.equipment ?? [];
   const completedRecordDateKeysPromise = loadCompletedRecordDateKeys(token);
   const adminContextPromise = loadOperationalFormAdminContext({ admin, source, token });
-  const [equipment, completedRecordDateKeys, adminContext] = await Promise.all([
-    equipmentPromise,
+  const [completedRecordDateKeys, adminContext] = await Promise.all([
     completedRecordDateKeysPromise,
     adminContextPromise,
   ]);
