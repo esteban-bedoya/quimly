@@ -1,6 +1,5 @@
 import { BranchLandingView } from "@/components/dashboard/branch-detail-view";
-
-import { loadBranchDashboardData } from "./branch-dashboard-data";
+import { requireBranchAccess } from "@/lib/auth/authorization";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +9,7 @@ export default async function BranchDashboardPage({
   params: Promise<{ companySlug: string; branchSlug: string }>;
 }) {
   const { companySlug, branchSlug } = await params;
-  const data = await loadBranchDashboardData(companySlug, branchSlug);
+  const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
 
-  return <BranchLandingView {...data} />;
+  return <BranchLandingView company={company} branch={branch} />;
 }

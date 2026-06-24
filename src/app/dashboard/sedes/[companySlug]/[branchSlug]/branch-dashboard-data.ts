@@ -23,14 +23,6 @@ import type {
   OperationalFormType,
 } from "@/types/auth";
 
-type BranchDashboardItemRow = {
-  module_kind: "operational" | "compliance";
-  title: string;
-  subtitle: string;
-  requires_expiration: boolean;
-  sort_order: number;
-};
-
 type BranchDocumentRow = {
   id: string;
   branch_id: string;
@@ -279,17 +271,9 @@ async function ensureBranchQrCodes({
   return refreshedQrRows ?? [];
 }
 
-export type BranchModuleSummary = {
-  title: string;
-  detail: string;
-  badge?: string;
-};
-
 export async function loadBranchDashboardData(companySlug: string, branchSlug: string) {
   const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
   const supabase = await getSupabaseRlsClient();
-  let operationalItems: BranchModuleSummary[] | undefined;
-  let complianceItems: BranchModuleSummary[] | undefined;
   let documents: BranchDocumentSummary[] = [];
   let qrCodes: BranchFormQrSummary[] = [];
   let refrigerationEquipment: BranchCatalogItemSummary[] = [];
@@ -309,7 +293,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     });
 
     const [
-      dashboardItemsResult,
       branchDocumentsResult,
       branchQrCodesResult,
       equipmentRowsResult,
@@ -319,14 +302,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       sanitaryDocumentFileRowsResult,
       sanitaryDocumentCategoryStatusRowsResult,
     ] = await Promise.all([
-      supabase
-        .from("branch_dashboard_items")
-        .select("module_kind, title, subtitle, requires_expiration, sort_order")
-        .eq("branch_id", branch.id)
-        .eq("is_active", true)
-        .order("module_kind", { ascending: true })
-        .order("sort_order", { ascending: true })
-        .returns<BranchDashboardItemRow[]>(),
       supabase
         .from("branch_documents")
         .select(
@@ -387,7 +362,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     ]);
 
     const queryResults = {
-      dashboardItems: dashboardItemsResult,
       branchDocuments: branchDocumentsResult,
       branchQrCodes: branchQrCodesResult,
       equipmentRows: equipmentRowsResult,
@@ -426,7 +400,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       branchSlug,
     });
 
-    const dashboardItems = dashboardItemsResult.data;
     const branchDocuments = branchDocumentsResult.data;
     const equipmentRows = equipmentRowsResult.data;
     const sanitationAreaRows = sanitationAreaRowsResult.data;
@@ -434,24 +407,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
     const staffMemberRows = staffMemberRowsResult.data;
     const sanitaryDocumentFileRows = sanitaryDocumentFileRowsResult.data;
     const sanitaryDocumentCategoryStatusRows = sanitaryDocumentCategoryStatusRowsResult.data;
-
-    operationalItems =
-      dashboardItems
-        ?.filter((item) => item.module_kind === "operational")
-        .map((item) => ({
-          title: item.title,
-          detail: item.subtitle,
-          badge: item.requires_expiration ? "Vencimiento" : undefined,
-        })) ?? undefined;
-
-    complianceItems =
-      dashboardItems
-        ?.filter((item) => item.module_kind === "compliance")
-        .map((item) => ({
-          title: item.title,
-          detail: item.subtitle,
-          badge: item.requires_expiration ? "Vencimiento" : undefined,
-        })) ?? undefined;
 
     documents =
       branchDocuments?.map((document) => ({
@@ -557,8 +512,6 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   return {
     company,
     branch,
-    operationalItems,
-    complianceItems,
     documents,
     qrCodes,
     operationalRecordDateStatuses,

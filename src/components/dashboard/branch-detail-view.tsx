@@ -23,7 +23,6 @@ import { printableQrInstructions } from "@/lib/qr/printable";
 import type {
   BranchCatalogItemSummary,
   BranchChemicalProductSummary,
-  BranchDocumentSectionKey,
   BranchDocumentSummary,
   BranchFormQrSummary,
   BranchRefrigerationEquipmentType,
@@ -33,12 +32,6 @@ import type {
   CompanySummary,
   OperationalFormType,
 } from "@/types/auth";
-
-type BranchModuleItem = {
-  title: string;
-  detail: string;
-  badge?: string;
-};
 
 type BranchDetailViewProps = {
   company: CompanySummary;
@@ -50,8 +43,6 @@ type BranchDetailViewProps = {
     isMain: boolean;
     isActive: boolean;
   };
-  operationalItems?: BranchModuleItem[];
-  complianceItems?: BranchModuleItem[];
   documents: BranchDocumentSummary[];
   qrCodes: BranchFormQrSummary[];
   operationalRecordDateStatuses: Partial<Record<OperationalFormType, OperationalRecordDateStatus>>;
@@ -63,12 +54,6 @@ type BranchDetailViewProps = {
   sanitaryDocumentCategoryStatuses: BranchSanitaryDocumentCategoryStatusMap;
 };
 
-type BranchSectionMeta = {
-  title: string;
-  subtitle: string;
-  hint: string;
-};
-
 type BranchSectionKey = "home" | "operational" | "compliance";
 
 const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
@@ -78,31 +63,7 @@ const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
 };
 const DOCUMENTS_HOME_EVENT = "quimly:documents-home";
 
-const sectionLabels: Record<BranchDocumentSectionKey, BranchSectionMeta> = {
-  manuals_protocols: {
-    title: "Manuales y Protocolos",
-    subtitle: "Saneamiento + Quimicos",
-    hint: "Repositorio base para auditorias y procedimientos operativos.",
-  },
-  plant_certifications: {
-    title: "Certificaciones de Planta",
-    subtitle: "Fumigación y Tanques",
-    hint: "Incluye control visual de fecha de vencimiento.",
-  },
-  traceability_supplies: {
-    title: "Trazabilidad de Insumos",
-    subtitle: "Fichas técnicas + Hojas de seguridad",
-    hint: "Centraliza soportes por producto y respaldo tecnico.",
-  },
-  staff_records: {
-    title: "Fichas del Personal",
-    subtitle: "Curso de manipulación + Exámenes médicos",
-    hint: "Registros con semaforo de vencimiento.",
-  },
-};
-
 const productCardSurface = "dashboard-card-surface";
-const productCardSurfaceSoft = "dashboard-card-surface-soft";
 const mutedActionCompact = "ui-muted-action ui-muted-action-compact";
 const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType, string> = {
   refrigerator: "Refrigerador",
@@ -254,70 +215,6 @@ function BranchLayout({
         <div className="mx-auto w-full max-w-[74rem]">{children}</div>
       </div>
     </main>
-  );
-}
-
-function SummaryStat({
-  label,
-  value,
-  tone = "light",
-}: {
-  label: string;
-  value: string | number;
-  tone?: "light" | "accent";
-}) {
-  return (
-    <div
-      className={`rounded-[1.4rem] px-4 py-4 ${tone === "accent" ? productCardSurface : productCardSurfaceSoft}`}
-    >
-      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-[#6d7a7f]">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">{value}</p>
-    </div>
-  );
-}
-
-function LandingModuleCard({
-  title,
-  description,
-  href,
-  metrics,
-  accent,
-}: {
-  title: string;
-  description: string;
-  href: string;
-  metrics: Array<{ label: string; value: string | number }>;
-  accent: "operational" | "compliance";
-}) {
-  return (
-    <article
-      className={`rounded-[1.8rem] p-5 ${accent === "operational" ? productCardSurface : productCardSurfaceSoft}`}
-    >
-      <div className="flex h-full flex-col gap-5">
-        <div className="space-y-3">
-          <span className="inline-flex rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#2a7f86]">
-            {accent === "operational" ? "Macro módulo" : "Repositorio"}
-          </span>
-          <div>
-            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">{title}</h2>
-            <p className="mt-2 text-sm leading-7 text-[#5e6770]">{description}</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          {metrics.map((metric) => (
-            <SummaryStat key={metric.label} label={metric.label} value={metric.value} />
-          ))}
-        </div>
-
-        <Link
-          href={href}
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#12110f] px-5 text-sm font-semibold text-white transition hover:bg-[#1d1b18] sm:w-fit"
-        >
-          Abrir módulo
-        </Link>
-      </div>
-    </article>
   );
 }
 
@@ -1131,87 +1028,13 @@ function OperationalFlowCard({
   );
 }
 
-function countDocumentsExpiring(documents: BranchDocumentSummary[]) {
-  const now = new Date().getTime();
-
-  return documents.filter((document) => {
-    if (!document.expiresAt) {
-      return false;
-    }
-
-    const expirationDate = new Date(`${document.expiresAt}T00:00:00`);
-    const diffInDays = Math.ceil((expirationDate.getTime() - now) / (1000 * 60 * 60 * 24));
-    return diffInDays <= 30;
-  }).length;
-}
-
 export function BranchLandingView({
   company,
   branch,
-  qrCodes,
-  documents,
-  refrigerationEquipment,
-  sanitationAreas,
-}: BranchDetailViewProps) {
-  const basePath = `/dashboard/sedes/${company.slug}/${branch.slug}`;
-
+}: Pick<BranchDetailViewProps, "company" | "branch">) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="home">
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className={`rounded-[1.8rem] p-5 ${productCardSurface}`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Resumen de sede</p>
-          <h2 className="ui-card-title mt-3">
-            Elige el frente que deseas gestionar
-          </h2>
-          <p className="ui-card-copy mt-3 max-w-2xl">
-            Esta vista concentra solo el contexto esencial. La operación diaria y el cumplimiento documental viven en
-            módulos separados para reducir scroll y hacer más clara la gestión.
-          </p>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <SummaryStat label="QR públicos" value={qrCodes.length} tone="accent" />
-            <SummaryStat label="Documentos" value={documents.length} />
-            <SummaryStat label="Vencen pronto" value={countDocumentsExpiring(documents)} />
-          </div>
-        </section>
-
-        <section className={`rounded-[1.8rem] p-5 ${productCardSurfaceSoft}`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#2a7f86]">Cobertura actual</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <SummaryStat label="Equipos" value={refrigerationEquipment.length} />
-            <SummaryStat label="Áreas" value={sanitationAreas.length} />
-            <SummaryStat label="Secciones normativas" value={Object.keys(sectionLabels).length} />
-            <SummaryStat label="Estado sede" value={branch.isActive ? "Activa" : "Inactiva"} />
-          </div>
-        </section>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <LandingModuleCard
-          title="Control operativo"
-          description="Gestiona QR públicos, formularios operativos y catálogos rápidos para uso diario en sede."
-          href={`${basePath}/operacion`}
-          accent="operational"
-          metrics={[
-            { label: "QR", value: qrCodes.length },
-            { label: "Equipos", value: refrigerationEquipment.length },
-            { label: "Áreas", value: sanitationAreas.length },
-            { label: "Formularios", value: operationalFormTypes.length },
-          ]}
-        />
-        <LandingModuleCard
-          title="Cumplimiento normativo"
-          description="Administra repositorio PDF, vencimientos y documentos por sección con una vista compacta."
-          href={`${basePath}/cumplimiento`}
-          accent="compliance"
-          metrics={[
-            { label: "Documentos", value: documents.length },
-            { label: "Vencen pronto", value: countDocumentsExpiring(documents) },
-            { label: "Secciones", value: Object.keys(sectionLabels).length },
-            { label: "Activos", value: documents.filter((document) => document.isActive).length },
-          ]}
-        />
-      </div>
+      <section aria-label="Lienzo del panel" className={`min-h-[32rem] rounded-[1.8rem] ${productCardSurface}`} />
     </BranchLayout>
   );
 }
