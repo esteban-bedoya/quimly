@@ -9,7 +9,7 @@ import {
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
 import { requireCompanyAccess } from "@/lib/auth/authorization";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type { CompanyBranchSummary } from "@/types/auth";
 
 type CompanyMember = {
@@ -24,7 +24,7 @@ type CompanyBranch = CompanyBranchSummary;
 export const dynamic = "force-dynamic";
 
 async function getCompanyModuleData(companyId: string) {
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseRlsClient();
 
   if (!supabase) {
     return {
@@ -140,7 +140,7 @@ export default async function CompanyDashboardPage({
                 <li>Si el usuario no tiene sesión, `proxy.ts` y el layout lo envían a `/login`.</li>
                 <li>Si no tiene acceso a esta empresa, la consulta RLS no devuelve fila y termina en `notFound()`.</li>
                 <li>`company_admin` solo ve empresas donde está asignado como administrador actual.</li>
-                <li>`owner` y `super_admin` operan sobre empresas permitidas por su perfil.</li>
+                <li>`owner` y `super_admin` tienen acceso global a todas las empresas.</li>
               </ul>
             </article>
           </div>

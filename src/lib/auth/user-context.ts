@@ -12,7 +12,6 @@ type ProfileRow = {
   full_name: string | null;
   global_role: UserProfile["globalRole"];
   is_active: boolean;
-  can_access_all_companies: boolean;
   default_company_id: string | null;
 };
 
@@ -40,7 +39,7 @@ export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserCo
 
   const { data: profileRow, error: profileError } = await supabase
     .from("user_profiles")
-    .select("user_id, email, full_name, global_role, is_active, can_access_all_companies, default_company_id")
+    .select("user_id, email, full_name, global_role, is_active, default_company_id")
     .eq("user_id", user.id)
     .maybeSingle<ProfileRow>();
 
@@ -55,7 +54,6 @@ export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserCo
       fullName: profileRow.full_name,
       globalRole: profileRow.global_role,
       isActive: profileRow.is_active,
-      canAccessAllCompanies: profileRow.can_access_all_companies,
       defaultCompanyId: profileRow.default_company_id,
     },
   };

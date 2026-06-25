@@ -6,9 +6,9 @@ import { revalidatePath } from "next/cache";
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
-import { getMissingSupabaseServerConfigKeys } from "@/lib/supabase/config";
+import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   AppRole,
   BranchChemicalProductSummary,
@@ -313,14 +313,14 @@ function logAdminActionError(event: string, error: unknown, context: Record<stri
   });
 }
 
-function getSupabaseServerClientOrThrow(context: Record<string, unknown> = {}) {
-  const supabase = getSupabaseServerClient();
+function getSupabaseAdminClientOrThrow(context: Record<string, unknown> = {}) {
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
-    const missingConfigKeys = getMissingSupabaseServerConfigKeys();
+    const missingConfigKeys = getMissingSupabaseAdminConfigKeys();
     logAdminActionError(
-      "dashboard.supabase.server_client_missing",
-      new Error("Supabase no está configurado en el servidor."),
+      "dashboard.supabase.admin_client_missing",
+      new Error("Supabase Auth Admin no está configurado en el servidor."),
       {
         ...context,
         missingConfigKeys,
@@ -328,8 +328,8 @@ function getSupabaseServerClientOrThrow(context: Record<string, unknown> = {}) {
     );
     throw new Error(
       missingConfigKeys.length
-        ? `Supabase no está configurado en el servidor. Faltan: ${missingConfigKeys.join(", ")}.`
-        : "Supabase no está configurado en el servidor.",
+        ? `Supabase Auth Admin no está configurado en el servidor. Faltan: ${missingConfigKeys.join(", ")}.`
+        : "Supabase Auth Admin no está configurado en el servidor.",
     );
   }
 
@@ -357,7 +357,7 @@ type BranchRouteTarget = {
 };
 
 async function resolveBranchRouteTarget(branchId: string) {
-  const supabase = getSupabaseServerClientOrThrow({
+  const supabase = await getSupabaseRlsClientOrThrow({
     operation: "resolveBranchRouteTarget",
     branchId,
   });
@@ -416,11 +416,7 @@ export async function createCompany(
   formData: FormData,
 ): Promise<AdminActionState> {
   const context = await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "createCompany" });
 
   const name = readString(formData, "name");
 
@@ -447,11 +443,7 @@ export async function createCompanyBranch(
   formData: FormData,
 ): Promise<AdminActionState> {
   const context = await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "createCompanyBranch" });
 
   const companyId = readString(formData, "companyId");
   const name = readString(formData, "name");
@@ -1607,22 +1599,50 @@ async function createUserRecord({
   password,
   role,
   companyId,
-  canAccessAllCompanies,
 }: {
   email: string;
   fullName: string;
   password: string;
   role: AppRole;
   companyId?: string;
-  canAccessAllCompanies?: boolean;
 }) {
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
+  if (role === "owner") {
+    throw new Error("No es posible crear owner desde este panel.");
   }
 
-  const { data: createdUser, error: authError } = await supabase.auth.admin.createUser({
+  const supabase = await getSupabaseRlsClientOrThrow({
+    operation: "createUserRecord",
+    role,
+  });
+
+  if (role === "company_admin") {
+    if (!companyId) {
+      throw new Error("Debes indicar una empresa válida.");
+    }
+
+    const { data: targetCompany, error: targetCompanyError } = await supabase
+      .from("companies")
+      .select("company_admin_user_id")
+      .eq("id", companyId)
+      .maybeSingle<{ company_admin_user_id: string | null }>();
+
+    if (targetCompanyError || !targetCompany) {
+      throw new Error(targetCompanyError?.message ?? "No fue posible encontrar la empresa seleccionada.");
+    }
+
+    if (targetCompany.company_admin_user_id) {
+      throw new Error("La empresa seleccionada ya tiene un company_admin asignado.");
+    }
+  } else if (companyId) {
+    throw new Error("Solo un company_admin puede tener empresa asignada.");
+  }
+
+  const adminClient = getSupabaseAdminClientOrThrow({
+    operation: "createUserRecord.authAdmin",
+    role,
+  });
+
+  const { data: createdUser, error: authError } = await adminClient.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -1637,58 +1657,26 @@ async function createUserRecord({
 
   const userId = createdUser.user.id;
 
-  const { error: profileError } = await supabase.from("user_profiles").insert({
-    user_id: userId,
-    email,
-    full_name: fullName,
-    global_role: role,
-    is_active: true,
-    can_access_all_companies: role === "super_admin" ? Boolean(canAccessAllCompanies) : false,
+  const { error: provisionError } = await supabase.rpc("provision_app_user", {
+    target_user_id: userId,
+    target_email: email,
+    target_full_name: fullName,
+    target_role: role,
+    target_company_id: role === "company_admin" ? companyId : null,
   });
 
-  if (profileError) {
-    await supabase.auth.admin.deleteUser(userId);
-    throw new Error(profileError.message);
-  }
+  if (provisionError) {
+    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
 
-  if (role === "company_admin" && companyId) {
-    const { data: targetCompany, error: targetCompanyError } = await supabase
-      .from("companies")
-      .select("company_admin_user_id")
-      .eq("id", companyId)
-      .maybeSingle<{ company_admin_user_id: string | null }>();
-
-    if (targetCompanyError || !targetCompany) {
-      await supabase.from("user_profiles").delete().eq("user_id", userId);
-      await supabase.auth.admin.deleteUser(userId);
-      throw new Error(targetCompanyError?.message ?? "No fue posible encontrar la empresa seleccionada.");
+    if (deleteError) {
+      logAdminActionError("dashboard.user.auth_delete_compensation_failed", deleteError, {
+        operation: "createUserRecord",
+        userId,
+        role,
+      });
     }
 
-    if (targetCompany.company_admin_user_id) {
-      await supabase.from("user_profiles").delete().eq("user_id", userId);
-      await supabase.auth.admin.deleteUser(userId);
-      throw new Error("La empresa seleccionada ya tiene un company_admin asignado.");
-    }
-
-    const { error: companyAssignmentError } = await supabase
-      .from("companies")
-      .update({ company_admin_user_id: userId })
-      .eq("id", companyId);
-
-    if (companyAssignmentError) {
-      await supabase.from("user_profiles").delete().eq("user_id", userId);
-      await supabase.auth.admin.deleteUser(userId);
-      throw new Error(companyAssignmentError.message);
-    }
-
-    const { error: defaultCompanyError } = await supabase
-      .from("user_profiles")
-      .update({ default_company_id: companyId })
-      .eq("user_id", userId);
-
-    if (defaultCompanyError) {
-      throw new Error(defaultCompanyError.message);
-    }
+    throw new Error(provisionError.message);
   }
 }
 
@@ -1701,8 +1689,6 @@ export async function createSuperAdmin(
   const email = readString(formData, "email").toLowerCase();
   const fullName = readString(formData, "fullName");
   const password = readString(formData, "password");
-  const canAccessAllCompanies = readBoolean(formData, "canAccessAllCompanies");
-
   if (!email || !fullName || password.length < 8) {
     return {
       error: "El super_admin requiere nombre, correo y una contraseña de mínimo 8 caracteres.",
@@ -1715,7 +1701,6 @@ export async function createSuperAdmin(
       fullName,
       password,
       role: "super_admin",
-      canAccessAllCompanies,
     });
   } catch (error) {
     return {
@@ -1767,11 +1752,7 @@ export async function updateCompany(
   formData: FormData,
 ): Promise<AdminActionState> {
   await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCompany" });
 
   const companyId = readString(formData, "companyId");
   const name = readString(formData, "name");
@@ -1812,11 +1793,7 @@ export async function updateCompanyBranch(
   formData: FormData,
 ): Promise<AdminActionState> {
   await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    return { error: "Supabase no está configurado en el servidor." };
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCompanyBranch" });
 
   const branchId = readString(formData, "branchId");
   const name = readString(formData, "name");
@@ -1849,11 +1826,7 @@ export async function updateCompanyBranch(
 
 export async function toggleCompanyStatus(formData: FormData): Promise<void> {
   await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "toggleCompanyStatus" });
 
   const companyId = readString(formData, "companyId");
   const nextIsActive = readString(formData, "nextIsActive") === "true";
@@ -1874,11 +1847,7 @@ export async function toggleCompanyStatus(formData: FormData): Promise<void> {
 
 export async function toggleUserStatus(formData: FormData): Promise<void> {
   const context = await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "toggleUserStatus" });
 
   const userId = readString(formData, "userId");
   const nextIsActive = readString(formData, "nextIsActive") === "true";
@@ -1917,11 +1886,7 @@ export async function toggleUserStatus(formData: FormData): Promise<void> {
 
 export async function toggleCompanyBranchStatus(formData: FormData): Promise<void> {
   await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "toggleCompanyBranchStatus" });
 
   const branchId = readString(formData, "branchId");
   const companySlug = readString(formData, "companySlug");
@@ -1966,11 +1931,7 @@ export async function toggleCompanyBranchStatus(formData: FormData): Promise<voi
 
 export async function setMainCompanyBranch(formData: FormData): Promise<void> {
   await requireOperatorAccess();
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    throw new Error("Supabase no está configurado en el servidor.");
-  }
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "setMainCompanyBranch" });
 
   const branchId = readString(formData, "branchId");
   const companySlug = readString(formData, "companySlug");

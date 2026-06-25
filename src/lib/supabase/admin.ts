@@ -1,8 +1,10 @@
+import "server-only";
+
 import { createClient } from "@supabase/supabase-js";
 
 import { getSupabaseServiceRoleKey, getSupabaseUrl } from "@/lib/supabase/config";
 
-export function getSupabaseServerClient() {
+export function getSupabaseAdminClient() {
   const supabaseUrl = getSupabaseUrl();
   const supabaseServiceKey = getSupabaseServiceRoleKey();
 

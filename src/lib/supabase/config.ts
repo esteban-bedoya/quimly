@@ -14,7 +14,7 @@ export function getSupabaseServiceRoleKey() {
   return supabaseServiceKey ?? null;
 }
 
-export function getMissingSupabaseServerConfigKeys() {
+export function getMissingSupabaseAdminConfigKeys() {
   return [
     !supabaseUrl ? "NEXT_PUBLIC_SUPABASE_URL" : null,
     !supabaseServiceKey ? "SUPABASE_SERVICE_ROLE_KEY" : null,

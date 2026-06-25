@@ -102,15 +102,6 @@ export function CreateSuperAdminForm() {
       <Field id="email" label="Correo electrónico" placeholder="laura@quimly.co" type="email" />
       <Field id="password" label="Contraseña temporal" placeholder="Mínimo 8 caracteres" type="password" />
 
-      <label className="flex items-start gap-3 rounded-2xl border border-[#12110f]/10 bg-white px-4 py-3 text-sm text-[#3f3a33]">
-        <input
-          type="checkbox"
-          name="canAccessAllCompanies"
-          className="mt-1 h-4 w-4 rounded border-[#12110f]/20"
-        />
-        <span>Dar acceso a todas las empresas para soporte operativo.</span>
-      </label>
-
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear super admin" pendingLabel="Creando super admin..." />
     </form>

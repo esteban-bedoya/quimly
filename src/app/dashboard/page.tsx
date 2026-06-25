@@ -21,7 +21,7 @@ import {
   getAccessibleCompanies,
   requireAuthenticatedUser,
 } from "@/lib/auth/authorization";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type { CompanyBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
 const roleLabels = {
@@ -32,7 +32,7 @@ const roleLabels = {
 
 const roleDescriptions = {
   owner: "Control absoluto sobre Quimly, empresas, usuarios y configuración crítica.",
-  super_admin: "Rol interno operativo para soporte, creación de empresas y gestión de clientes.",
+  super_admin: "Acceso global a todas las empresas para soporte, creación y gestión de clientes.",
   company_admin: "Acceso a la operación diaria de su empresa, sin permisos globales.",
 } as const;
 
@@ -67,7 +67,7 @@ type ManagedBranchRow = {
 };
 
 async function getManagementData(role: UserProfile["globalRole"]) {
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseRlsClient();
 
   if (!supabase) {
     return {
@@ -181,16 +181,10 @@ export default async function DashboardPage() {
             </form>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
             <article className="rounded-[1.5rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Rol global</p>
               <p className="mt-3 text-xl font-semibold text-[#12110f]">{roleLabels[profile.globalRole]}</p>
-            </article>
-            <article className="rounded-[1.5rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Acceso total</p>
-              <p className="mt-3 text-xl font-semibold text-[#12110f]">
-                {profile.canAccessAllCompanies ? "Sí" : "No"}
-              </p>
             </article>
             <article className="rounded-[1.5rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Empresas accesibles</p>
@@ -234,8 +228,8 @@ export default async function DashboardPage() {
                 ))
               ) : (
                 <div className="rounded-[1.5rem] border border-dashed border-[#12110f]/16 bg-[#fcfbf8] p-5 text-sm leading-7 text-[#5d574f]">
-                  Este usuario todavía no tiene empresas accesibles. Si es `owner` o `super_admin` con acceso total,
-                  podrá seguir operando cuando se conecten las vistas internas.
+                  Este usuario todavía no tiene empresas accesibles. `owner` y `super_admin` mantienen acceso global;
+                  `company_admin` accede únicamente a su empresa asignada.
                 </div>
               )}
             </div>
@@ -259,7 +253,7 @@ export default async function DashboardPage() {
                 <>
                   <li>Puede crear empresas y administrar usuarios `company_admin`.</li>
                   <li>Puede crear y desactivar sedes para empresas operativas.</li>
-                  <li>Puede dar soporte a empresas asignadas o a todas si su perfil lo permite.</li>
+                  <li>Tiene acceso global a todas las empresas de la plataforma.</li>
                   <li>No puede modificar `owner` ni parámetros críticos de seguridad global.</li>
                 </>
               ) : null}

@@ -6,7 +6,6 @@ export type UserProfile = {
   fullName: string | null;
   globalRole: AppRole;
   isActive: boolean;
-  canAccessAllCompanies: boolean;
   defaultCompanyId: string | null;
 };
 

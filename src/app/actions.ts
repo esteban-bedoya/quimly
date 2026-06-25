@@ -1,6 +1,6 @@
 "use server";
 
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { normalizeLeadPayload, submitDemoLead } from "@/lib/leads";
 import type { LeadPayload } from "@/types/lead";
 
 function readString(formData: FormData, key: keyof LeadPayload) {
@@ -18,26 +18,11 @@ export async function requestDemo(formData: FormData) {
     message: readString(formData, "message"),
   };
 
-  if (!payload.name || !payload.email || !payload.role || !payload.companyType) {
-    throw new Error("Missing required lead fields.");
+  const normalized = normalizeLeadPayload(payload);
+
+  if (!normalized.ok) {
+    throw new Error(normalized.error);
   }
 
-  const supabase = getSupabaseServerClient();
-
-  if (!supabase) {
-    console.info("Supabase is not configured yet. Lead payload:", payload);
-    return;
-  }
-
-  const { error } = await supabase.from("demo_requests").insert({
-    name: payload.name,
-    email: payload.email,
-    role: payload.role,
-    company_type: payload.companyType,
-    message: payload.message,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await submitDemoLead(normalized.payload);
 }
