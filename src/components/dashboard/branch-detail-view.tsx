@@ -15,11 +15,13 @@ import {
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { CompanyAdminDocumentsView } from "@/components/dashboard/company-admin-documents-view";
+import { BranchReportsPanel } from "@/components/dashboard/branch-reports-panel";
 import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
 import { logout } from "@/app/login/actions";
 import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
 import type { OperationalRecordDateStatus } from "@/lib/operational-record-dates";
 import { printableQrInstructions } from "@/lib/qr/printable";
+import type { BranchReportPanelData } from "@/lib/branch-reports/types";
 import type {
   BranchCatalogItemSummary,
   BranchChemicalProductSummary,
@@ -1031,10 +1033,13 @@ function OperationalFlowCard({
 export function BranchLandingView({
   company,
   branch,
-}: Pick<BranchDetailViewProps, "company" | "branch">) {
+  reportPanelData,
+}: Pick<BranchDetailViewProps, "company" | "branch"> & { reportPanelData: BranchReportPanelData }) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="home">
-      <section aria-label="Lienzo del panel" className={`min-h-[32rem] rounded-[1.8rem] ${productCardSurface}`} />
+      <section aria-label="Reportes de la sede" className={`min-h-[32rem] rounded-[1.8rem] ${productCardSurface}`}>
+        <BranchReportsPanel companySlug={company.slug} branchSlug={branch.slug} data={reportPanelData} />
+      </section>
     </BranchLayout>
   );
 }
