@@ -13,6 +13,7 @@ type PdfTextBuilder = {
   boldFont: PDFFont;
   page: PDFPage;
   y: number;
+  footerDrawnPages: Set<PDFPage>;
 };
 
 export type PdfFileAttachment = {
@@ -37,6 +38,10 @@ const BRAND_ACCENT = rgb(0.165, 0.498, 0.525);
 const TEXT_MUTED = rgb(0.36, 0.4, 0.44);
 const TEXT_SOFT = rgb(0.55, 0.58, 0.61);
 const LINE_SOFT = rgb(0.86, 0.88, 0.9);
+const FOOTER_TEXT = "Powered by Quimly";
+const INDEX_DETAIL_WIDTH = 112;
+const INDEX_COLUMN_GAP = 18;
+const INDEX_TITLE_WIDTH = TEXT_WIDTH - INDEX_DETAIL_WIDTH - INDEX_COLUMN_GAP;
 
 function normalizePdfText(value: string) {
   return value
@@ -91,10 +96,12 @@ async function createTextBuilder() {
     boldFont,
     page,
     y: PAGE_HEIGHT - PAGE_MARGIN,
+    footerDrawnPages: new Set<PDFPage>(),
   } satisfies PdfTextBuilder;
 }
 
 function addPage(builder: PdfTextBuilder) {
+  drawFooter(builder);
   builder.page = builder.document.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   builder.y = PAGE_HEIGHT - PAGE_MARGIN;
 }
@@ -162,54 +169,124 @@ function drawDivider(builder: PdfTextBuilder, before = 8, after = 14) {
 }
 
 function drawFooter(builder: PdfTextBuilder) {
-  builder.page.drawText("Quimly", {
-    x: PAGE_MARGIN,
+  if (builder.footerDrawnPages.has(builder.page)) {
+    return;
+  }
+
+  const size = 8;
+  const textWidth = builder.regularFont.widthOfTextAtSize(FOOTER_TEXT, size);
+
+  builder.page.drawText(FOOTER_TEXT, {
+    x: PAGE_WIDTH - PAGE_MARGIN - textWidth,
     y: 26,
-    size: 8,
-    font: builder.boldFont,
+    size,
+    font: builder.regularFont,
     color: TEXT_SOFT,
+  });
+  builder.footerDrawnPages.add(builder.page);
+}
+
+function drawMetadataItem(builder: PdfTextBuilder, label: string, value: string) {
+  drawText(builder, label.toLocaleUpperCase("es-CO"), {
+    size: 8,
+    font: "bold",
+    color: TEXT_SOFT,
+    lineHeight: 11,
+  });
+  drawText(builder, value, { size: 10.5, color: TEXT_MUTED, after: 8 });
+}
+
+function drawOverviewIndex(
+  builder: PdfTextBuilder,
+  {
+    title,
+    subtitle,
+    items,
+  }: {
+    title: string;
+    subtitle: string;
+    items: Array<{ title: string; detail: string }>;
+  },
+) {
+  drawSimplePageTitle(builder, title, subtitle);
+
+  items.forEach((item, index) => {
+    const titleSize = 10.5;
+    const detailSize = 9;
+    const lineHeight = 15;
+    const before = 10;
+    const after = 10;
+    const titleLines = wrapText(`${index + 1}. ${item.title}`, builder.boldFont, titleSize, INDEX_TITLE_WIDTH);
+    const detailLines = wrapText(item.detail, builder.regularFont, detailSize, INDEX_DETAIL_WIDTH);
+    const rowLineCount = Math.max(titleLines.length, detailLines.length);
+    const hasDivider = index < items.length - 1;
+    const rowHeight = before + rowLineCount * lineHeight + after + (hasDivider ? 1 : 0);
+
+    ensureSpace(builder, rowHeight);
+    builder.y -= before;
+
+    titleLines.forEach((line, lineIndex) => {
+      builder.page.drawText(line, {
+        x: PAGE_MARGIN,
+        y: builder.y - lineIndex * lineHeight,
+        size: titleSize,
+        font: builder.boldFont,
+        color: BRAND_DARK,
+      });
+    });
+
+    detailLines.forEach((line, lineIndex) => {
+      const lineWidth = builder.regularFont.widthOfTextAtSize(line, detailSize);
+      builder.page.drawText(line, {
+        x: PAGE_WIDTH - PAGE_MARGIN - lineWidth,
+        y: builder.y - lineIndex * lineHeight,
+        size: detailSize,
+        font: builder.regularFont,
+        color: TEXT_SOFT,
+      });
+    });
+
+    builder.y -= rowLineCount * lineHeight + after;
+
+    if (hasDivider) {
+      builder.page.drawLine({
+        start: { x: PAGE_MARGIN, y: builder.y },
+        end: { x: PAGE_WIDTH - PAGE_MARGIN, y: builder.y },
+        thickness: 0.6,
+        color: LINE_SOFT,
+      });
+      builder.y -= 1;
+    }
   });
 }
 
-function drawCover(builder: PdfTextBuilder, {
+function drawReportOverviewPage(builder: PdfTextBuilder, {
   title,
   companyName,
   branchName,
   generatedAt,
   metadata,
+  index,
 }: {
   title: string;
   companyName: string;
   branchName: string;
   generatedAt: string;
   metadata: Array<{ label: string; value: string }>;
+  index: {
+    title: string;
+    subtitle: string;
+    items: Array<{ title: string; detail: string }>;
+  };
 }) {
-  builder.y = PAGE_HEIGHT - 112;
-  drawText(builder, "Quimly", { size: 12, font: "bold", color: BRAND_ACCENT, after: 30 });
+  builder.y = PAGE_HEIGHT - 76;
   drawText(builder, title, { size: 28, font: "bold", lineHeight: 34, after: 22 });
-  drawText(builder, companyName, { size: 16, font: "bold", after: 4 });
-  drawText(builder, branchName, { size: 12, color: TEXT_MUTED, after: 22 });
-  drawDivider(builder, 6, 18);
-
-  for (const item of metadata) {
-    drawText(builder, item.label.toLocaleUpperCase("es-CO"), {
-      size: 8,
-      font: "bold",
-      color: TEXT_SOFT,
-      lineHeight: 11,
-    });
-    drawText(builder, item.value, { size: 11, color: TEXT_MUTED, after: 10 });
-  }
-
-  drawText(builder, "Fecha de generación", {
-    size: 8,
-    font: "bold",
-    color: TEXT_SOFT,
-    lineHeight: 11,
-    before: 8,
-  });
-  drawText(builder, formatDateTimeForDisplay(generatedAt), { size: 11, color: TEXT_MUTED });
-  drawFooter(builder);
+  drawMetadataItem(builder, "Empresa", companyName);
+  drawMetadataItem(builder, "Sede", branchName);
+  metadata.forEach((item) => drawMetadataItem(builder, item.label, item.value));
+  drawMetadataItem(builder, "Fecha de generación", formatDateTimeForDisplay(generatedAt));
+  drawDivider(builder, 12, 18);
+  drawOverviewIndex(builder, index);
 }
 
 function drawSimplePageTitle(builder: PdfTextBuilder, title: string, subtitle?: string) {
@@ -241,6 +318,12 @@ function drawRecordBlock(builder: PdfTextBuilder, index: number, recordDate: str
   builder.y -= 10;
 }
 
+async function saveGeneratedPdf(builder: PdfTextBuilder) {
+  drawFooter(builder);
+
+  return Buffer.from(await builder.document.save());
+}
+
 export async function createOperationalFormsReportPdf({
   companyName,
   branchName,
@@ -256,30 +339,21 @@ export async function createOperationalFormsReportPdf({
 }) {
   const builder = await createTextBuilder();
 
-  drawCover(builder, {
+  drawReportOverviewPage(builder, {
     title: "Reporte de formularios",
     companyName,
     branchName,
     generatedAt,
     metadata: [{ label: "Periodo consultado", value: periodLabel }],
+    index: {
+      title: "Índice",
+      subtitle: "Formularios incluidos en este reporte.",
+      items: sections.map((section) => ({
+        title: section.title,
+        detail: `${section.records.length} ${section.records.length === 1 ? "registro" : "registros"}`,
+      })),
+    },
   });
-
-  addPage(builder);
-  drawSimplePageTitle(builder, "Contenido", "Formularios incluidos en este reporte.");
-  sections.forEach((section, index) => {
-    drawText(builder, `${index + 1}. ${section.title}`, {
-      size: 11,
-      font: "bold",
-      color: BRAND_DARK,
-      after: 3,
-    });
-    drawText(builder, `${section.records.length} ${section.records.length === 1 ? "registro" : "registros"}`, {
-      size: 9,
-      color: TEXT_SOFT,
-      after: 8,
-    });
-  });
-  drawFooter(builder);
 
   for (const section of sections) {
     addPage(builder);
@@ -290,17 +364,15 @@ export async function createOperationalFormsReportPdf({
         size: 11,
         color: TEXT_MUTED,
       });
-      drawFooter(builder);
       continue;
     }
 
     section.records.forEach((record, index) => {
       drawRecordBlock(builder, index + 1, formatDateTimeForDisplay(record.recordedAt), record.fields);
     });
-    drawFooter(builder);
   }
 
-  return Buffer.from(await builder.document.save());
+  return saveGeneratedPdf(builder);
 }
 
 async function appendPdfBytes(target: PDFDocument, sourceBytes: Uint8Array) {
@@ -333,29 +405,21 @@ async function createGeneratedDocumentBase({
 }) {
   const builder = await createTextBuilder();
 
-  drawCover(builder, {
+  drawReportOverviewPage(builder, {
     title,
     companyName,
     branchName,
     generatedAt,
     metadata,
+    index: {
+      title: "Índice",
+      subtitle: "Orden de los documentos incluidos.",
+      items: bundles.map((bundle) => ({
+        title: bundle.title,
+        detail: `${getBundleFileCount(bundle)} ${getBundleFileCount(bundle) === 1 ? "archivo" : "archivos"}`,
+      })),
+    },
   });
-
-  addPage(builder);
-  drawSimplePageTitle(builder, "Índice", "Orden de los documentos incluidos.");
-  bundles.forEach((bundle, index) => {
-    drawText(builder, `${index + 1}. ${bundle.title}`, {
-      size: 11,
-      font: "bold",
-      after: 3,
-    });
-    drawText(builder, `${getBundleFileCount(bundle)} ${getBundleFileCount(bundle) === 1 ? "archivo" : "archivos"}`, {
-      size: 9,
-      color: TEXT_SOFT,
-      after: 8,
-    });
-  });
-  drawFooter(builder);
 
   return builder;
 }
@@ -425,7 +489,7 @@ export async function createSanitaryDossierPdf({
     }
   }
 
-  return Buffer.from(await builder.document.save());
+  return saveGeneratedPdf(builder);
 }
 
 export async function createHistoricalDocumentPdf({
@@ -469,5 +533,5 @@ export async function createHistoricalDocumentPdf({
     await appendPdfBytes(builder.document, attachment.bytes);
   }
 
-  return Buffer.from(await builder.document.save());
+  return saveGeneratedPdf(builder);
 }
