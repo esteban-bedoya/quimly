@@ -3,15 +3,23 @@ import { NextResponse } from "next/server";
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { getDateRangeUtcBounds, formatDateForDisplay, validateDateRange } from "@/lib/branch-reports/dates";
 import {
+  BranchReportDeliveryError,
+  assertGeneratedPdfSizeAllowed,
+  cleanupOldGeneratedBranchReportsBestEffort,
+  getBinarySizeBytes,
+  uploadGeneratedBranchReport,
+} from "@/lib/branch-reports/delivery";
+import {
   getTotalOperationalRecords,
   loadOperationalReportSections,
 } from "@/lib/branch-reports/data";
 import { createOperationalFormsReportPdf } from "@/lib/branch-reports/pdf";
 import { isOperationalFormType, operationalFormTypes, type OperationalFormType } from "@/lib/operational-forms";
-import { logServerError } from "@/lib/server/logging";
+import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function parseFormTypes(searchParams: URLSearchParams) {
   const rawValues = [
@@ -32,9 +40,21 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ companySlug: string; branchSlug: string }> },
 ) {
+  const reportType = "form-reports";
+  const totalStart = Date.now();
+  let companyId: string | undefined;
+  let branchId: string | undefined;
+  let recordCount = 0;
+  let queryDurationMs = 0;
+  let generationDurationMs = 0;
+  let uploadDurationMs = 0;
+  let finalSizeBytes = 0;
+
   try {
     const { companySlug, branchSlug } = await params;
     const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
+    companyId = company.id;
+    branchId = branch.id;
     const supabase = await getSupabaseRlsClient();
 
     if (!supabase) {
@@ -56,6 +76,7 @@ export async function GET(
     }
 
     const { fromIso, toIso } = getDateRangeUtcBounds(validation.from, validation.to);
+    const queryStart = Date.now();
     const sections = await loadOperationalReportSections({
       supabase,
       branch,
@@ -63,12 +84,15 @@ export async function GET(
       fromIso,
       toIso,
     });
+    queryDurationMs = Date.now() - queryStart;
+    recordCount = getTotalOperationalRecords(sections);
 
-    if (!getTotalOperationalRecords(sections)) {
+    if (!recordCount) {
       return jsonError("No se encontraron registros para el periodo seleccionado.", 404);
     }
 
     const periodLabel = `${formatDateForDisplay(validation.from)} - ${formatDateForDisplay(validation.to)}`;
+    const generationStart = Date.now();
     const pdf = await createOperationalFormsReportPdf({
       companyName: company.name,
       branchName: branch.name,
@@ -76,16 +100,61 @@ export async function GET(
       generatedAt: new Date().toISOString(),
       sections,
     });
+    generationDurationMs = Date.now() - generationStart;
+    finalSizeBytes = getBinarySizeBytes(pdf);
+    assertGeneratedPdfSizeAllowed(finalSizeBytes);
 
-    return new NextResponse(new Uint8Array(pdf), {
+    const uploadStart = Date.now();
+    const file = await uploadGeneratedBranchReport({
+      supabase,
+      companyId: company.id,
+      branchId: branch.id,
+      reportType,
+      pdf,
+      filename: `quimly-reporte-formularios-${branch.slug}-${validation.from}-${validation.to}.pdf`,
+    });
+    uploadDurationMs = Date.now() - uploadStart;
+
+    await cleanupOldGeneratedBranchReportsBestEffort({
+      supabase,
+      companyId: company.id,
+      branchId: branch.id,
+      reportType,
+    });
+
+    logServerInfo("[branch-report] generation.done", {
+      reportType,
+      companyId: company.id,
+      branchId: branch.id,
+      recordCount,
+      finalSizeBytes,
+      queryDurationMs,
+      generationDurationMs,
+      uploadDurationMs,
+      totalDurationMs: Date.now() - totalStart,
+      result: "success",
+    });
+
+    return NextResponse.json(file, {
       headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="quimly-reporte-formularios-${branch.slug}-${validation.from}-${validation.to}.pdf"`,
         "Cache-Control": "no-store",
       },
     });
   } catch (error) {
-    logServerError("branch.reports.forms_pdf.failed", error);
-    return jsonError("No fue posible generar el PDF. Intenta nuevamente.", 500);
+    const deliveryError = error instanceof BranchReportDeliveryError ? error : null;
+    logServerError("[branch-report] generation.failed", error, {
+      reportType,
+      companyId,
+      branchId,
+      recordCount,
+      finalSizeBytes,
+      queryDurationMs,
+      generationDurationMs,
+      uploadDurationMs,
+      totalDurationMs: Date.now() - totalStart,
+      result: "error",
+      errorCategory: deliveryError?.category ?? "unexpected",
+    });
+    return jsonError(deliveryError?.userMessage ?? "No fue posible generar el PDF. Intenta nuevamente.", deliveryError?.status ?? 500);
   }
 }

@@ -537,6 +537,96 @@ where not exists (
   where id = 'branch-documents'
 );
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+select
+  'generated-reports',
+  'generated-reports',
+  false,
+  36700160,
+  array['application/pdf']
+where not exists (
+  select 1
+  from storage.buckets
+  where id = 'generated-reports'
+);
+
+create or replace function public.can_access_generated_report_object(object_name text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, storage
+as $$
+declare
+  path_parts text[];
+  target_company_id uuid;
+  target_branch_id uuid;
+  report_type text;
+begin
+  path_parts := storage.foldername(object_name);
+
+  if array_length(path_parts, 1) <> 3 then
+    return false;
+  end if;
+
+  if lower(right(object_name, 4)) <> '.pdf' then
+    return false;
+  end if;
+
+  if path_parts[1] !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    or path_parts[2] !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  then
+    return false;
+  end if;
+
+  target_company_id := path_parts[1]::uuid;
+  target_branch_id := path_parts[2]::uuid;
+  report_type := path_parts[3];
+
+  if report_type not in ('form-reports', 'sanitary-records', 'document-history') then
+    return false;
+  end if;
+
+  return exists (
+    select 1
+    from public.branches b
+    where b.id = target_branch_id
+      and b.company_id = target_company_id
+      and public.can_access_branch(b.id)
+  );
+end;
+$$;
+
+drop policy if exists "generated_reports_storage_select_policy" on storage.objects;
+create policy "generated_reports_storage_select_policy"
+on storage.objects
+for select
+using (
+  bucket_id = 'generated-reports'
+  and auth.role() = 'authenticated'
+  and public.can_access_generated_report_object(name)
+);
+
+drop policy if exists "generated_reports_storage_insert_policy" on storage.objects;
+create policy "generated_reports_storage_insert_policy"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'generated-reports'
+  and auth.role() = 'authenticated'
+  and public.can_access_generated_report_object(name)
+);
+
+drop policy if exists "generated_reports_storage_delete_policy" on storage.objects;
+create policy "generated_reports_storage_delete_policy"
+on storage.objects
+for delete
+using (
+  bucket_id = 'generated-reports'
+  and auth.role() = 'authenticated'
+  and public.can_access_generated_report_object(name)
+);
+
 drop policy if exists "branch_documents_storage_select_policy" on storage.objects;
 create policy "branch_documents_storage_select_policy"
 on storage.objects

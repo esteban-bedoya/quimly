@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   currentDocumentCategories,
@@ -31,8 +31,11 @@ type StatusMessage = {
 };
 
 type DownloadedPdf = {
-  file: File;
-  objectUrl: string;
+  url: string;
+  downloadUrl: string;
+  filename: string;
+  expiresAt: string;
+  sizeBytes: number;
   title: string;
 };
 
@@ -54,60 +57,57 @@ function joinBasePath(companySlug: string, branchSlug: string) {
   return `/dashboard/sedes/${encodeURIComponent(companySlug)}/${encodeURIComponent(branchSlug)}`;
 }
 
-function parseFilename(response: Response, fallback: string) {
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  return match?.[1] ?? fallback;
-}
-
 async function parseErrorMessage(response: Response, fallback: string) {
   const data = await response.json().catch(() => null);
   return typeof data?.error === "string" ? data.error : fallback;
 }
 
-function isPdfResponse(response: Response) {
-  return (response.headers.get("Content-Type") ?? "").toLocaleLowerCase("es-CO").includes("application/pdf");
-}
-
-function getMissingCategories(response: Response) {
-  const value = response.headers.get("X-Quimly-Missing-Categories");
-
-  if (!value) {
-    return [];
+function isGeneratedPdfResponse(data: unknown): data is Omit<DownloadedPdf, "title"> & { success: true; missingCategories?: string[] } {
+  if (!data || typeof data !== "object") {
+    return false;
   }
 
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value));
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
+  const record = data as Record<string, unknown>;
+  return (
+    record.success === true &&
+    typeof record.url === "string" &&
+    typeof record.downloadUrl === "string" &&
+    typeof record.filename === "string" &&
+    typeof record.expiresAt === "string" &&
+    typeof record.sizeBytes === "number"
+  );
 }
 
-function createDownloadedPdf(blob: Blob, filename: string, title: string): DownloadedPdf {
-  const file = new File([blob], filename, { type: "application/pdf" });
-  return {
-    file,
-    objectUrl: URL.createObjectURL(blob),
-    title,
-  };
+function getResponseMissingCategories(data: { missingCategories?: unknown }) {
+  return Array.isArray(data.missingCategories)
+    ? data.missingCategories.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function isGeneratedReportExpired(report: DownloadedPdf) {
+  return Date.parse(report.expiresAt) <= Date.now();
 }
 
 function triggerDownload(downloadedPdf: DownloadedPdf) {
   const link = document.createElement("a");
-  link.href = downloadedPdf.objectUrl;
-  link.download = downloadedPdf.file.name;
+  link.href = downloadedPdf.downloadUrl || downloadedPdf.url;
+  link.download = downloadedPdf.filename;
+  link.rel = "noopener noreferrer";
   document.body.appendChild(link);
   link.click();
   link.remove();
 }
 
 function canSharePdf(downloadedPdf: DownloadedPdf | null) {
-  if (!downloadedPdf || typeof navigator === "undefined" || !("canShare" in navigator)) {
+  if (!downloadedPdf || typeof navigator === "undefined" || !("share" in navigator)) {
     return false;
   }
 
-  return navigator.canShare({ files: [downloadedPdf.file] });
+  if ("canShare" in navigator) {
+    return navigator.canShare({ url: downloadedPdf.url });
+  }
+
+  return true;
 }
 
 function getSelectionSummary(selectedCount: number, totalCount: number, label: string) {
@@ -143,9 +143,13 @@ function StatusAlert({ message }: { message: StatusMessage | null }) {
 
 function ActionButtons({
   downloadedPdf,
+  onOpen,
+  onDownload,
   onShare,
 }: {
   downloadedPdf: DownloadedPdf | null;
+  onOpen: () => void;
+  onDownload: () => void;
   onShare: () => void;
 }) {
   if (!downloadedPdf) {
@@ -157,9 +161,16 @@ function ActionButtons({
       <button
         type="button"
         className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bcc4ca] bg-white px-5 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
-        onClick={() => triggerDownload(downloadedPdf)}
+        onClick={onOpen}
       >
-        Descargar otra vez
+        Abrir PDF
+      </button>
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bcc4ca] bg-white px-5 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
+        onClick={onDownload}
+      >
+        Descargar PDF
       </button>
       {canSharePdf(downloadedPdf) ? (
         <button
@@ -363,28 +374,56 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
   const isDossierGenerationInFlight = useRef(false);
   const isHistoryGenerationInFlight = useRef(false);
 
-  function rememberDownloadedPdf(
-    setter: (updater: (currentPdf: DownloadedPdf | null) => DownloadedPdf) => void,
-    nextPdf: DownloadedPdf,
+  function clearExpiredReport(
+    report: DownloadedPdf,
+    setter: (nextPdf: DownloadedPdf | null) => void,
+    setStatus: (message: StatusMessage) => void,
   ) {
-    setter((currentPdf) => {
-      if (currentPdf) {
-        URL.revokeObjectURL(currentPdf.objectUrl);
-      }
+    if (!isGeneratedReportExpired(report)) {
+      return false;
+    }
 
-      return nextPdf;
-    });
-    triggerDownload(nextPdf);
+    setter(null);
+    setStatus({ tone: "error", text: "El enlace venció. Genera nuevamente el reporte." });
+    return true;
   }
 
-  async function shareDownloadedPdf(downloadedPdf: DownloadedPdf | null) {
-    if (!downloadedPdf || !canSharePdf(downloadedPdf)) {
+  function openGeneratedReport(
+    report: DownloadedPdf | null,
+    setter: (nextPdf: DownloadedPdf | null) => void,
+    setStatus: (message: StatusMessage) => void,
+  ) {
+    if (!report || clearExpiredReport(report, setter, setStatus)) {
+      return;
+    }
+
+    window.open(report.url, "_blank", "noopener,noreferrer");
+  }
+
+  function downloadGeneratedReport(
+    report: DownloadedPdf | null,
+    setter: (nextPdf: DownloadedPdf | null) => void,
+    setStatus: (message: StatusMessage) => void,
+  ) {
+    if (!report || clearExpiredReport(report, setter, setStatus)) {
+      return;
+    }
+
+    triggerDownload(report);
+  }
+
+  async function shareDownloadedPdf(
+    downloadedPdf: DownloadedPdf | null,
+    setter: (nextPdf: DownloadedPdf | null) => void,
+    setStatus: (message: StatusMessage) => void,
+  ) {
+    if (!downloadedPdf || clearExpiredReport(downloadedPdf, setter, setStatus) || !canSharePdf(downloadedPdf)) {
       return;
     }
 
     await navigator.share({
-      files: [downloadedPdf.file],
       title: downloadedPdf.title,
+      url: downloadedPdf.url,
     }).catch(() => {});
   }
 
@@ -413,40 +452,14 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
     selectedDocumentCategories.length > 0 &&
     selectedMissingDocumentCategories.length === selectedDocumentCategories.length;
 
-  useEffect(() => {
-    return () => {
-      if (formsPdf) {
-        URL.revokeObjectURL(formsPdf.objectUrl);
-      }
-    };
-  }, [formsPdf]);
-
-  useEffect(() => {
-    return () => {
-      if (dossierPdf) {
-        URL.revokeObjectURL(dossierPdf.objectUrl);
-      }
-    };
-  }, [dossierPdf]);
-
-  useEffect(() => {
-    return () => {
-      if (historyPdf) {
-        URL.revokeObjectURL(historyPdf.objectUrl);
-      }
-    };
-  }, [historyPdf]);
-
   async function downloadPdf({
     url,
-    fallbackFilename,
     title,
     setter,
   }: {
     url: string;
-    fallbackFilename: string;
     title: string;
-    setter: (updater: (currentPdf: DownloadedPdf | null) => DownloadedPdf) => void;
+    setter: (nextPdf: DownloadedPdf) => void;
   }) {
     const response = await fetch(url, { cache: "no-store" });
 
@@ -454,17 +467,23 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
       throw new Error(await parseErrorMessage(response, "No fue posible generar el PDF. Intenta nuevamente."));
     }
 
-    if (!isPdfResponse(response)) {
+    const data = await response.json().catch(() => null);
+
+    if (!isGeneratedPdfResponse(data)) {
       throw new Error("No fue posible generar el PDF. Intenta nuevamente.");
     }
 
-    const filename = parseFilename(response, fallbackFilename);
-    const blob = await response.blob();
-    const pdf = createDownloadedPdf(blob, filename, title);
-    rememberDownloadedPdf(setter, pdf);
+    setter({
+      url: data.url,
+      downloadUrl: data.downloadUrl,
+      filename: data.filename,
+      expiresAt: data.expiresAt,
+      sizeBytes: data.sizeBytes,
+      title,
+    });
 
     return {
-      missingCategories: getMissingCategories(response),
+      missingCategories: getResponseMissingCategories(data),
     };
   }
 
@@ -493,16 +512,16 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
 
     isFormsGenerationInFlight.current = true;
     setIsGeneratingForms(true);
+    setFormsPdf(null);
     setFormsStatus({ tone: "info", text: preparingPdfMessage });
 
     try {
       await downloadPdf({
         url: `${basePath}/reportes/formularios.pdf?${params.toString()}`,
-        fallbackFilename: "quimly-reporte-formularios.pdf",
         title: "Reporte de formularios",
         setter: setFormsPdf,
       });
-      setFormsStatus({ tone: "success", text: "Reporte generado correctamente." });
+      setFormsStatus({ tone: "success", text: "Tu PDF está listo." });
     } catch (error) {
       setFormsStatus({
         tone: "error",
@@ -530,12 +549,12 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
 
     isDossierGenerationInFlight.current = true;
     setIsGeneratingDossier(true);
+    setDossierPdf(null);
     setDocumentsStatus({ tone: "info", text: preparingPdfMessage });
 
     try {
       const result = await downloadPdf({
         url: `${basePath}/reportes/expediente-sanitario.pdf?${params.toString()}`,
-        fallbackFilename: "quimly-expediente-sanitario.pdf",
         title: "Expediente sanitario",
         setter: setDossierPdf,
       });
@@ -543,10 +562,10 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
       if (result.missingCategories.length) {
         setDocumentsStatus({
           tone: "warning",
-          text: `Expediente generado. No hay archivos disponibles en ${result.missingCategories.join(", ")}.`,
+          text: `Tu PDF está listo. No hay archivos disponibles en ${result.missingCategories.join(", ")}.`,
         });
       } else {
-        setDocumentsStatus({ tone: "success", text: "Expediente generado correctamente." });
+        setDocumentsStatus({ tone: "success", text: "Tu PDF está listo." });
       }
     } catch (error) {
       setDocumentsStatus({
@@ -584,16 +603,16 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
 
     isHistoryGenerationInFlight.current = true;
     setIsGeneratingHistory(true);
+    setHistoryPdf(null);
     setHistoryStatus({ tone: "info", text: preparingPdfMessage });
 
     try {
       await downloadPdf({
         url: `${basePath}/reportes/historial-documental.pdf?${params.toString()}`,
-        fallbackFilename: "quimly-historial-documental.pdf",
         title: "Historial documental",
         setter: setHistoryPdf,
       });
-      setHistoryStatus({ tone: "success", text: "Historial generado correctamente." });
+      setHistoryStatus({ tone: "success", text: "Tu PDF está listo." });
     } catch (error) {
       setHistoryStatus({
         tone: "error",
@@ -690,7 +709,12 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
           >
             {isGeneratingForms ? "Preparando PDF..." : "Generar reporte de formularios"}
           </PrimaryButton>
-          <ActionButtons downloadedPdf={formsPdf} onShare={() => shareDownloadedPdf(formsPdf)} />
+          <ActionButtons
+            downloadedPdf={formsPdf}
+            onOpen={() => openGeneratedReport(formsPdf, setFormsPdf, setFormsStatus)}
+            onDownload={() => downloadGeneratedReport(formsPdf, setFormsPdf, setFormsStatus)}
+            onShare={() => shareDownloadedPdf(formsPdf, setFormsPdf, setFormsStatus)}
+          />
         </div>
       </section>
 
@@ -748,7 +772,12 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
             >
               {isGeneratingDossier ? "Preparando PDF..." : "Generar expediente sanitario en PDF"}
             </PrimaryButton>
-            <ActionButtons downloadedPdf={dossierPdf} onShare={() => shareDownloadedPdf(dossierPdf)} />
+            <ActionButtons
+              downloadedPdf={dossierPdf}
+              onOpen={() => openGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
+              onDownload={() => downloadGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
+              onShare={() => shareDownloadedPdf(dossierPdf, setDossierPdf, setDocumentsStatus)}
+            />
           </div>
         </div>
 
@@ -836,7 +865,12 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
                         >
                           {isGeneratingHistory ? "Preparando PDF..." : "Generar PDF histórico"}
                         </PrimaryButton>
-                        <ActionButtons downloadedPdf={historyPdf} onShare={() => shareDownloadedPdf(historyPdf)} />
+                        <ActionButtons
+                          downloadedPdf={historyPdf}
+                          onOpen={() => openGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
+                          onDownload={() => downloadGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
+                          onShare={() => shareDownloadedPdf(historyPdf, setHistoryPdf, setHistoryStatus)}
+                        />
                       </div>
                     </div>
                   ) : null}
