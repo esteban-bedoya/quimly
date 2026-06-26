@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   currentDocumentCategories,
@@ -52,6 +52,8 @@ const historyPresetLabels: Record<HistoryPeriodPreset, string> = {
   custom: "Rango personalizado",
 };
 const preparingPdfMessage = "Preparando el PDF. Esto puede tardar unos segundos.";
+const generatePdfButtonLabel = "Generar PDF";
+const historyEmptyHighlightDurationMs = 5000;
 
 function joinBasePath(companySlug: string, branchSlug: string) {
   return `/dashboard/sedes/${encodeURIComponent(companySlug)}/${encodeURIComponent(branchSlug)}`;
@@ -275,7 +277,7 @@ function PeriodButton({
       type="button"
       className={`min-h-11 rounded-full border px-4 text-sm font-semibold transition active:scale-[0.98] ${
         active
-          ? "border-[#12110f] bg-[#12110f] text-white"
+          ? "border-[#2a7f86] bg-[#e8f6f7] text-[#1f6f76] shadow-[0_1px_2px_rgba(42,127,134,0.08)]"
           : "border-[#bcc4ca] bg-white/80 text-[#4f5961]"
       }`}
       onClick={onClick}
@@ -393,12 +395,43 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
   const [formsStatus, setFormsStatus] = useState<StatusMessage | null>(null);
   const [documentsStatus, setDocumentsStatus] = useState<StatusMessage | null>(null);
   const [historyStatus, setHistoryStatus] = useState<StatusMessage | null>(null);
+  const [emptyHistoryCategoryHighlights, setEmptyHistoryCategoryHighlights] = useState<
+    Partial<Record<HistoryDocumentCategoryId, boolean>>
+  >({});
   const [formsPdf, setFormsPdf] = useState<DownloadedPdf | null>(null);
   const [dossierPdf, setDossierPdf] = useState<DownloadedPdf | null>(null);
   const [historyPdf, setHistoryPdf] = useState<DownloadedPdf | null>(null);
   const isFormsGenerationInFlight = useRef(false);
   const isDossierGenerationInFlight = useRef(false);
   const isHistoryGenerationInFlight = useRef(false);
+  const emptyHistoryCategoryHighlightTimeouts = useRef<Partial<Record<HistoryDocumentCategoryId, number>>>({});
+
+  useEffect(() => {
+    const timeouts = emptyHistoryCategoryHighlightTimeouts.current;
+
+    return () => {
+      Object.values(timeouts).forEach((timeoutId) => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      });
+    };
+  }, []);
+
+  function showEmptyHistoryCategoryHighlight(categoryId: HistoryDocumentCategoryId) {
+    const currentTimeoutId = emptyHistoryCategoryHighlightTimeouts.current[categoryId];
+
+    if (currentTimeoutId) {
+      window.clearTimeout(currentTimeoutId);
+    }
+
+    setActiveHistoryCategory(null);
+    setEmptyHistoryCategoryHighlights((currentHighlights) => ({ ...currentHighlights, [categoryId]: true }));
+    emptyHistoryCategoryHighlightTimeouts.current[categoryId] = window.setTimeout(() => {
+      setEmptyHistoryCategoryHighlights((currentHighlights) => ({ ...currentHighlights, [categoryId]: false }));
+      delete emptyHistoryCategoryHighlightTimeouts.current[categoryId];
+    }, historyEmptyHighlightDurationMs);
+  }
 
   function clearExpiredReport(
     report: DownloadedPdf,
@@ -733,7 +766,7 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
             disabled={isGeneratingForms || !selectedForms.length || formRangeInvalid}
             onClick={generateFormsReport}
           >
-            {isGeneratingForms ? "Preparando PDF..." : "Generar reporte de formularios"}
+            {isGeneratingForms ? "Preparando PDF..." : generatePdfButtonLabel}
           </PrimaryButton>
           <ActionButtons
             downloadedPdf={formsPdf}
@@ -795,7 +828,7 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
             disabled={isGeneratingDossier || !selectedDocumentCategories.length}
             onClick={generateSanitaryDossier}
           >
-            {isGeneratingDossier ? "Preparando PDF..." : "Generar expediente sanitario en PDF"}
+            {isGeneratingDossier ? "Preparando PDF..." : generatePdfButtonLabel}
           </PrimaryButton>
           <ActionButtons
             downloadedPdf={dossierPdf}
@@ -809,33 +842,63 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
       <ReportPanelCard>
         <SectionHeader
           title="Historial documental"
-          description="Descarga certificados y soportes almacenados anteriormente."
+          description="Descarga el histórico de certificados y soportes almacenados."
         />
 
         <div className="overflow-hidden rounded-[1.2rem] border border-[#e6eaed] bg-white/60">
           {data.historyCategories.map((category) => {
             const isActive = activeHistoryCategory === category.id;
+            const hasStoredCertificates = category.availableFileCount > 0;
+            const shouldHighlightEmptyHistoryCategory = Boolean(emptyHistoryCategoryHighlights[category.id]);
 
             return (
               <div key={category.id} className="border-b border-[#e6eaed] p-4 last:border-b-0">
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div>
                     <h3 className="text-sm font-semibold leading-5 text-[#12110f]">{category.title}</h3>
-                    <p className="mt-1 text-xs font-medium leading-5 text-[#7f878d]">{category.countLabel}</p>
+                    <p
+                      className={`mt-1 w-fit text-xs font-medium leading-5 transition ${
+                        shouldHighlightEmptyHistoryCategory
+                          ? "rounded-2xl border border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-700"
+                          : "text-[#7f878d]"
+                      }`}
+                    >
+                      {category.countLabel}
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
+                    aria-expanded={hasStoredCertificates ? isActive : false}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
                     onClick={() => {
+                      if (!hasStoredCertificates) {
+                        showEmptyHistoryCategoryHighlight(category.id);
+                        return;
+                      }
+
                       setActiveHistoryCategory(isActive ? null : category.id);
                       setHistoryStatus(null);
                     }}
                   >
-                    Descargar historial
+                    <span>Elegir periodo</span>
+                    <svg
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isActive ? "rotate-180" : ""}`}
+                    >
+                      <path
+                        d="M4 6 8 10l4-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.8"
+                      />
+                    </svg>
                   </button>
                 </div>
 
-                {isActive ? (
+                {isActive && hasStoredCertificates ? (
                   <div className="mt-4 grid gap-4 rounded-[1rem] border border-[#e6eaed] bg-[#f8fafb] p-4">
                     <div className="flex flex-wrap gap-2" aria-label="Periodo del historial documental">
                       <PeriodButton
@@ -888,7 +951,7 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
                         disabled={isGeneratingHistory}
                         onClick={() => generateHistoryPdf(category.id)}
                       >
-                        {isGeneratingHistory ? "Preparando PDF..." : "Generar PDF histórico"}
+                          {isGeneratingHistory ? "Preparando PDF..." : generatePdfButtonLabel}
                       </PrimaryButton>
                       <ActionButtons
                         downloadedPdf={historyPdf}

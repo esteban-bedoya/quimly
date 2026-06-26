@@ -312,11 +312,11 @@ function buildCurrentCategoryCountLabel(source: BranchReportDocumentSource, cate
   const bundle = buildCurrentCategoryBundle(source, categoryId);
 
   if (categoryId === "sanitation_plan") {
-    return bundle.entries.length ? "1 archivo" : "Sin archivos disponibles";
+    return bundle.entries.length ? "1 archivo" : "Sin archivos almacenados";
   }
 
   if (categoryId === "pest_control" || categoryId === "water_tank_cleaning" || categoryId === "acu_final_disposal") {
-    return bundle.entries.length ? "Último certificado" : "Sin certificado actual";
+    return bundle.entries.length ? "Último certificado" : "Sin certificados almacenados";
   }
 
   if (categoryId === "staff_records") {

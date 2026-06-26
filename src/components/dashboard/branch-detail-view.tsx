@@ -59,7 +59,7 @@ type BranchDetailViewProps = {
 type BranchSectionKey = "home" | "operational" | "compliance";
 
 const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
-  home: null,
+  home: "Exporta los reportes periódicos y unifica la documentación en PDF para descargar.",
   operational: "Diligencia los formatos normativos y gestiona los puntos de acceso QR para la operación.",
   compliance: "Monitorea vencimientos, visualiza y gestiona los archivos normativos del establecimiento.",
 };
@@ -176,7 +176,7 @@ function BranchLayout({
                     className="absolute bottom-1 left-1 top-1 rounded-[1.05rem] bg-[#f1f1f1] shadow-[0_10px_24px_rgba(18,17,15,0.22)] transition-transform duration-300 ease-out"
                     style={{
                       width: "calc((100% - 0.5rem) / 3)",
-                      transform: `translateX(calc(${activeIndex} * 100% + ${activeIndex} * 0.25rem))`,
+                      transform: `translateX(calc(${activeIndex} * 100%))`,
                     }}
                   />
 
@@ -204,7 +204,7 @@ function BranchLayout({
               </nav>
 
               <p
-                className={`h-[4.5rem] max-w-2xl overflow-hidden text-sm leading-6 text-white/72 sm:h-14 sm:text-base sm:leading-7 md:h-7 ${
+                className={`max-w-2xl text-sm leading-6 text-white/72 sm:text-base sm:leading-7 ${
                   headerDescription ? "" : "invisible"
                 }`}
               >

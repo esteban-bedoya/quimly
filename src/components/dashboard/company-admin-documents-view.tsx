@@ -712,7 +712,7 @@ function formatFileCountLabel(count: number) {
 
 function formatGroupedFileCountLabel(fileCount: number, ownerCount: number, singularOwner: string, pluralOwner: string) {
   if (!fileCount) {
-    return "Sin archivos disponibles";
+    return "0 archivos";
   }
 
   return `${formatFileCountLabel(fileCount)} de ${ownerCount} ${ownerCount === 1 ? singularOwner : pluralOwner}`;
@@ -752,7 +752,7 @@ function countStaffFiles(staffMembers: StaffRecord[]) {
 
 function formatStoredRecordCount(sectionId: DocumentSectionId, count: number) {
   if (sectionId === "sanitation_plan") {
-    return count ? "1 archivo" : "Sin archivos disponibles";
+    return count ? "1 archivo" : "0 archivos";
   }
 
   if (sectionId === "staff_records") {
