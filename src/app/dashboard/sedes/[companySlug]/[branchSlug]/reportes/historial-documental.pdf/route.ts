@@ -18,6 +18,7 @@ import {
 import {
   formatDateForDisplay,
   getHistoryPresetRange,
+  MAX_CUSTOM_REPORT_RANGE_MONTHS,
   type HistoryPeriodPreset,
   validateDateRange,
 } from "@/lib/branch-reports/dates";
@@ -34,24 +35,23 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function isHistoryPeriodPreset(value: string): value is HistoryPeriodPreset {
-  return value === "last6months" || value === "last12months" || value === "all" || value === "custom";
+  return value === "last6months" || value === "last12months" || value === "custom";
 }
 
 function resolveHistoryRange(searchParams: URLSearchParams) {
-  const presetValue = searchParams.get("period") ?? "all";
-  const preset = isHistoryPeriodPreset(presetValue) ? presetValue : "all";
+  const presetValue = searchParams.get("period") ?? "last6months";
 
-  if (preset === "all") {
-    return { ok: true as const, range: null, label: "Todo el historial" };
+  if (!isHistoryPeriodPreset(presetValue)) {
+    return { ok: false as const, error: "Selecciona un periodo válido." };
   }
 
-  const range = preset === "custom"
+  const range = presetValue === "custom"
     ? {
         from: searchParams.get("from") ?? "",
         to: searchParams.get("to") ?? "",
       }
-    : getHistoryPresetRange(preset);
-  const validation = validateDateRange(range.from, range.to);
+    : getHistoryPresetRange(presetValue);
+  const validation = validateDateRange(range.from, range.to, undefined, { maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS });
 
   if (!validation.ok) {
     return { ok: false as const, error: validation.error };

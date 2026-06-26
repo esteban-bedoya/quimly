@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
-import { getDateRangeUtcBounds, formatDateForDisplay, validateDateRange } from "@/lib/branch-reports/dates";
+import {
+  getDateRangeUtcBounds,
+  formatDateForDisplay,
+  MAX_CUSTOM_REPORT_RANGE_MONTHS,
+  validateDateRange,
+} from "@/lib/branch-reports/dates";
 import {
   BranchReportDeliveryError,
   assertGeneratedPdfSizeAllowed,
@@ -65,7 +70,7 @@ export async function GET(
     const selectedFormTypes = parseFormTypes(url.searchParams);
     const from = url.searchParams.get("from") ?? "";
     const to = url.searchParams.get("to") ?? "";
-    const validation = validateDateRange(from, to);
+    const validation = validateDateRange(from, to, undefined, { maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS });
 
     if (!selectedFormTypes.length) {
       return jsonError("Selecciona al menos un formulario.", 400);

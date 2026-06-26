@@ -19,6 +19,8 @@ type DatePickerProps = {
   max?: string;
   onChange: (value: string) => void;
   compact?: boolean;
+  showMonthYearSelect?: boolean;
+  minYear?: number;
 };
 
 type DateParts = {
@@ -35,11 +37,18 @@ type DateTimeParts = {
   minute: number;
 };
 
+type CalendarSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
 const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const weekdayLabels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
 const emptyCompletedDateKeys: string[] = [];
 const hour12Options = [12, ...Array.from({ length: 11 }, (_, index) => index + 1)];
 const meridiemOptions = ["AM", "PM"] as const;
+const monthYearSelectYearLookback = 50;
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -197,6 +206,40 @@ function hasSelectableDayInMonth(monthKey: number, minDateKey: number, maxDateKe
   return lastDateKey >= minDateKey && firstDateKey <= maxDateKey;
 }
 
+function getSelectableYearOptions(
+  minParts: DateParts | null,
+  maxParts: DateParts | null,
+  fallbackParts: DateParts,
+  minYear?: number,
+) {
+  const firstYear = Math.max(
+    minYear ?? Number.NEGATIVE_INFINITY,
+    minParts?.year ?? (maxParts?.year ?? fallbackParts.year) - monthYearSelectYearLookback,
+  );
+  const lastYear = maxParts?.year ?? fallbackParts.year;
+  const yearCount = Math.max(1, lastYear - firstYear + 1);
+
+  return Array.from({ length: yearCount }, (_, index) => firstYear + index);
+}
+
+function getSelectableMonthKeyForYear(
+  year: number,
+  preferredMonthIndex: number,
+  minDateKey: number,
+  maxDateKey: number,
+) {
+  const orderedMonthIndexes = [
+    preferredMonthIndex,
+    ...Array.from({ length: 12 }, (_, monthIndex) => monthIndex).filter((monthIndex) => monthIndex !== preferredMonthIndex),
+  ];
+
+  const selectableMonthIndex = orderedMonthIndexes.find((monthIndex) =>
+    hasSelectableDayInMonth(getMonthKey({ year, monthIndex }), minDateKey, maxDateKey),
+  );
+
+  return typeof selectableMonthIndex === "number" ? getMonthKey({ year, monthIndex: selectableMonthIndex }) : null;
+}
+
 function getHour24(hour12: number, meridiem: (typeof meridiemOptions)[number]) {
   if (meridiem === "AM") {
     return hour12 === 12 ? 0 : hour12;
@@ -205,7 +248,97 @@ function getHour24(hour12: number, meridiem: (typeof meridiemOptions)[number]) {
   return hour12 === 12 ? 12 : hour12 + 12;
 }
 
-export function DatePicker({ value, min, max, onChange, compact = false }: DatePickerProps) {
+function CalendarDropdown({
+  label,
+  value,
+  options,
+  isOpen,
+  compact,
+  className = "",
+  onToggle,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  options: CalendarSelectOption[];
+  isOpen: boolean;
+  compact: boolean;
+  className?: string;
+  onToggle: () => void;
+  onSelect: (value: string) => void;
+}) {
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
+
+  return (
+    <div className={`relative min-w-0 ${className}`}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={label}
+        onClick={onToggle}
+        className={[
+          "flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white font-black text-neutral-950 outline-none transition hover:border-[#b8dfe4] focus:border-[#2a7f86] focus:ring-2 focus:ring-[#b8dfe4]/50 active:scale-[0.99]",
+          compact ? "h-8 px-2 text-[11px]" : "h-10 px-3 text-xs",
+        ].join(" ")}
+      >
+        <span className="truncate uppercase tracking-[0.08em]">{selectedLabel}</span>
+        <span className={`shrink-0 text-[10px] text-[#2a7f86] transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true">
+          v
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div
+          className="absolute inset-x-0 top-full z-30 mt-1.5 max-h-52 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-[0_18px_45px_rgba(17,24,22,0.14)]"
+          role="listbox"
+          aria-label={label}
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                disabled={option.disabled}
+                onClick={() => {
+                  if (option.disabled) {
+                    return;
+                  }
+
+                  onSelect(option.value);
+                }}
+                className={[
+                  "flex min-h-8 w-full items-center justify-center rounded-lg px-2 text-[11px] font-black uppercase tracking-[0.08em] transition",
+                  isSelected
+                    ? "border border-[#b8dfe4] bg-[#f7fcfc] text-[#2a7f86]"
+                    : option.disabled
+                      ? "cursor-not-allowed text-neutral-300 line-through"
+                      : "text-neutral-950 hover:bg-[#eefafb] hover:text-[#2a7f86]",
+                ].join(" ")}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function DatePicker({
+  value,
+  min,
+  max,
+  onChange,
+  compact = false,
+  showMonthYearSelect = false,
+  minYear,
+}: DatePickerProps) {
   const todayParts = {
     year: new Date().getFullYear(),
     monthIndex: new Date().getMonth(),
@@ -219,6 +352,7 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
   const minDateKey = minParts ? getDateKey(minParts) : Number.NEGATIVE_INFINITY;
   const maxDateKey = maxParts ? getDateKey(maxParts) : Number.POSITIVE_INFINITY;
   const [visibleMonthKey, setVisibleMonthKey] = useState(() => getMonthKey(selectedParts));
+  const [openMonthYearSelect, setOpenMonthYearSelect] = useState<"month" | "year" | null>(null);
   const visibleMonth = getMonthPartsFromKey(visibleMonthKey);
   const calendarCells = useMemo(
     () => buildCalendarCells(visibleMonth.year, visibleMonth.monthIndex),
@@ -226,6 +360,16 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
   );
   const canShowPreviousMonth = hasSelectableDayInMonth(visibleMonthKey - 1, minDateKey, maxDateKey);
   const canShowNextMonth = hasSelectableDayInMonth(visibleMonthKey + 1, minDateKey, maxDateKey);
+  const selectableYearOptions = getSelectableYearOptions(minParts, maxParts, selectedParts, minYear);
+  const selectableMonthOptions = monthLabels.map((monthLabel, monthIndex) => ({
+    value: String(monthIndex),
+    label: monthLabel,
+    disabled: !hasSelectableDayInMonth(getMonthKey({ year: visibleMonth.year, monthIndex }), minDateKey, maxDateKey),
+  }));
+  const selectableYearDropdownOptions = [...selectableYearOptions].reverse().map((year) => ({
+    value: String(year),
+    label: String(year),
+  }));
 
   function isDayDisabled(date: Date) {
     const dateKey = getDateKey(getDatePartsFromDate(date));
@@ -238,6 +382,7 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
     }
 
     onChange(clampDateValue(formatDateValue(getDatePartsFromDate(date)), min, max));
+    setOpenMonthYearSelect(null);
   }
 
   return (
@@ -251,7 +396,10 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
         <button
           type="button"
           disabled={!canShowPreviousMonth}
-          onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey - 1)}
+          onClick={() => {
+            setVisibleMonthKey((currentMonthKey) => currentMonthKey - 1);
+            setOpenMonthYearSelect(null);
+          }}
           className={[
             "grid place-items-center border border-neutral-200 bg-white font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300",
             compact ? "h-8 w-8 rounded-xl text-base" : "h-10 w-10 rounded-2xl text-lg",
@@ -260,18 +408,60 @@ export function DatePicker({ value, min, max, onChange, compact = false }: DateP
         >
           {"<"}
         </button>
-        <p
-          className={[
-            "text-center font-black uppercase tracking-[0.12em] text-neutral-950",
-            compact ? "text-xs" : "text-sm",
-          ].join(" ")}
-        >
-          {monthLabels[visibleMonth.monthIndex]} {visibleMonth.year}
-        </p>
+        {showMonthYearSelect ? (
+          <div className="grid min-w-0 flex-1 grid-cols-[1fr_auto] gap-2">
+            <CalendarDropdown
+              label="Seleccionar mes"
+              value={String(visibleMonth.monthIndex)}
+              options={selectableMonthOptions}
+              isOpen={openMonthYearSelect === "month"}
+              compact={compact}
+              onToggle={() => setOpenMonthYearSelect((currentValue) => (currentValue === "month" ? null : "month"))}
+              onSelect={(nextMonthIndex) => {
+                setVisibleMonthKey(getMonthKey({ year: visibleMonth.year, monthIndex: Number(nextMonthIndex) }));
+                setOpenMonthYearSelect(null);
+              }}
+            />
+            <CalendarDropdown
+              label="Seleccionar año"
+              value={String(visibleMonth.year)}
+              options={selectableYearDropdownOptions}
+              isOpen={openMonthYearSelect === "year"}
+              compact={compact}
+              className="w-[5.5rem]"
+              onToggle={() => setOpenMonthYearSelect((currentValue) => (currentValue === "year" ? null : "year"))}
+              onSelect={(nextYear) => {
+                const nextMonthKey = getSelectableMonthKeyForYear(
+                  Number(nextYear),
+                  visibleMonth.monthIndex,
+                  minDateKey,
+                  maxDateKey,
+                );
+
+                if (nextMonthKey !== null) {
+                  setVisibleMonthKey(nextMonthKey);
+                }
+                setOpenMonthYearSelect(null);
+              }}
+            />
+          </div>
+        ) : (
+          <p
+            className={[
+              "text-center font-black uppercase tracking-[0.12em] text-neutral-950",
+              compact ? "text-xs" : "text-sm",
+            ].join(" ")}
+          >
+            {monthLabels[visibleMonth.monthIndex]} {visibleMonth.year}
+          </p>
+        )}
         <button
           type="button"
           disabled={!canShowNextMonth}
-          onClick={() => setVisibleMonthKey((currentMonthKey) => currentMonthKey + 1)}
+          onClick={() => {
+            setVisibleMonthKey((currentMonthKey) => currentMonthKey + 1);
+            setOpenMonthYearSelect(null);
+          }}
           className={[
             "grid place-items-center border border-neutral-200 bg-white font-black text-neutral-950 transition active:scale-[0.96] disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300",
             compact ? "h-8 w-8 rounded-xl text-base" : "h-10 w-10 rounded-2xl text-lg",

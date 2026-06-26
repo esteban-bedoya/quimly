@@ -1134,6 +1134,8 @@ function DocumentDateInput({
           >
             <DatePicker
               compact
+              showMonthYearSelect
+              minYear={2023}
               value={value}
               max={max}
               onChange={(nextValue) => {

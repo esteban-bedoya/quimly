@@ -3,9 +3,16 @@ export type DateRangeValidationResult =
   | { ok: false; error: string };
 
 export type ReportPeriodPreset = "last7" | "last30" | "last3months" | "custom";
-export type HistoryPeriodPreset = "last6months" | "last12months" | "all" | "custom";
+export type HistoryPeriodPreset = "last6months" | "last12months" | "custom";
+
+type DateRangeValidationOptions = {
+  maxMonths?: number;
+};
 
 const DATE_VALUE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const MAX_CUSTOM_REPORT_RANGE_MONTHS = 12;
+export const MAX_CUSTOM_REPORT_RANGE_MESSAGE = "Selecciona un rango de hasta 12 meses.";
+export const MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE = "El rango seleccionado supera el máximo de 12 meses.";
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -77,6 +84,20 @@ export function subtractMonthsFromDateValue(value: string, months: number) {
   return formatUtcDateValue(new Date(Date.UTC(parsed.year, targetMonthIndex, targetDay)));
 }
 
+export function addMonthsToDateValue(value: string, months: number) {
+  const parsed = parseDateValue(value);
+
+  if (!parsed) {
+    return value;
+  }
+
+  const targetMonthIndex = parsed.month - 1 + months;
+  const lastDayInTargetMonth = new Date(Date.UTC(parsed.year, targetMonthIndex + 1, 0)).getUTCDate();
+  const targetDay = Math.min(parsed.day, lastDayInTargetMonth);
+
+  return formatUtcDateValue(new Date(Date.UTC(parsed.year, targetMonthIndex, targetDay)));
+}
+
 export function getReportPresetRange(preset: Exclude<ReportPeriodPreset, "custom">, today = getTodayDateValue()) {
   if (preset === "last7") {
     return { from: addDaysToDateValue(today, -6), to: today };
@@ -90,7 +111,7 @@ export function getReportPresetRange(preset: Exclude<ReportPeriodPreset, "custom
 }
 
 export function getHistoryPresetRange(
-  preset: Exclude<HistoryPeriodPreset, "custom" | "all">,
+  preset: Exclude<HistoryPeriodPreset, "custom">,
   today = getTodayDateValue(),
 ) {
   return {
@@ -99,7 +120,12 @@ export function getHistoryPresetRange(
   };
 }
 
-export function validateDateRange(from: string, to: string, today = getTodayDateValue()): DateRangeValidationResult {
+export function validateDateRange(
+  from: string,
+  to: string,
+  today = getTodayDateValue(),
+  options: DateRangeValidationOptions = {},
+): DateRangeValidationResult {
   if (!isDateValue(from) || !isDateValue(to)) {
     return { ok: false, error: "Selecciona fechas válidas." };
   }
@@ -110,6 +136,10 @@ export function validateDateRange(from: string, to: string, today = getTodayDate
 
   if (from > today || to > today) {
     return { ok: false, error: "No se puede elegir una fecha posterior a la fecha actual." };
+  }
+
+  if (options.maxMonths && to > addMonthsToDateValue(from, options.maxMonths)) {
+    return { ok: false, error: MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE };
   }
 
   return { ok: true, from, to };

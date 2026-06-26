@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { DatePicker } from "@/components/ui/date-time-picker";
 import {
   currentDocumentCategories,
   reportFormOptions,
@@ -13,6 +15,9 @@ import {
   getHistoryPresetRange,
   getReportPresetRange,
   getTodayDateValue,
+  MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE,
+  MAX_CUSTOM_REPORT_RANGE_MESSAGE,
+  MAX_CUSTOM_REPORT_RANGE_MONTHS,
   type HistoryPeriodPreset,
   type ReportPeriodPreset,
   validateDateRange,
@@ -39,6 +44,8 @@ type DownloadedPdf = {
   title: string;
 };
 
+type ReportDatePickerFieldId = "form-from" | "form-to" | "history-from" | "history-to";
+
 const formPresetLabels: Record<Exclude<ReportPeriodPreset, "custom">, string> = {
   last7: "Últimos 7 días",
   last30: "Últimos 30 días",
@@ -48,7 +55,6 @@ const formPresetLabels: Record<Exclude<ReportPeriodPreset, "custom">, string> = 
 const historyPresetLabels: Record<HistoryPeriodPreset, string> = {
   last6months: "Últimos 6 meses",
   last12months: "Últimos 12 meses",
-  all: "Todo el historial",
   custom: "Rango personalizado",
 };
 const preparingPdfMessage = "Preparando el PDF. Esto puede tardar unos segundos.";
@@ -287,41 +293,214 @@ function PeriodButton({
   );
 }
 
+function formatDateInputValue(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) {
+    return "";
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
+function ReportDateInput({
+  id,
+  value,
+  min,
+  max,
+  activeField,
+  onActiveFieldChange,
+  onChange,
+}: {
+  id: ReportDatePickerFieldId;
+  value: string;
+  min?: string;
+  max: string;
+  activeField: ReportDatePickerFieldId | null;
+  onActiveFieldChange: (field: ReportDatePickerFieldId | null) => void;
+  onChange: (value: string) => void;
+}) {
+  const displayValue = formatDateInputValue(value);
+  const isOpen = activeField === id;
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const updatePickerPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+
+    if (!trigger) {
+      return;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+    const pickerWidth = Math.min(284, window.innerWidth - 24);
+    const estimatedPickerHeight = 292;
+    const bottomTop = rect.bottom + 8;
+    const top = bottomTop + estimatedPickerHeight > window.innerHeight ? rect.top - estimatedPickerHeight - 8 : bottomTop;
+
+    setPickerPosition({
+      left: Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12),
+      top: Math.max(12, top),
+      width: pickerWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    updatePickerPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+
+      if (triggerRef.current?.contains(target) || pickerRef.current?.contains(target)) {
+        return;
+      }
+
+      onActiveFieldChange(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onActiveFieldChange(null);
+      }
+    }
+
+    window.addEventListener("resize", updatePickerPosition);
+    window.addEventListener("scroll", updatePickerPosition, true);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", updatePickerPosition);
+      window.removeEventListener("scroll", updatePickerPosition, true);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onActiveFieldChange, updatePickerPosition]);
+
+  return (
+    <div className="ui-document-date-field">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={() => {
+          updatePickerPosition();
+          onActiveFieldChange(isOpen ? null : id);
+        }}
+        className={`ui-form-control flex items-center text-left ${displayValue ? "" : "text-[#a0a7ad]"}`}
+      >
+        {displayValue || "DD/MM/AAAA"}
+      </button>
+      {isOpen && pickerPosition && typeof document !== "undefined" ? createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[130] bg-[#12110f]/10 backdrop-blur-sm"
+            role="presentation"
+            onMouseDown={() => onActiveFieldChange(null)}
+          />
+          <div
+            ref={pickerRef}
+            style={{
+              left: pickerPosition.left,
+              top: pickerPosition.top,
+              width: pickerPosition.width,
+            }}
+            className="fixed z-[140]"
+          >
+            <DatePicker
+              compact
+              showMonthYearSelect
+              minYear={2023}
+              value={value}
+              min={min}
+              max={max}
+              onChange={(nextValue) => {
+                onChange(nextValue);
+                onActiveFieldChange(null);
+              }}
+            />
+          </div>
+        </>,
+        document.body,
+      ) : null}
+    </div>
+  );
+}
+
 function DateRangeFields({
   from,
   to,
   today,
+  activeField,
+  fromFieldId,
+  toFieldId,
+  isRangeTooLong,
+  onActiveFieldChange,
   onFromChange,
   onToChange,
 }: {
   from: string;
   to: string;
   today: string;
+  activeField: ReportDatePickerFieldId | null;
+  fromFieldId: ReportDatePickerFieldId;
+  toFieldId: ReportDatePickerFieldId;
+  isRangeTooLong: boolean;
+  onActiveFieldChange: (field: ReportDatePickerFieldId | null) => void;
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="grid gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a7f]">Fecha inicial</span>
-        <input
-          type="date"
-          value={from}
-          max={today}
-          onChange={(event) => onFromChange(event.currentTarget.value)}
-          className="min-h-11 rounded-2xl border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#12110f] outline-none transition focus:border-[#2a7f86] focus:ring-4 focus:ring-[#2a7f86]/10"
-        />
-      </label>
-      <label className="grid gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a7f]">Fecha final</span>
-        <input
-          type="date"
-          value={to}
-          max={today}
-          onChange={(event) => onToChange(event.currentTarget.value)}
-          className="min-h-11 rounded-2xl border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#12110f] outline-none transition focus:border-[#2a7f86] focus:ring-4 focus:ring-[#2a7f86]/10"
-        />
-      </label>
+    <div className="grid gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a7f]">Fecha inicial</span>
+          <ReportDateInput
+            id={fromFieldId}
+            value={from}
+            max={to || today}
+            activeField={activeField}
+            onActiveFieldChange={onActiveFieldChange}
+            onChange={onFromChange}
+          />
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a7f]">Fecha final</span>
+          <ReportDateInput
+            id={toFieldId}
+            value={to}
+            min={from || undefined}
+            max={today}
+            activeField={activeField}
+            onActiveFieldChange={onActiveFieldChange}
+            onChange={onToChange}
+          />
+        </label>
+      </div>
+      {isRangeTooLong ? (
+        <p className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium leading-6 text-rose-700">
+          {MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE}
+        </p>
+      ) : (
+        <p className="flex items-center gap-1.5 text-xs font-medium leading-5 text-[#3f747a]">
+          <svg className="h-4 w-4 shrink-0 text-[#2a7f86]" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M8 7.35v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="8" cy="4.85" r="0.75" fill="currentColor" />
+          </svg>
+          {MAX_CUSTOM_REPORT_RANGE_MESSAGE}
+        </p>
+      )}
     </div>
   );
 }
@@ -385,10 +564,11 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
   const [selectedDocumentCategories, setSelectedDocumentCategories] = useState<CurrentDocumentCategoryId[]>(
     currentDocumentCategories.map((category) => category.id),
   );
-  const [historyPreset, setHistoryPreset] = useState<HistoryPeriodPreset>("all");
+  const [historyPreset, setHistoryPreset] = useState<HistoryPeriodPreset>("last6months");
   const [historyFrom, setHistoryFrom] = useState(defaultHistoryRange.from);
   const [historyTo, setHistoryTo] = useState(defaultHistoryRange.to);
   const [activeHistoryCategory, setActiveHistoryCategory] = useState<HistoryDocumentCategoryId | null>(null);
+  const [activeDatePickerField, setActiveDatePickerField] = useState<ReportDatePickerFieldId | null>(null);
   const [isGeneratingForms, setIsGeneratingForms] = useState(false);
   const [isGeneratingDossier, setIsGeneratingDossier] = useState(false);
   const [isGeneratingHistory, setIsGeneratingHistory] = useState(false);
@@ -491,14 +671,16 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
     setFormPreset(preset);
     setFormFrom(range.from);
     setFormTo(range.to);
+    setActiveDatePickerField(null);
     setFormsStatus(null);
   }
 
-  function setQuickHistoryRange(preset: Exclude<HistoryPeriodPreset, "custom" | "all">) {
+  function setQuickHistoryRange(preset: Exclude<HistoryPeriodPreset, "custom">) {
     const range = getHistoryPresetRange(preset, today);
     setHistoryPreset(preset);
     setHistoryFrom(range.from);
     setHistoryTo(range.to);
+    setActiveDatePickerField(null);
     setHistoryStatus(null);
   }
 
@@ -551,7 +733,7 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
       return;
     }
 
-    const validation = validateDateRange(formFrom, formTo, today);
+    const validation = validateDateRange(formFrom, formTo, today, { maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS });
 
     if (!selectedForms.length) {
       setFormsStatus({ tone: "error", text: "Selecciona al menos un formulario." });
@@ -647,18 +829,16 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
       period: historyPreset,
     });
 
-    if (historyPreset !== "all") {
-      const range = historyPreset === "custom" ? { from: historyFrom, to: historyTo } : getHistoryPresetRange(historyPreset, today);
-      const validation = validateDateRange(range.from, range.to, today);
+    const range = historyPreset === "custom" ? { from: historyFrom, to: historyTo } : getHistoryPresetRange(historyPreset, today);
+    const validation = validateDateRange(range.from, range.to, today, { maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS });
 
-      if (!validation.ok) {
-        setHistoryStatus({ tone: "error", text: validation.error });
-        return;
-      }
-
-      params.set("from", validation.from);
-      params.set("to", validation.to);
+    if (!validation.ok) {
+      setHistoryStatus({ tone: "error", text: validation.error });
+      return;
     }
+
+    params.set("from", validation.from);
+    params.set("to", validation.to);
 
     isHistoryGenerationInFlight.current = true;
     setIsGeneratingHistory(true);
@@ -683,7 +863,20 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
     }
   }
 
-  const formRangeInvalid = !validateDateRange(formFrom, formTo, today).ok;
+  const formRangeValidation = validateDateRange(formFrom, formTo, today, {
+    maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS,
+  });
+  const historyRangeValidation = validateDateRange(historyFrom, historyTo, today, {
+    maxMonths: MAX_CUSTOM_REPORT_RANGE_MONTHS,
+  });
+  const formRangeInvalid = !formRangeValidation.ok;
+  const historyRangeInvalid = !historyRangeValidation.ok;
+  const formCustomRangeIsTooLong =
+    formPreset === "custom" && !formRangeValidation.ok && formRangeValidation.error === MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE;
+  const historyCustomRangeIsTooLong =
+    historyPreset === "custom" &&
+    !historyRangeValidation.ok &&
+    historyRangeValidation.error === MAX_CUSTOM_REPORT_RANGE_ERROR_MESSAGE;
   const documentsSummary = getSelectionSummary(
     selectedDocumentCategories.length,
     currentDocumentCategories.length,
@@ -713,6 +906,9 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
               active={formPreset === "custom"}
               onClick={() => {
                 setFormPreset("custom");
+                setFormFrom("");
+                setFormTo("");
+                setActiveDatePickerField(null);
                 setFormsStatus(null);
               }}
             />
@@ -723,6 +919,11 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
               from={formFrom}
               to={formTo}
               today={today}
+              activeField={activeDatePickerField}
+              fromFieldId="form-from"
+              toFieldId="form-to"
+              isRangeTooLong={formCustomRangeIsTooLong}
+              onActiveFieldChange={setActiveDatePickerField}
               onFromChange={(value) => {
                 setFormFrom(value);
                 setFormsStatus(null);
@@ -912,18 +1113,13 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
                         onClick={() => setQuickHistoryRange("last12months")}
                       />
                       <PeriodButton
-                        label={historyPresetLabels.all}
-                        active={historyPreset === "all"}
-                        onClick={() => {
-                          setHistoryPreset("all");
-                          setHistoryStatus(null);
-                        }}
-                      />
-                      <PeriodButton
                         label={historyPresetLabels.custom}
                         active={historyPreset === "custom"}
                         onClick={() => {
                           setHistoryPreset("custom");
+                          setHistoryFrom("");
+                          setHistoryTo("");
+                          setActiveDatePickerField(null);
                           setHistoryStatus(null);
                         }}
                       />
@@ -934,6 +1130,11 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
                         from={historyFrom}
                         to={historyTo}
                         today={today}
+                        activeField={activeDatePickerField}
+                        fromFieldId="history-from"
+                        toFieldId="history-to"
+                        isRangeTooLong={historyCustomRangeIsTooLong}
+                        onActiveFieldChange={setActiveDatePickerField}
                         onFromChange={(value) => {
                           setHistoryFrom(value);
                           setHistoryStatus(null);
@@ -948,10 +1149,10 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
                     <StatusAlert message={historyStatus} />
                     <div className="grid gap-3 sm:flex sm:items-center">
                       <PrimaryButton
-                        disabled={isGeneratingHistory}
+                        disabled={isGeneratingHistory || (historyPreset === "custom" && historyRangeInvalid)}
                         onClick={() => generateHistoryPdf(category.id)}
                       >
-                          {isGeneratingHistory ? "Preparando PDF..." : generatePdfButtonLabel}
+                        {isGeneratingHistory ? "Preparando PDF..." : generatePdfButtonLabel}
                       </PrimaryButton>
                       <ActionButtons
                         downloadedPdf={historyPdf}

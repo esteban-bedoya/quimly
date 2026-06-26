@@ -59,7 +59,7 @@ type BranchDetailViewProps = {
 type BranchSectionKey = "home" | "operational" | "compliance";
 
 const branchHeaderDescriptions: Record<BranchSectionKey, string | null> = {
-  home: "Exporta los reportes periódicos y unifica la documentación en PDF para descargar.",
+  home: "Exporta los reportes periódicos y unifica la documentación en un PDF para descargar.",
   operational: "Diligencia los formatos normativos y gestiona los puntos de acceso QR para la operación.",
   compliance: "Monitorea vencimientos, visualiza y gestiona los archivos normativos del establecimiento.",
 };
@@ -86,7 +86,7 @@ function BranchLayout({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const basePath = `/dashboard/sedes/${company.slug}/${branch.slug}`;
   const navigation = [
-    { key: "home", href: basePath, label: "Panel" },
+    { key: "home", href: basePath, label: "Reportes" },
     { key: "operational", href: `${basePath}/operacion`, label: "Formularios" },
     { key: "compliance", href: `${basePath}/cumplimiento`, label: "Documentos" },
   ] as const;
