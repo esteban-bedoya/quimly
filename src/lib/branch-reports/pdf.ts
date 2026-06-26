@@ -457,7 +457,7 @@ export async function createSanitaryDossierPdf({
   bundles: PdfDocumentBundleWithFiles[];
 }) {
   const builder = await createGeneratedDocumentBase({
-    title: "Expediente sanitario",
+    title: "Documentos sanitarios",
     companyName,
     branchName,
     generatedAt,

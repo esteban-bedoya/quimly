@@ -1037,7 +1037,7 @@ export function BranchLandingView({
 }: Pick<BranchDetailViewProps, "company" | "branch"> & { reportPanelData: BranchReportPanelData }) {
   return (
     <BranchLayout company={company} branch={branch} currentSection="home">
-      <section aria-label="Reportes de la sede" className={`min-h-[32rem] rounded-[1.8rem] ${productCardSurface}`}>
+      <section aria-label="Reportes de la sede" className="min-h-[32rem]">
         <BranchReportsPanel companySlug={company.slug} branchSlug={branch.slug} data={reportPanelData} />
       </section>
     </BranchLayout>

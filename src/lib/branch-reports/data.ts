@@ -311,8 +311,12 @@ function buildCurrentCategoryBundle(
 function buildCurrentCategoryCountLabel(source: BranchReportDocumentSource, categoryId: CurrentDocumentCategoryId) {
   const bundle = buildCurrentCategoryBundle(source, categoryId);
 
-  if (categoryId === "pest_control" || categoryId === "water_tank_cleaning") {
-    return bundle.entries.length ? "1 certificado actual" : "Sin certificado actual";
+  if (categoryId === "sanitation_plan") {
+    return bundle.entries.length ? "1 archivo" : "Sin archivos disponibles";
+  }
+
+  if (categoryId === "pest_control" || categoryId === "water_tank_cleaning" || categoryId === "acu_final_disposal") {
+    return bundle.entries.length ? "Último certificado" : "Sin certificado actual";
   }
 
   if (categoryId === "staff_records") {
@@ -349,10 +353,9 @@ function getHistoricalEntries(
 ) {
   const category = getHistoryDocumentCategory(categoryId);
   const files = sortFilesNewestFirst(byDocumentKind(source.files, category.documentKind));
-  const historicalFiles = files.slice(1);
 
   return sortEntriesOldestFirst(
-    historicalFiles
+    files
       .filter((file) => {
         if (!range) {
           return true;
@@ -368,7 +371,12 @@ function getHistoricalEntries(
 function buildHistoricalCountLabel(source: BranchReportDocumentSource, categoryId: HistoryDocumentCategoryId) {
   const category = getHistoryDocumentCategory(categoryId);
   const count = getHistoricalEntries(source, categoryId).length;
-  return countLabel(count, category.fileSingular, category.filePlural, "almacenados");
+
+  if (!count) {
+    return `Sin ${category.filePlural} almacenados`;
+  }
+
+  return `${count} ${count === 1 ? category.fileSingular : category.filePlural}`;
 }
 
 function mapNamedEntity(row: NamedEntityRow): BranchReportNamedEntity {

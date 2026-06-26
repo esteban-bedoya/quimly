@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   currentDocumentCategories,
@@ -200,6 +200,14 @@ function SectionHeader({
   );
 }
 
+function ReportPanelCard({ children }: { children: ReactNode }) {
+  return (
+    <section className="grid gap-5 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
+      {children}
+    </section>
+  );
+}
+
 function SelectionActions({
   summary,
   onSelectAll,
@@ -333,8 +341,26 @@ function CheckboxRow({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.currentTarget.checked)}
-        className="mt-1 h-5 w-5 shrink-0 accent-[#2a7f86]"
+        className="peer sr-only"
       />
+      <span
+        aria-hidden="true"
+        className={`mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition duration-150 peer-focus-visible:ring-4 peer-focus-visible:ring-[#2a7f86]/15 ${
+          checked
+            ? "border-[#2a7f86] bg-[#2a7f86] text-white shadow-[0_6px_14px_rgba(42,127,134,0.24)]"
+            : "border-[#bcc4ca] bg-white text-transparent"
+        }`}
+      >
+        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
+          <path
+            d="M3.5 8.2 6.5 11 12.5 5"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2.2"
+          />
+        </svg>
+      </span>
       <span className="min-w-0">
         <span className="block text-sm font-semibold leading-5 text-[#12110f]">{title}</span>
         {detail ? <span className="mt-1 block text-xs font-medium leading-5 text-[#7f878d]">{detail}</span> : null}
@@ -555,7 +581,7 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
     try {
       const result = await downloadPdf({
         url: `${basePath}/reportes/expediente-sanitario.pdf?${params.toString()}`,
-        title: "Expediente sanitario",
+        title: "Documentos sanitarios",
         setter: setDossierPdf,
       });
 
@@ -632,8 +658,8 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
   );
 
   return (
-    <div className="grid gap-8 p-4 sm:p-6">
-      <section className="grid gap-5">
+    <div className="grid gap-4">
+      <ReportPanelCard>
         <SectionHeader
           title="Reportes de formularios"
           description="Selecciona el periodo y los formularios que deseas incluir."
@@ -716,170 +742,168 @@ export function BranchReportsPanel({ companySlug, branchSlug, data }: BranchRepo
             onShare={() => shareDownloadedPdf(formsPdf, setFormsPdf, setFormsStatus)}
           />
         </div>
-      </section>
+      </ReportPanelCard>
 
-      <section className="grid gap-6 border-t border-[#e6eaed] pt-8">
-        <div className="grid gap-5">
-          <SectionHeader
-            title="Documentos sanitarios"
-            description="Selecciona las categorías que deseas incluir. Quimly unirá los archivos actualmente registrados en un solo PDF."
+      <ReportPanelCard>
+        <SectionHeader
+          title="Documentos sanitarios"
+          description="Selecciona las categorías que deseas incluir. Quimly unirá los archivos actualmente registrados en un solo PDF."
+        />
+
+        <div className="grid gap-2">
+          <SelectionActions
+            summary={documentsSummary}
+            onSelectAll={() => setSelectedDocumentCategories(currentDocumentCategories.map((category) => category.id))}
+            onClear={() => setSelectedDocumentCategories([])}
           />
-
-          <div className="grid gap-2">
-            <SelectionActions
-              summary={documentsSummary}
-              onSelectAll={() => setSelectedDocumentCategories(currentDocumentCategories.map((category) => category.id))}
-              onClear={() => setSelectedDocumentCategories([])}
-            />
-            <div className="overflow-hidden rounded-[1.2rem] border border-[#e6eaed] bg-white/60 px-4">
-              {data.documentCategories.map((category) => (
-                <CheckboxRow
-                  key={category.id}
-                  checked={selectedDocumentCategories.includes(category.id)}
-                  title={category.title}
-                  detail={category.countLabel}
-                  onChange={(checked) => {
-                    setSelectedDocumentCategories((currentSelection) =>
-                      checked
-                        ? [...currentSelection, category.id]
-                        : currentSelection.filter((categoryId) => categoryId !== category.id),
-                    );
-                    setDocumentsStatus(null);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {selectedMissingDocumentCategories.length ? (
-            <StatusAlert
-              message={{
-                tone: "warning",
-                text: allSelectedDocumentCategoriesAreMissing
-                  ? "No hay archivos disponibles en las categorías seleccionadas."
-                  : `Se generará el expediente con las categorías que tengan archivos. No hay archivos disponibles en ${selectedMissingDocumentCategories
-                      .map((category) => category.title)
-                      .join(", ")}.`,
-              }}
-            />
-          ) : null}
-
-          <StatusAlert message={documentsStatus} />
-          <div className="grid gap-3 sm:flex sm:items-center">
-            <PrimaryButton
-              disabled={isGeneratingDossier || !selectedDocumentCategories.length}
-              onClick={generateSanitaryDossier}
-            >
-              {isGeneratingDossier ? "Preparando PDF..." : "Generar expediente sanitario en PDF"}
-            </PrimaryButton>
-            <ActionButtons
-              downloadedPdf={dossierPdf}
-              onOpen={() => openGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
-              onDownload={() => downloadGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
-              onShare={() => shareDownloadedPdf(dossierPdf, setDossierPdf, setDocumentsStatus)}
-            />
+          <div className="overflow-hidden rounded-[1.2rem] border border-[#e6eaed] bg-white/60 px-4">
+            {data.documentCategories.map((category) => (
+              <CheckboxRow
+                key={category.id}
+                checked={selectedDocumentCategories.includes(category.id)}
+                title={category.title}
+                detail={category.countLabel}
+                onChange={(checked) => {
+                  setSelectedDocumentCategories((currentSelection) =>
+                    checked
+                      ? [...currentSelection, category.id]
+                      : currentSelection.filter((categoryId) => categoryId !== category.id),
+                  );
+                  setDocumentsStatus(null);
+                }}
+              />
+            ))}
           </div>
         </div>
 
-        <div className="grid gap-4 border-t border-[#e6eaed] pt-6">
-          <SectionHeader
-            title="Historial documental"
-            description="Descarga certificados y soportes almacenados anteriormente."
+        {selectedMissingDocumentCategories.length ? (
+          <StatusAlert
+            message={{
+              tone: "warning",
+              text: allSelectedDocumentCategoriesAreMissing
+                ? "No hay archivos disponibles en las categorías seleccionadas."
+                : `Se generará el expediente con las categorías que tengan archivos. No hay archivos disponibles en ${selectedMissingDocumentCategories
+                    .map((category) => category.title)
+                    .join(", ")}.`,
+            }}
           />
+        ) : null}
 
-          <div className="overflow-hidden rounded-[1.2rem] border border-[#e6eaed] bg-white/60">
-            {data.historyCategories.map((category) => {
-              const isActive = activeHistoryCategory === category.id;
+        <StatusAlert message={documentsStatus} />
+        <div className="grid gap-3 sm:flex sm:items-center">
+          <PrimaryButton
+            disabled={isGeneratingDossier || !selectedDocumentCategories.length}
+            onClick={generateSanitaryDossier}
+          >
+            {isGeneratingDossier ? "Preparando PDF..." : "Generar expediente sanitario en PDF"}
+          </PrimaryButton>
+          <ActionButtons
+            downloadedPdf={dossierPdf}
+            onOpen={() => openGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
+            onDownload={() => downloadGeneratedReport(dossierPdf, setDossierPdf, setDocumentsStatus)}
+            onShare={() => shareDownloadedPdf(dossierPdf, setDossierPdf, setDocumentsStatus)}
+          />
+        </div>
+      </ReportPanelCard>
 
-              return (
-                <div key={category.id} className="border-b border-[#e6eaed] p-4 last:border-b-0">
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                    <div>
-                      <h3 className="text-sm font-semibold leading-5 text-[#12110f]">{category.title}</h3>
-                      <p className="mt-1 text-xs font-medium leading-5 text-[#7f878d]">{category.countLabel}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
-                      onClick={() => {
-                        setActiveHistoryCategory(isActive ? null : category.id);
-                        setHistoryStatus(null);
-                      }}
-                    >
-                      Descargar historial
-                    </button>
+      <ReportPanelCard>
+        <SectionHeader
+          title="Historial documental"
+          description="Descarga certificados y soportes almacenados anteriormente."
+        />
+
+        <div className="overflow-hidden rounded-[1.2rem] border border-[#e6eaed] bg-white/60">
+          {data.historyCategories.map((category) => {
+            const isActive = activeHistoryCategory === category.id;
+
+            return (
+              <div key={category.id} className="border-b border-[#e6eaed] p-4 last:border-b-0">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div>
+                    <h3 className="text-sm font-semibold leading-5 text-[#12110f]">{category.title}</h3>
+                    <p className="mt-1 text-xs font-medium leading-5 text-[#7f878d]">{category.countLabel}</p>
                   </div>
-
-                  {isActive ? (
-                    <div className="mt-4 grid gap-4 rounded-[1rem] border border-[#e6eaed] bg-[#f8fafb] p-4">
-                      <div className="flex flex-wrap gap-2" aria-label="Periodo del historial documental">
-                        <PeriodButton
-                          label={historyPresetLabels.last6months}
-                          active={historyPreset === "last6months"}
-                          onClick={() => setQuickHistoryRange("last6months")}
-                        />
-                        <PeriodButton
-                          label={historyPresetLabels.last12months}
-                          active={historyPreset === "last12months"}
-                          onClick={() => setQuickHistoryRange("last12months")}
-                        />
-                        <PeriodButton
-                          label={historyPresetLabels.all}
-                          active={historyPreset === "all"}
-                          onClick={() => {
-                            setHistoryPreset("all");
-                            setHistoryStatus(null);
-                          }}
-                        />
-                        <PeriodButton
-                          label={historyPresetLabels.custom}
-                          active={historyPreset === "custom"}
-                          onClick={() => {
-                            setHistoryPreset("custom");
-                            setHistoryStatus(null);
-                          }}
-                        />
-                      </div>
-
-                      {historyPreset === "custom" ? (
-                        <DateRangeFields
-                          from={historyFrom}
-                          to={historyTo}
-                          today={today}
-                          onFromChange={(value) => {
-                            setHistoryFrom(value);
-                            setHistoryStatus(null);
-                          }}
-                          onToChange={(value) => {
-                            setHistoryTo(value);
-                            setHistoryStatus(null);
-                          }}
-                        />
-                      ) : null}
-
-                      <StatusAlert message={historyStatus} />
-                      <div className="grid gap-3 sm:flex sm:items-center">
-                        <PrimaryButton
-                          disabled={isGeneratingHistory}
-                          onClick={() => generateHistoryPdf(category.id)}
-                        >
-                          {isGeneratingHistory ? "Preparando PDF..." : "Generar PDF histórico"}
-                        </PrimaryButton>
-                        <ActionButtons
-                          downloadedPdf={historyPdf}
-                          onOpen={() => openGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
-                          onDownload={() => downloadGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
-                          onShare={() => shareDownloadedPdf(historyPdf, setHistoryPdf, setHistoryStatus)}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#bcc4ca] bg-white px-4 text-sm font-semibold text-[#4f5961] transition active:scale-[0.98]"
+                    onClick={() => {
+                      setActiveHistoryCategory(isActive ? null : category.id);
+                      setHistoryStatus(null);
+                    }}
+                  >
+                    Descargar historial
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+
+                {isActive ? (
+                  <div className="mt-4 grid gap-4 rounded-[1rem] border border-[#e6eaed] bg-[#f8fafb] p-4">
+                    <div className="flex flex-wrap gap-2" aria-label="Periodo del historial documental">
+                      <PeriodButton
+                        label={historyPresetLabels.last6months}
+                        active={historyPreset === "last6months"}
+                        onClick={() => setQuickHistoryRange("last6months")}
+                      />
+                      <PeriodButton
+                        label={historyPresetLabels.last12months}
+                        active={historyPreset === "last12months"}
+                        onClick={() => setQuickHistoryRange("last12months")}
+                      />
+                      <PeriodButton
+                        label={historyPresetLabels.all}
+                        active={historyPreset === "all"}
+                        onClick={() => {
+                          setHistoryPreset("all");
+                          setHistoryStatus(null);
+                        }}
+                      />
+                      <PeriodButton
+                        label={historyPresetLabels.custom}
+                        active={historyPreset === "custom"}
+                        onClick={() => {
+                          setHistoryPreset("custom");
+                          setHistoryStatus(null);
+                        }}
+                      />
+                    </div>
+
+                    {historyPreset === "custom" ? (
+                      <DateRangeFields
+                        from={historyFrom}
+                        to={historyTo}
+                        today={today}
+                        onFromChange={(value) => {
+                          setHistoryFrom(value);
+                          setHistoryStatus(null);
+                        }}
+                        onToChange={(value) => {
+                          setHistoryTo(value);
+                          setHistoryStatus(null);
+                        }}
+                      />
+                    ) : null}
+
+                    <StatusAlert message={historyStatus} />
+                    <div className="grid gap-3 sm:flex sm:items-center">
+                      <PrimaryButton
+                        disabled={isGeneratingHistory}
+                        onClick={() => generateHistoryPdf(category.id)}
+                      >
+                        {isGeneratingHistory ? "Preparando PDF..." : "Generar PDF histórico"}
+                      </PrimaryButton>
+                      <ActionButtons
+                        downloadedPdf={historyPdf}
+                        onOpen={() => openGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
+                        onDownload={() => downloadGeneratedReport(historyPdf, setHistoryPdf, setHistoryStatus)}
+                        onShare={() => shareDownloadedPdf(historyPdf, setHistoryPdf, setHistoryStatus)}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
-      </section>
+      </ReportPanelCard>
     </div>
   );
 }

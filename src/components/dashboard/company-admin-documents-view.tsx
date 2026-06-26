@@ -706,9 +706,53 @@ function formatCountLabel(count: number, singularLabel: string, pluralLabel: str
   return `${count} ${count === 1 ? singularLabel : pluralLabel} ${count === 1 ? singularAction : pluralAction}`;
 }
 
+function formatFileCountLabel(count: number) {
+  return `${count} ${count === 1 ? "archivo" : "archivos"}`;
+}
+
+function formatGroupedFileCountLabel(fileCount: number, ownerCount: number, singularOwner: string, pluralOwner: string) {
+  if (!fileCount) {
+    return "Sin archivos disponibles";
+  }
+
+  return `${formatFileCountLabel(fileCount)} de ${ownerCount} ${ownerCount === 1 ? singularOwner : pluralOwner}`;
+}
+
+function formatCertificateCountWithoutStatus(count: number) {
+  return `${count} ${count === 1 ? "certificado" : "certificados"}`;
+}
+
+function countChemicalProductFiles(products: ChemicalProductRecord[]) {
+  return products.reduce(
+    (summary, product) => {
+      const fileCount = Number(Boolean(product.technicalSheet.file)) + Number(Boolean(product.safetySheet.file));
+
+      return {
+        fileCount: summary.fileCount + fileCount,
+        ownerCount: summary.ownerCount + (fileCount ? 1 : 0),
+      };
+    },
+    { fileCount: 0, ownerCount: 0 },
+  );
+}
+
+function countStaffFiles(staffMembers: StaffRecord[]) {
+  return staffMembers.reduce(
+    (summary, staffMember) => {
+      const fileCount = Number(Boolean(staffMember.foodHandlingPdf.file)) + Number(Boolean(staffMember.medicalExamPdf.file));
+
+      return {
+        fileCount: summary.fileCount + fileCount,
+        ownerCount: summary.ownerCount + (fileCount ? 1 : 0),
+      };
+    },
+    { fileCount: 0, ownerCount: 0 },
+  );
+}
+
 function formatStoredRecordCount(sectionId: DocumentSectionId, count: number) {
   if (sectionId === "sanitation_plan") {
-    return formatCountLabel(count, "plan", "planes", "almacenado", "almacenados");
+    return count ? "1 archivo" : "Sin archivos disponibles";
   }
 
   if (sectionId === "staff_records") {
@@ -719,7 +763,7 @@ function formatStoredRecordCount(sectionId: DocumentSectionId, count: number) {
     return formatCountLabel(count, "producto", "productos", "registrado", "registrados");
   }
 
-  return formatCountLabel(count, "certificado", "certificados", "almacenado", "almacenados");
+  return formatCertificateCountWithoutStatus(count);
 }
 
 function getDocumentRegisterActionLabel(sectionId: DocumentSectionId, hasExistingRecord = false) {
@@ -1731,13 +1775,25 @@ export function CompanyAdminDocumentsView({
     acu_final_disposal: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.acu_final_disposal),
     staff_records: getMenuBadgeFromStatusColor(initialSanitaryDocumentCategoryStatuses.staff_records),
   };
+  const staffFilesSummary = countStaffFiles(staffMembers);
+  const chemicalProductFilesSummary = countChemicalProductFiles(chemicalProducts);
   const sectionCountLabels: Record<DocumentSectionId, string> = {
     sanitation_plan: formatStoredRecordCount("sanitation_plan", sanitationPlan ? 1 : 0),
     pest_control: formatStoredRecordCount("pest_control", pestControlRecords.length),
     water_tank_cleaning: formatStoredRecordCount("water_tank_cleaning", waterTankRecords.length),
     acu_final_disposal: formatStoredRecordCount("acu_final_disposal", acuHistory.length),
-    staff_records: formatStoredRecordCount("staff_records", staffMembers.length),
-    chemical_products: formatStoredRecordCount("chemical_products", chemicalProducts.length),
+    staff_records: formatGroupedFileCountLabel(
+      staffFilesSummary.fileCount,
+      staffFilesSummary.ownerCount,
+      "colaborador",
+      "colaboradores",
+    ),
+    chemical_products: formatGroupedFileCountLabel(
+      chemicalProductFilesSummary.fileCount,
+      chemicalProductFilesSummary.ownerCount,
+      "producto",
+      "productos",
+    ),
   };
 
   const resetRegistration = useCallback(() => {
