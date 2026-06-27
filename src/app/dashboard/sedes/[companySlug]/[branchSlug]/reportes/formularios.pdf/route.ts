@@ -19,7 +19,7 @@ import {
   loadOperationalReportSections,
 } from "@/lib/branch-reports/data";
 import { createOperationalFormsReportPdf } from "@/lib/branch-reports/pdf";
-import { isOperationalFormType, operationalFormTypes, type OperationalFormType } from "@/lib/operational-forms";
+import { isOperationalFormType, operationalFormLabels, operationalFormTypes, type OperationalFormType } from "@/lib/operational-forms";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 
@@ -39,6 +39,11 @@ function parseFormTypes(searchParams: URLSearchParams) {
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function formatFormLabel(formType: OperationalFormType) {
+  const title = operationalFormLabels[formType].title;
+  return title.charAt(0) + title.slice(1).toLocaleLowerCase("es-CO");
 }
 
 export async function GET(
@@ -91,6 +96,8 @@ export async function GET(
     });
     queryDurationMs = Date.now() - queryStart;
     recordCount = getTotalOperationalRecords(sections);
+    const includedSections = sections.filter((section) => section.records.length > 0);
+    const missingSections = sections.filter((section) => section.records.length === 0);
 
     if (!recordCount) {
       return jsonError("No se encontraron registros para el periodo seleccionado.", 404);
@@ -103,7 +110,7 @@ export async function GET(
       branchName: branch.name,
       periodLabel,
       generatedAt: new Date().toISOString(),
-      sections,
+      sections: includedSections,
     });
     generationDurationMs = Date.now() - generationStart;
     finalSizeBytes = getBinarySizeBytes(pdf);
@@ -140,11 +147,21 @@ export async function GET(
       result: "success",
     });
 
-    return NextResponse.json(file, {
-      headers: {
-        "Cache-Control": "no-store",
+    return NextResponse.json(
+      {
+        ...file,
+        formReportSummary: {
+          selectedFormCount: selectedFormTypes.length,
+          includedFormCount: includedSections.length,
+          missingForms: missingSections.map((section) => formatFormLabel(section.formType as OperationalFormType)),
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   } catch (error) {
     const deliveryError = error instanceof BranchReportDeliveryError ? error : null;
     logServerError("[branch-report] generation.failed", error, {
