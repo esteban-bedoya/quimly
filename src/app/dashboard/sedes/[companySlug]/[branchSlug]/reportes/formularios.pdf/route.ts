@@ -11,6 +11,7 @@ import {
   BranchReportDeliveryError,
   assertGeneratedPdfSizeAllowed,
   cleanupOldGeneratedBranchReportsBestEffort,
+  formatBranchReportFilename,
   getBinarySizeBytes,
   uploadGeneratedBranchReport,
 } from "@/lib/branch-reports/delivery";
@@ -123,7 +124,7 @@ export async function GET(
       branchId: branch.id,
       reportType,
       pdf,
-      filename: `quimly-reporte-formularios-${branch.slug}-${validation.from}-${validation.to}.pdf`,
+      filename: formatBranchReportFilename("reportes_formularios", branch.name),
     });
     uploadDurationMs = Date.now() - uploadStart;
 

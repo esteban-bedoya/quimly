@@ -11,6 +11,7 @@ import {
   assertDocumentInputSizeAllowed,
   assertGeneratedPdfSizeAllowed,
   cleanupOldGeneratedBranchReportsBestEffort,
+  formatBranchReportFilename,
   getBinarySizeBytes,
   getDocumentInputStats,
   uploadGeneratedBranchReport,
@@ -153,7 +154,7 @@ export async function GET(
       branchId: branch.id,
       reportType,
       pdf,
-      filename: `quimly-historial-${categoryId}-${branch.slug}.pdf`,
+      filename: formatBranchReportFilename("historial_documental", branch.name),
     });
     uploadDurationMs = Date.now() - uploadStart;
 

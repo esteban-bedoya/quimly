@@ -42,6 +42,22 @@ const FOOTER_TEXT = "Powered by Quimly";
 const INDEX_DETAIL_WIDTH = 112;
 const INDEX_COLUMN_GAP = 18;
 const INDEX_TITLE_WIDTH = TEXT_WIDTH - INDEX_DETAIL_WIDTH - INDEX_COLUMN_GAP;
+const PDF_TYPE = {
+  coverTitle: { size: 28, lineHeight: 34 },
+  coverDescription: { size: 11.5, lineHeight: 17 },
+  pageTitle: { size: 20, lineHeight: 26 },
+  separatorTitle: { size: 23, lineHeight: 30 },
+  metadataLabel: { size: 8, lineHeight: 11 },
+  metadataValue: { size: 10.5 },
+  indexTitle: { size: 10.5, lineHeight: 15 },
+  indexDetail: { size: 9 },
+  body: { size: 11, lineHeight: 16 },
+  recordTitle: { size: 11, lineHeight: 15 },
+  recordDate: { size: 9, lineHeight: 12 },
+  recordField: { size: 9.5, lineHeight: 14 },
+  detail: { size: 10, lineHeight: 14 },
+  footer: { size: 8 },
+} as const;
 
 function normalizePdfText(value: string) {
   return value
@@ -173,7 +189,7 @@ function drawFooter(builder: PdfTextBuilder) {
     return;
   }
 
-  const size = 8;
+  const size = PDF_TYPE.footer.size;
   const textWidth = builder.regularFont.widthOfTextAtSize(FOOTER_TEXT, size);
 
   builder.page.drawText(FOOTER_TEXT, {
@@ -188,12 +204,32 @@ function drawFooter(builder: PdfTextBuilder) {
 
 function drawMetadataItem(builder: PdfTextBuilder, label: string, value: string) {
   drawText(builder, label.toLocaleUpperCase("es-CO"), {
-    size: 8,
+    size: PDF_TYPE.metadataLabel.size,
     font: "bold",
     color: TEXT_SOFT,
-    lineHeight: 11,
+    lineHeight: PDF_TYPE.metadataLabel.lineHeight,
   });
-  drawText(builder, value, { size: 10.5, color: TEXT_MUTED, after: 8 });
+  drawText(builder, value, { size: PDF_TYPE.metadataValue.size, color: TEXT_MUTED, after: 8 });
+}
+
+function formatCount(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function drawOverviewIndexTitle(builder: PdfTextBuilder, title: string, subtitle: string) {
+  drawText(builder, title, {
+    size: PDF_TYPE.pageTitle.size,
+    font: "bold",
+    color: BRAND_DARK,
+    lineHeight: PDF_TYPE.pageTitle.lineHeight,
+    after: 8,
+  });
+  drawText(builder, subtitle, {
+    size: PDF_TYPE.body.size,
+    color: TEXT_MUTED,
+    lineHeight: PDF_TYPE.body.lineHeight,
+    after: 8,
+  });
 }
 
 function drawOverviewIndex(
@@ -208,12 +244,12 @@ function drawOverviewIndex(
     items: Array<{ title: string; detail: string }>;
   },
 ) {
-  drawSimplePageTitle(builder, title, subtitle);
+  drawOverviewIndexTitle(builder, title, subtitle);
 
   items.forEach((item, index) => {
-    const titleSize = 10.5;
-    const detailSize = 9;
-    const lineHeight = 15;
+    const titleSize = PDF_TYPE.indexTitle.size;
+    const detailSize = PDF_TYPE.indexDetail.size;
+    const lineHeight = PDF_TYPE.indexTitle.lineHeight;
     const before = 10;
     const after = 10;
     const titleLines = wrapText(`${index + 1}. ${item.title}`, builder.boldFont, titleSize, INDEX_TITLE_WIDTH);
@@ -262,6 +298,7 @@ function drawOverviewIndex(
 
 function drawReportOverviewPage(builder: PdfTextBuilder, {
   title,
+  description,
   companyName,
   branchName,
   generatedAt,
@@ -269,6 +306,7 @@ function drawReportOverviewPage(builder: PdfTextBuilder, {
   index,
 }: {
   title: string;
+  description: string;
   companyName: string;
   branchName: string;
   generatedAt: string;
@@ -280,20 +318,42 @@ function drawReportOverviewPage(builder: PdfTextBuilder, {
   };
 }) {
   builder.y = PAGE_HEIGHT - 76;
-  drawText(builder, title, { size: 28, font: "bold", lineHeight: 34, after: 22 });
+  drawText(builder, title, {
+    size: PDF_TYPE.coverTitle.size,
+    font: "bold",
+    lineHeight: PDF_TYPE.coverTitle.lineHeight,
+    after: 8,
+  });
+  drawText(builder, description, {
+    size: PDF_TYPE.coverDescription.size,
+    color: TEXT_MUTED,
+    lineHeight: PDF_TYPE.coverDescription.lineHeight,
+    after: 22,
+  });
   drawMetadataItem(builder, "Empresa", companyName);
   drawMetadataItem(builder, "Sede", branchName);
-  metadata.forEach((item) => drawMetadataItem(builder, item.label, item.value));
   drawMetadataItem(builder, "Fecha de generación", formatDateTimeForDisplay(generatedAt));
-  drawDivider(builder, 12, 18);
+  metadata.forEach((item) => drawMetadataItem(builder, item.label, item.value));
+  drawDivider(builder, 12, 24);
   drawOverviewIndex(builder, index);
 }
 
 function drawSimplePageTitle(builder: PdfTextBuilder, title: string, subtitle?: string) {
-  drawText(builder, title, { size: 20, font: "bold", color: BRAND_DARK, lineHeight: 26, after: 8 });
+  drawText(builder, title, {
+    size: PDF_TYPE.pageTitle.size,
+    font: "bold",
+    color: BRAND_DARK,
+    lineHeight: PDF_TYPE.pageTitle.lineHeight,
+    after: 8,
+  });
 
   if (subtitle) {
-    drawText(builder, subtitle, { size: 11, color: TEXT_MUTED, lineHeight: 16, after: 8 });
+    drawText(builder, subtitle, {
+      size: PDF_TYPE.body.size,
+      color: TEXT_MUTED,
+      lineHeight: PDF_TYPE.body.lineHeight,
+      after: 8,
+    });
   }
 
   drawDivider(builder, 8, 16);
@@ -302,14 +362,24 @@ function drawSimplePageTitle(builder: PdfTextBuilder, title: string, subtitle?: 
 function drawRecordBlock(builder: PdfTextBuilder, index: number, recordDate: string, fields: Array<{ label: string; value: string }>) {
   const estimatedHeight = 34 + fields.length * 19;
   ensureSpace(builder, estimatedHeight);
-  drawText(builder, `Registro ${index}`, { size: 11, font: "bold", color: BRAND_ACCENT, lineHeight: 15 });
-  drawText(builder, recordDate, { size: 9, color: TEXT_SOFT, lineHeight: 12, after: 4 });
+  drawText(builder, `Registro ${index}`, {
+    size: PDF_TYPE.recordTitle.size,
+    font: "bold",
+    color: BRAND_ACCENT,
+    lineHeight: PDF_TYPE.recordTitle.lineHeight,
+  });
+  drawText(builder, recordDate, {
+    size: PDF_TYPE.recordDate.size,
+    color: TEXT_SOFT,
+    lineHeight: PDF_TYPE.recordDate.lineHeight,
+    after: 4,
+  });
 
   for (const field of fields) {
     drawText(builder, `${field.label}: ${field.value}`, {
-      size: 9.5,
+      size: PDF_TYPE.recordField.size,
       color: TEXT_MUTED,
-      lineHeight: 14,
+      lineHeight: PDF_TYPE.recordField.lineHeight,
       x: PAGE_MARGIN + 10,
       width: TEXT_WIDTH - 10,
     });
@@ -341,6 +411,7 @@ export async function createOperationalFormsReportPdf({
 
   drawReportOverviewPage(builder, {
     title: "Reporte de formularios",
+    description: "Registros operativos incluidos en el periodo consultado.",
     companyName,
     branchName,
     generatedAt,
@@ -350,18 +421,18 @@ export async function createOperationalFormsReportPdf({
       subtitle: "Formularios incluidos en este reporte.",
       items: sections.map((section) => ({
         title: section.title,
-        detail: `${section.records.length} ${section.records.length === 1 ? "registro" : "registros"}`,
+        detail: formatCount(section.records.length, "registro", "registros"),
       })),
     },
   });
 
   for (const section of sections) {
     addPage(builder);
-    drawSimplePageTitle(builder, section.title, `${section.records.length} ${section.records.length === 1 ? "registro" : "registros"} en el periodo.`);
+    drawSimplePageTitle(builder, section.title, `${formatCount(section.records.length, "registro", "registros")} en el periodo.`);
 
     if (!section.records.length) {
       drawText(builder, "No se encontraron registros para este formulario en el periodo seleccionado.", {
-        size: 11,
+        size: PDF_TYPE.body.size,
         color: TEXT_MUTED,
       });
       continue;
@@ -390,33 +461,38 @@ function getBundleFileCount(bundle: Pick<PdfDocumentBundleWithFiles, "entries">)
 
 async function createGeneratedDocumentBase({
   title,
+  description,
   companyName,
   branchName,
   generatedAt,
   metadata,
+  indexSubtitle,
   bundles,
 }: {
   title: string;
+  description: string;
   companyName: string;
   branchName: string;
   generatedAt: string;
   metadata: Array<{ label: string; value: string }>;
+  indexSubtitle: string;
   bundles: PdfDocumentBundleWithFiles[];
 }) {
   const builder = await createTextBuilder();
 
   drawReportOverviewPage(builder, {
     title,
+    description,
     companyName,
     branchName,
     generatedAt,
     metadata,
     index: {
       title: "Índice",
-      subtitle: "Orden de los documentos incluidos.",
+      subtitle: indexSubtitle,
       items: bundles.map((bundle) => ({
         title: bundle.title,
-        detail: `${getBundleFileCount(bundle)} ${getBundleFileCount(bundle) === 1 ? "archivo" : "archivos"}`,
+        detail: formatCount(getBundleFileCount(bundle), "archivo", "archivos"),
       })),
     },
   });
@@ -432,14 +508,29 @@ function addSeparatorPage(
 ) {
   addPage(builder);
   builder.y = PAGE_HEIGHT - 180;
-  drawText(builder, title, { size: 23, font: "bold", lineHeight: 30, after: 12 });
+  drawText(builder, title, {
+    size: PDF_TYPE.separatorTitle.size,
+    font: "bold",
+    lineHeight: PDF_TYPE.separatorTitle.lineHeight,
+    after: 12,
+  });
 
   if (subtitle) {
-    drawText(builder, subtitle, { size: 11, color: TEXT_MUTED, lineHeight: 16, after: 16 });
+    drawText(builder, subtitle, {
+      size: PDF_TYPE.body.size,
+      color: TEXT_MUTED,
+      lineHeight: PDF_TYPE.body.lineHeight,
+      after: 16,
+    });
   }
 
   details.forEach((detail) => {
-    drawText(builder, detail, { size: 10, color: TEXT_SOFT, lineHeight: 14, after: 4 });
+    drawText(builder, detail, {
+      size: PDF_TYPE.detail.size,
+      color: TEXT_SOFT,
+      lineHeight: PDF_TYPE.detail.lineHeight,
+      after: 4,
+    });
   });
 
   drawFooter(builder);
@@ -458,15 +549,17 @@ export async function createSanitaryDossierPdf({
 }) {
   const builder = await createGeneratedDocumentBase({
     title: "Documentos sanitarios",
+    description: "Documentos sanitarios actuales incluidos en este reporte.",
     companyName,
     branchName,
     generatedAt,
-    metadata: [{ label: "Tipo de archivo", value: "Documentos sanitarios actuales" }],
+    metadata: [],
+    indexSubtitle: "Documentos incluidos en este reporte.",
     bundles,
   });
 
   for (const bundle of bundles) {
-    addSeparatorPage(builder, bundle.title, `${bundle.entries.length} ${bundle.entries.length === 1 ? "archivo incluido" : "archivos incluidos"}`);
+    addSeparatorPage(builder, bundle.title, formatCount(bundle.entries.length, "archivo incluido", "archivos incluidos"));
 
     if (bundle.groups?.length) {
       for (const group of bundle.groups) {
@@ -509,13 +602,12 @@ export async function createHistoricalDocumentPdf({
 }) {
   const builder = await createGeneratedDocumentBase({
     title: "Historial documental",
+    description: "Documentos incluidos en el periodo consultado.",
     companyName,
     branchName,
     generatedAt,
-    metadata: [
-      { label: "Categoría", value: categoryTitle },
-      { label: "Periodo consultado", value: periodLabel },
-    ],
+    metadata: [{ label: "Periodo consultado", value: periodLabel }],
+    indexSubtitle: "Documentos incluidos en este reporte.",
     bundles: [bundle],
   });
 

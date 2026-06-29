@@ -11,6 +11,7 @@ import {
   assertDocumentInputSizeAllowed,
   assertGeneratedPdfSizeAllowed,
   cleanupOldGeneratedBranchReportsBestEffort,
+  formatBranchReportFilename,
   getBinarySizeBytes,
   getDocumentInputStats,
   uploadGeneratedBranchReport,
@@ -120,7 +121,7 @@ export async function GET(
       branchId: branch.id,
       reportType,
       pdf,
-      filename: `quimly-expediente-sanitario-${branch.slug}.pdf`,
+      filename: formatBranchReportFilename("documentos_sanitarios", branch.name),
     });
     uploadDurationMs = Date.now() - uploadStart;
 

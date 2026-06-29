@@ -53,6 +53,17 @@ export function getBinarySizeBytes(binary: Buffer | Uint8Array) {
   return binary.byteLength;
 }
 
+export function formatBranchReportFilename(prefix: string, branchName: string) {
+  const normalizedBranchName = branchName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es-CO")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return `${prefix}-${normalizedBranchName || "sede"}.pdf`;
+}
+
 export function getDocumentInputStats(bundles: BranchReportDocumentBundle[]) {
   const filesById = new Map<string, number>();
 
