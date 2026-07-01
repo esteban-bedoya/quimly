@@ -86,6 +86,8 @@ export type OperationalReportField = {
 export type OperationalReportRecord = {
   id: string;
   recordedAt: string;
+  createdAt: string;
+  reportedBy: string;
   fields: OperationalReportField[];
 };
 

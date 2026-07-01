@@ -399,6 +399,7 @@ create table if not exists public.thermal_control_records (
   tipo_formulario public.operational_form_type not null default 'thermal_control',
   fecha_hora_servidor timestamptz not null default now(),
   created_at timestamptz not null default now(),
+  reported_by uuid,
   token_qr_utilizado text not null,
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   equipment_id uuid references public.branch_refrigeration_equipment (id) on delete set null,
@@ -408,10 +409,12 @@ create table if not exists public.thermal_control_records (
   temperature_c numeric(5,2) not null,
   temperature_compliant boolean,
   observations text,
-  constraint thermal_control_records_tipo_check check (tipo_formulario = 'thermal_control')
+  constraint thermal_control_records_tipo_check check (tipo_formulario = 'thermal_control'),
+  constraint thermal_control_records_reported_by_fkey foreign key (reported_by) references public.user_profiles (user_id) on delete set null
 );
 
 alter table public.thermal_control_records
+  add column if not exists reported_by uuid,
   add column if not exists equipment_type public.refrigeration_equipment_type,
   add column if not exists temperature_compliant boolean,
   add column if not exists observations text;
@@ -423,6 +426,7 @@ create table if not exists public.area_sanitation_records (
   tipo_formulario public.operational_form_type not null default 'area_sanitation',
   fecha_hora_servidor timestamptz not null default now(),
   created_at timestamptz not null default now(),
+  reported_by uuid,
   token_qr_utilizado text not null,
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   area_id uuid references public.branch_sanitation_areas (id) on delete set null,
@@ -435,10 +439,12 @@ create table if not exists public.area_sanitation_records (
   constraint area_sanitation_records_cleaning_type_check check (
     cleaning_type is null or cleaning_type in ('Superficial', 'Profunda')
   ),
-  constraint area_sanitation_records_tipo_check check (tipo_formulario = 'area_sanitation')
+  constraint area_sanitation_records_tipo_check check (tipo_formulario = 'area_sanitation'),
+  constraint area_sanitation_records_reported_by_fkey foreign key (reported_by) references public.user_profiles (user_id) on delete set null
 );
 
 alter table public.area_sanitation_records
+  add column if not exists reported_by uuid,
   add column if not exists cleaning_type text,
   add column if not exists used_exclusive_implements boolean,
   add column if not exists used_authorized_chemicals boolean;
@@ -464,6 +470,7 @@ create table if not exists public.supply_reception_records (
   tipo_formulario public.operational_form_type not null default 'supply_reception',
   fecha_hora_servidor timestamptz not null default now(),
   created_at timestamptz not null default now(),
+  reported_by uuid,
   token_qr_utilizado text not null,
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   operator_name text not null,
@@ -477,7 +484,8 @@ create table if not exists public.supply_reception_records (
   organoleptic_adequate boolean not null,
   decision text not null,
   observations text,
-  constraint supply_reception_records_tipo_check check (tipo_formulario = 'supply_reception')
+  constraint supply_reception_records_tipo_check check (tipo_formulario = 'supply_reception'),
+  constraint supply_reception_records_reported_by_fkey foreign key (reported_by) references public.user_profiles (user_id) on delete set null
 );
 
 alter table public.supply_reception_records
@@ -485,6 +493,7 @@ alter table public.supply_reception_records
   alter column expiration_date drop not null;
 
 alter table public.supply_reception_records
+  add column if not exists reported_by uuid,
   add column if not exists product_type text,
   add column if not exists temperature_c numeric(5,1),
   add column if not exists temperature_compliant boolean,
@@ -500,6 +509,7 @@ create table if not exists public.water_quality_records (
   tipo_formulario public.operational_form_type not null default 'water_quality',
   fecha_hora_servidor timestamptz not null default now(),
   created_at timestamptz not null default now(),
+  reported_by uuid,
   token_qr_utilizado text not null,
   qr_code_id uuid references public.branch_form_qr_codes (id) on delete set null,
   operator_name text not null,
@@ -510,15 +520,64 @@ create table if not exists public.water_quality_records (
   observations text,
   constraint water_quality_records_tipo_check check (tipo_formulario = 'water_quality'),
   constraint water_quality_records_chlorine_picker_range check (chlorine_ppm between 0 and 9.9),
-  constraint water_quality_records_ph_picker_range check (ph_level between 0 and 9.9)
+  constraint water_quality_records_ph_picker_range check (ph_level between 0 and 9.9),
+  constraint water_quality_records_reported_by_fkey foreign key (reported_by) references public.user_profiles (user_id) on delete set null
 );
 
 alter table public.water_quality_records
   drop constraint if exists water_quality_records_chlorine_range,
+  add column if not exists reported_by uuid,
   add column if not exists chlorine_compliant boolean,
   add column if not exists ph_level numeric(3,1),
   add column if not exists ph_compliant boolean,
   add column if not exists observations text;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'thermal_control_records_reported_by_fkey'
+      and conrelid = 'public.thermal_control_records'::regclass
+  ) then
+    alter table public.thermal_control_records
+      add constraint thermal_control_records_reported_by_fkey
+      foreign key (reported_by) references public.user_profiles (user_id) on delete set null;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'area_sanitation_records_reported_by_fkey'
+      and conrelid = 'public.area_sanitation_records'::regclass
+  ) then
+    alter table public.area_sanitation_records
+      add constraint area_sanitation_records_reported_by_fkey
+      foreign key (reported_by) references public.user_profiles (user_id) on delete set null;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'supply_reception_records_reported_by_fkey'
+      and conrelid = 'public.supply_reception_records'::regclass
+  ) then
+    alter table public.supply_reception_records
+      add constraint supply_reception_records_reported_by_fkey
+      foreign key (reported_by) references public.user_profiles (user_id) on delete set null;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'water_quality_records_reported_by_fkey'
+      and conrelid = 'public.water_quality_records'::regclass
+  ) then
+    alter table public.water_quality_records
+      add constraint water_quality_records_reported_by_fkey
+      foreign key (reported_by) references public.user_profiles (user_id) on delete set null;
+  end if;
+end $$;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 select
@@ -2081,6 +2140,7 @@ begin
       company_id,
       tipo_formulario,
       fecha_hora_servidor,
+      reported_by,
       token_qr_utilizado,
       qr_code_id,
       equipment_id,
@@ -2096,6 +2156,7 @@ begin
       qr_record.company_id,
       qr_record.form_type,
       recorded_at_value,
+      auth.uid(),
       qr_record.token,
       qr_record.id,
       equipment_record.id,
@@ -2140,6 +2201,7 @@ begin
       company_id,
       tipo_formulario,
       fecha_hora_servidor,
+      reported_by,
       token_qr_utilizado,
       qr_code_id,
       area_id,
@@ -2155,6 +2217,7 @@ begin
       qr_record.company_id,
       qr_record.form_type,
       recorded_at_value,
+      auth.uid(),
       qr_record.token,
       qr_record.id,
       area_record.id,
@@ -2215,6 +2278,7 @@ begin
       company_id,
       tipo_formulario,
       fecha_hora_servidor,
+      reported_by,
       token_qr_utilizado,
       qr_code_id,
       operator_name,
@@ -2234,6 +2298,7 @@ begin
       qr_record.company_id,
       qr_record.form_type,
       recorded_at_value,
+      auth.uid(),
       qr_record.token,
       qr_record.id,
       trim(p_operator_name),
@@ -2281,6 +2346,7 @@ begin
       company_id,
       tipo_formulario,
       fecha_hora_servidor,
+      reported_by,
       token_qr_utilizado,
       qr_code_id,
       operator_name,
@@ -2295,6 +2361,7 @@ begin
       qr_record.company_id,
       qr_record.form_type,
       recorded_at_value,
+      auth.uid(),
       qr_record.token,
       qr_record.id,
       trim(p_operator_name),

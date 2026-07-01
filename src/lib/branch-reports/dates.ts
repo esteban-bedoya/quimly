@@ -181,3 +181,34 @@ export function formatDateTimeForDisplay(value: string) {
     minute: "2-digit",
   }).format(date);
 }
+
+function getDateTimePart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
+  return parts.find((part) => part.type === type)?.value ?? "";
+}
+
+export function formatCompactDateTimeForDisplay(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value || "Sin fecha";
+  }
+
+  const parts = new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const day = getDateTimePart(parts, "day");
+  const month = getDateTimePart(parts, "month").replace(/\.$/, "");
+  const year = getDateTimePart(parts, "year");
+  const hour = getDateTimePart(parts, "hour");
+  const minute = getDateTimePart(parts, "minute");
+  const dayPeriod = getDateTimePart(parts, "dayPeriod").replace(/[\u00a0\u202f]/g, " ").trim();
+  const time = dayPeriod ? `${hour}:${minute} ${dayPeriod}` : `${hour}:${minute}`;
+
+  return `${day} ${month} ${year} · ${time}`;
+}

@@ -44,9 +44,21 @@ type NamedEntityRow = {
   full_name?: string;
 };
 
+type OperationalReportReporterProfileRow = {
+  full_name: string | null;
+  email: string;
+};
+
+type OperationalReportAuditRow = {
+  created_at: string;
+  reported_by_profile: OperationalReportReporterProfileRow | OperationalReportReporterProfileRow[] | null;
+};
+
 type ThermalControlRecordRow = {
   id: string;
   fecha_hora_servidor: string;
+  created_at: string;
+  reported_by_profile: OperationalReportReporterProfileRow | OperationalReportReporterProfileRow[] | null;
   equipment_name: string;
   equipment_type: "refrigerator" | "freezer" | null;
   operator_name: string;
@@ -58,6 +70,8 @@ type ThermalControlRecordRow = {
 type AreaSanitationRecordRow = {
   id: string;
   fecha_hora_servidor: string;
+  created_at: string;
+  reported_by_profile: OperationalReportReporterProfileRow | OperationalReportReporterProfileRow[] | null;
   area_name: string;
   operator_name: string;
   cleaning_type: string | null;
@@ -69,6 +83,8 @@ type AreaSanitationRecordRow = {
 type SupplyReceptionRecordRow = {
   id: string;
   fecha_hora_servidor: string;
+  created_at: string;
+  reported_by_profile: OperationalReportReporterProfileRow | OperationalReportReporterProfileRow[] | null;
   operator_name: string;
   product_name: string;
   provider_name: string | null;
@@ -85,6 +101,8 @@ type SupplyReceptionRecordRow = {
 type WaterQualityRecordRow = {
   id: string;
   fecha_hora_servidor: string;
+  created_at: string;
+  reported_by_profile: OperationalReportReporterProfileRow | OperationalReportReporterProfileRow[] | null;
   operator_name: string;
   chlorine_ppm: number | string;
   chlorine_compliant: boolean;
@@ -520,28 +538,116 @@ function formatNumber(value: number | string | null | undefined, suffix = "") {
   return suffix ? `${display} ${suffix}` : display;
 }
 
+function getSingleRelation<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+function stripAdminSuffix(value: string) {
+  return value.replace(/\s*\(admin\)$/i, "");
+}
+
+function normalizeReportPersonName(value: string | null | undefined) {
+  return stripAdminSuffix(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("es-CO");
+}
+
+function formatReportedByDisplayName(value: string | null | undefined, { isAdmin = false }: { isAdmin?: boolean } = {}) {
+  const displayName = stripAdminSuffix(value?.trim() || "No registrado").trim() || "No registrado";
+  const adminSuffix = isAdmin ? " (Admin)" : "";
+
+  return `${displayName.toLocaleUpperCase("es-CO")}${adminSuffix}`;
+}
+
+function formatExecutorDisplayName(value: string, { isAdmin = false }: { isAdmin?: boolean } = {}) {
+  const displayName = stripAdminSuffix(value.trim()).trim() || "No registrado";
+  const adminSuffix = isAdmin ? " (Admin)" : "";
+
+  return `${displayName}${adminSuffix}`;
+}
+
+function getReporterProfileDisplayName(row: OperationalReportAuditRow) {
+  const profile = getSingleRelation(row.reported_by_profile);
+
+  return profile?.full_name?.trim() || profile?.email || null;
+}
+
+function getReportedByDisplayName(row: OperationalReportAuditRow, fallbackName: string) {
+  const profileDisplayName = getReporterProfileDisplayName(row);
+
+  return formatReportedByDisplayName(profileDisplayName || fallbackName, { isAdmin: Boolean(profileDisplayName) });
+}
+
+function getExecutorDisplayName(row: OperationalReportAuditRow & { operator_name: string }) {
+  const profileDisplayName = getReporterProfileDisplayName(row);
+  const isAdmin = Boolean(profileDisplayName && normalizeReportPersonName(profileDisplayName) === normalizeReportPersonName(row.operator_name));
+
+  return formatExecutorDisplayName(row.operator_name, { isAdmin });
+}
+
+function normalizeOperationalFieldLabel(label: string) {
+  const normalizedLabel = label.trim();
+  const normalizedKey = normalizedLabel.toLocaleLowerCase("es-CO");
+
+  if (normalizedKey === "fecha y hora") {
+    return null;
+  }
+
+  if (normalizedKey === "responsable") {
+    return "Ejecutor";
+  }
+
+  return normalizedLabel;
+}
+
 function createOperationalRecord(
   id: string,
   recordedAt: string,
+  createdAt: string,
+  reportedBy: string,
   fields: Array<{ label: string; value: string | null | undefined }>,
 ): OperationalReportRecord {
   return {
     id,
     recordedAt,
+    createdAt,
+    reportedBy,
     fields: fields
-      .filter((field) => field.value !== null && field.value !== undefined && field.value !== "")
-      .map((field) => ({ label: field.label, value: field.value ?? "" })),
+      .map((field) => ({ ...field, label: normalizeOperationalFieldLabel(field.label) }))
+      .filter((field): field is { label: string; value: string } => Boolean(field.label) && field.value !== null && field.value !== undefined && field.value !== "")
+      .map((field) => ({ label: field.label, value: field.value })),
   };
 }
 
+function getOperationalRecordTime(value: string) {
+  const time = Date.parse(value);
+
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function sortOperationalRecords(records: OperationalReportRecord[]) {
-  return [...records].sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  return [...records].sort((left, right) => {
+    const recordedAtDelta = getOperationalRecordTime(right.recordedAt) - getOperationalRecordTime(left.recordedAt);
+
+    if (recordedAtDelta !== 0) {
+      return recordedAtDelta;
+    }
+
+    const createdAtDelta = getOperationalRecordTime(right.createdAt) - getOperationalRecordTime(left.createdAt);
+
+    if (createdAtDelta !== 0) {
+      return createdAtDelta;
+    }
+
+    return right.id.localeCompare(left.id);
+  });
 }
 
 function mapThermalRecord(row: ThermalControlRecordRow): OperationalReportRecord {
-  return createOperationalRecord(row.id, row.fecha_hora_servidor, [
+  return createOperationalRecord(row.id, row.fecha_hora_servidor, row.created_at, getReportedByDisplayName(row, row.operator_name), [
     { label: "Fecha y hora", value: formatDateTimeForDisplay(row.fecha_hora_servidor) },
-    { label: "Responsable", value: row.operator_name },
+    { label: "Responsable", value: getExecutorDisplayName(row) },
     { label: "Equipo", value: row.equipment_name },
     {
       label: "Tipo de equipo",
@@ -554,27 +660,26 @@ function mapThermalRecord(row: ThermalControlRecordRow): OperationalReportRecord
 }
 
 function mapAreaRecord(row: AreaSanitationRecordRow): OperationalReportRecord {
-  return createOperationalRecord(row.id, row.fecha_hora_servidor, [
+  return createOperationalRecord(row.id, row.fecha_hora_servidor, row.created_at, getReportedByDisplayName(row, row.operator_name), [
     { label: "Fecha y hora", value: formatDateTimeForDisplay(row.fecha_hora_servidor) },
-    { label: "Responsable", value: row.operator_name },
+    { label: "Responsable", value: getExecutorDisplayName(row) },
     { label: "Área", value: row.area_name },
     { label: "Tipo de limpieza", value: row.cleaning_type },
     { label: "Implementos exclusivos", value: yesNo(row.used_exclusive_implements) },
     { label: "Químicos autorizados", value: yesNo(row.used_authorized_chemicals) },
-    { label: "Resultado", value: compliantLabel(row.is_compliant) },
   ]);
 }
 
 function mapSupplyRecord(row: SupplyReceptionRecordRow): OperationalReportRecord {
-  return createOperationalRecord(row.id, row.fecha_hora_servidor, [
+  return createOperationalRecord(row.id, row.fecha_hora_servidor, row.created_at, getReportedByDisplayName(row, row.operator_name), [
     { label: "Fecha y hora", value: formatDateTimeForDisplay(row.fecha_hora_servidor) },
-    { label: "Responsable", value: row.operator_name },
+    { label: "Responsable", value: getExecutorDisplayName(row) },
     { label: "Producto", value: row.product_name },
     { label: "Proveedor", value: row.provider_name },
     { label: "Fecha de vencimiento", value: row.expiration_date ? formatDateForDisplay(row.expiration_date) : null },
     { label: "Tipo de producto", value: row.product_type },
     { label: "Temperatura", value: row.temperature_c !== null ? formatNumber(row.temperature_c, "°C") : null },
-    { label: "Temperatura", value: compliantLabel(row.temperature_compliant) },
+    { label: "Resultado temperatura", value: compliantLabel(row.temperature_compliant) },
     { label: "Empaque y fecha", value: yesNo(row.package_intact_date_valid) },
     { label: "Condición organoléptica", value: yesNo(row.organoleptic_adequate) },
     { label: "Decisión", value: row.decision },
@@ -583,13 +688,13 @@ function mapSupplyRecord(row: SupplyReceptionRecordRow): OperationalReportRecord
 }
 
 function mapWaterRecord(row: WaterQualityRecordRow): OperationalReportRecord {
-  return createOperationalRecord(row.id, row.fecha_hora_servidor, [
+  return createOperationalRecord(row.id, row.fecha_hora_servidor, row.created_at, getReportedByDisplayName(row, row.operator_name), [
     { label: "Fecha y hora", value: formatDateTimeForDisplay(row.fecha_hora_servidor) },
-    { label: "Responsable", value: row.operator_name },
+    { label: "Responsable", value: getExecutorDisplayName(row) },
     { label: "Cloro libre residual", value: formatNumber(row.chlorine_ppm, "ppm") },
-    { label: "Cloro", value: compliantLabel(row.chlorine_compliant) },
+    { label: "Resultado cloro", value: compliantLabel(row.chlorine_compliant) },
     { label: "pH", value: formatNumber(row.ph_level) },
-    { label: "pH", value: compliantLabel(row.ph_compliant) },
+    { label: "Resultado pH", value: compliantLabel(row.ph_compliant) },
     { label: "Observaciones", value: row.observations },
   ]);
 }
@@ -613,12 +718,12 @@ export async function loadOperationalReportSections({
   if (wants("thermal_control")) {
     const { data, error } = await supabase
       .from("thermal_control_records")
-      .select("id, fecha_hora_servidor, equipment_name, equipment_type, operator_name, temperature_c, temperature_compliant, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!thermal_control_records_reported_by_fkey(full_name, email), equipment_name, equipment_type, operator_name, temperature_c, temperature_compliant, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
       .lte("fecha_hora_servidor", toIso)
-      .order("fecha_hora_servidor", { ascending: true })
+      .order("fecha_hora_servidor", { ascending: false })
       .returns<ThermalControlRecordRow[]>();
 
     if (error) {
@@ -635,12 +740,12 @@ export async function loadOperationalReportSections({
   if (wants("area_sanitation")) {
     const { data, error } = await supabase
       .from("area_sanitation_records")
-      .select("id, fecha_hora_servidor, area_name, operator_name, cleaning_type, used_exclusive_implements, used_authorized_chemicals, is_compliant")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!area_sanitation_records_reported_by_fkey(full_name, email), area_name, operator_name, cleaning_type, used_exclusive_implements, used_authorized_chemicals, is_compliant")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
       .lte("fecha_hora_servidor", toIso)
-      .order("fecha_hora_servidor", { ascending: true })
+      .order("fecha_hora_servidor", { ascending: false })
       .returns<AreaSanitationRecordRow[]>();
 
     if (error) {
@@ -657,12 +762,12 @@ export async function loadOperationalReportSections({
   if (wants("supply_reception")) {
     const { data, error } = await supabase
       .from("supply_reception_records")
-      .select("id, fecha_hora_servidor, operator_name, product_name, provider_name, expiration_date, product_type, temperature_c, temperature_compliant, package_intact_date_valid, organoleptic_adequate, decision, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!supply_reception_records_reported_by_fkey(full_name, email), operator_name, product_name, provider_name, expiration_date, product_type, temperature_c, temperature_compliant, package_intact_date_valid, organoleptic_adequate, decision, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
       .lte("fecha_hora_servidor", toIso)
-      .order("fecha_hora_servidor", { ascending: true })
+      .order("fecha_hora_servidor", { ascending: false })
       .returns<SupplyReceptionRecordRow[]>();
 
     if (error) {
@@ -679,12 +784,12 @@ export async function loadOperationalReportSections({
   if (wants("water_quality")) {
     const { data, error } = await supabase
       .from("water_quality_records")
-      .select("id, fecha_hora_servidor, operator_name, chlorine_ppm, chlorine_compliant, ph_level, ph_compliant, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!water_quality_records_reported_by_fkey(full_name, email), operator_name, chlorine_ppm, chlorine_compliant, ph_level, ph_compliant, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
       .lte("fecha_hora_servidor", toIso)
-      .order("fecha_hora_servidor", { ascending: true })
+      .order("fecha_hora_servidor", { ascending: false })
       .returns<WaterQualityRecordRow[]>();
 
     if (error) {

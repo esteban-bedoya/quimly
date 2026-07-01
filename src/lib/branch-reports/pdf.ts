@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-import { formatDateForDisplay, formatDateTimeForDisplay } from "@/lib/branch-reports/dates";
+import { formatCompactDateTimeForDisplay, formatDateForDisplay, formatDateTimeForDisplay } from "@/lib/branch-reports/dates";
 import type {
   BranchReportDocumentBundle,
   BranchReportDocumentEntry,
+  OperationalReportRecord,
   OperationalReportSection,
 } from "@/lib/branch-reports/types";
 
@@ -33,15 +34,30 @@ const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const PAGE_MARGIN = 52;
 const TEXT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2;
-const BRAND_DARK = rgb(0.071, 0.067, 0.059);
-const BRAND_ACCENT = rgb(0.165, 0.498, 0.525);
-const TEXT_MUTED = rgb(0.36, 0.4, 0.44);
-const TEXT_SOFT = rgb(0.55, 0.58, 0.61);
-const LINE_SOFT = rgb(0.86, 0.88, 0.9);
+const TEXT_COLOR = rgb(0, 0, 0);
+const METADATA_LABEL_COLOR = rgb(0.28, 0.31, 0.34);
+const RECORD_TITLE_COLOR = rgb(0.165, 0.498, 0.525);
+const FOOTER_TEXT_COLOR = rgb(0.55, 0.58, 0.61);
+const DIVIDER_COLOR = rgb(0.86, 0.88, 0.9);
 const FOOTER_TEXT = "Powered by Quimly";
-const INDEX_DETAIL_WIDTH = 112;
+const PRESERVED_ACRONYMS = ["ACU"] as const;
+const INDEX_DETAIL_WIDTH = 180;
 const INDEX_COLUMN_GAP = 18;
 const INDEX_TITLE_WIDTH = TEXT_WIDTH - INDEX_DETAIL_WIDTH - INDEX_COLUMN_GAP;
+const HISTORY_DETAIL_INDENT = 18;
+const RECORD_FIELD_INDENT = 10;
+const RECORD_FIELD_LABEL_WIDTH = 132;
+const RECORD_FIELD_COLUMN_GAP = 16;
+const RECORD_FIELD_WIDTH = TEXT_WIDTH - RECORD_FIELD_INDENT;
+const RECORD_FIELD_VALUE_WIDTH = RECORD_FIELD_WIDTH - RECORD_FIELD_LABEL_WIDTH - RECORD_FIELD_COLUMN_GAP;
+const DIVIDER_SPACING = {
+  defaultBefore: 14,
+  defaultAfter: 28,
+  coverDescriptionBefore: 8,
+  coverDescriptionAfter: 24,
+  coverMetadataBefore: 18,
+  coverMetadataAfter: 32,
+} as const;
 const PDF_TYPE = {
   coverTitle: { size: 28, lineHeight: 34 },
   coverDescription: { size: 11.5, lineHeight: 17 },
@@ -134,7 +150,7 @@ function drawText(
   {
     size = 10,
     font = "regular",
-    color = BRAND_DARK,
+    color = TEXT_COLOR,
     lineHeight = size * 1.45,
     before = 0,
     after = 0,
@@ -172,14 +188,18 @@ function drawText(
   builder.y -= after;
 }
 
-function drawDivider(builder: PdfTextBuilder, before = 8, after = 14) {
+function drawDivider(
+  builder: PdfTextBuilder,
+  before: number = DIVIDER_SPACING.defaultBefore,
+  after: number = DIVIDER_SPACING.defaultAfter,
+) {
   ensureSpace(builder, before + after + 1);
   builder.y -= before;
   builder.page.drawLine({
     start: { x: PAGE_MARGIN, y: builder.y },
     end: { x: PAGE_WIDTH - PAGE_MARGIN, y: builder.y },
     thickness: 1,
-    color: LINE_SOFT,
+    color: DIVIDER_COLOR,
   });
   builder.y -= after;
 }
@@ -197,7 +217,7 @@ function drawFooter(builder: PdfTextBuilder) {
     y: 26,
     size,
     font: builder.regularFont,
-    color: TEXT_SOFT,
+    color: FOOTER_TEXT_COLOR,
   });
   builder.footerDrawnPages.add(builder.page);
 }
@@ -205,28 +225,35 @@ function drawFooter(builder: PdfTextBuilder) {
 function drawMetadataItem(builder: PdfTextBuilder, label: string, value: string) {
   drawText(builder, label.toLocaleUpperCase("es-CO"), {
     size: PDF_TYPE.metadataLabel.size,
-    font: "bold",
-    color: TEXT_SOFT,
+    color: METADATA_LABEL_COLOR,
     lineHeight: PDF_TYPE.metadataLabel.lineHeight,
   });
-  drawText(builder, value, { size: PDF_TYPE.metadataValue.size, color: TEXT_MUTED, after: 8 });
+  drawText(builder, value, { size: PDF_TYPE.metadataValue.size, after: 8 });
 }
 
 function formatCount(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function formatSentenceTitle(title: string) {
+  const lowerTitle = normalizePdfText(title).toLocaleLowerCase("es-CO");
+  const [firstCharacter = "", ...restCharacters] = Array.from(lowerTitle);
+
+  return PRESERVED_ACRONYMS.reduce(
+    (formattedTitle, acronym) => formattedTitle.replaceAll(`(${acronym.toLocaleLowerCase("es-CO")})`, `(${acronym})`),
+    `${firstCharacter.toLocaleUpperCase("es-CO")}${restCharacters.join("")}`,
+  );
+}
+
 function drawOverviewIndexTitle(builder: PdfTextBuilder, title: string, subtitle: string) {
   drawText(builder, title, {
     size: PDF_TYPE.pageTitle.size,
     font: "bold",
-    color: BRAND_DARK,
     lineHeight: PDF_TYPE.pageTitle.lineHeight,
     after: 8,
   });
   drawText(builder, subtitle, {
     size: PDF_TYPE.body.size,
-    color: TEXT_MUTED,
     lineHeight: PDF_TYPE.body.lineHeight,
     after: 8,
   });
@@ -250,13 +277,12 @@ function drawOverviewIndex(
     const titleSize = PDF_TYPE.indexTitle.size;
     const detailSize = PDF_TYPE.indexDetail.size;
     const lineHeight = PDF_TYPE.indexTitle.lineHeight;
-    const before = 10;
-    const after = 10;
-    const titleLines = wrapText(`${index + 1}. ${item.title}`, builder.boldFont, titleSize, INDEX_TITLE_WIDTH);
+    const before = 12;
+    const after = 8;
+    const titleLines = wrapText(`${index + 1}. ${formatSentenceTitle(item.title)}`, builder.regularFont, titleSize, INDEX_TITLE_WIDTH);
     const detailLines = wrapText(item.detail, builder.regularFont, detailSize, INDEX_DETAIL_WIDTH);
     const rowLineCount = Math.max(titleLines.length, detailLines.length);
-    const hasDivider = index < items.length - 1;
-    const rowHeight = before + rowLineCount * lineHeight + after + (hasDivider ? 1 : 0);
+    const rowHeight = before + rowLineCount * lineHeight + after;
 
     ensureSpace(builder, rowHeight);
     builder.y -= before;
@@ -266,8 +292,8 @@ function drawOverviewIndex(
         x: PAGE_MARGIN,
         y: builder.y - lineIndex * lineHeight,
         size: titleSize,
-        font: builder.boldFont,
-        color: BRAND_DARK,
+        font: builder.regularFont,
+        color: TEXT_COLOR,
       });
     });
 
@@ -278,21 +304,11 @@ function drawOverviewIndex(
         y: builder.y - lineIndex * lineHeight,
         size: detailSize,
         font: builder.regularFont,
-        color: TEXT_SOFT,
+        color: TEXT_COLOR,
       });
     });
 
     builder.y -= rowLineCount * lineHeight + after;
-
-    if (hasDivider) {
-      builder.page.drawLine({
-        start: { x: PAGE_MARGIN, y: builder.y },
-        end: { x: PAGE_WIDTH - PAGE_MARGIN, y: builder.y },
-        thickness: 0.6,
-        color: LINE_SOFT,
-      });
-      builder.y -= 1;
-    }
   });
 }
 
@@ -326,23 +342,21 @@ function drawReportOverviewPage(builder: PdfTextBuilder, {
   });
   drawText(builder, description, {
     size: PDF_TYPE.coverDescription.size,
-    color: TEXT_MUTED,
     lineHeight: PDF_TYPE.coverDescription.lineHeight,
-    after: 22,
+    after: 10,
   });
+  drawDivider(builder, DIVIDER_SPACING.coverDescriptionBefore, DIVIDER_SPACING.coverDescriptionAfter);
   drawMetadataItem(builder, "Empresa", companyName);
   drawMetadataItem(builder, "Sede", branchName);
   drawMetadataItem(builder, "Fecha de generación", formatDateTimeForDisplay(generatedAt));
   metadata.forEach((item) => drawMetadataItem(builder, item.label, item.value));
-  drawDivider(builder, 12, 24);
+  drawDivider(builder, DIVIDER_SPACING.coverMetadataBefore, DIVIDER_SPACING.coverMetadataAfter);
   drawOverviewIndex(builder, index);
 }
 
 function drawSimplePageTitle(builder: PdfTextBuilder, title: string, subtitle?: string) {
   drawText(builder, title, {
     size: PDF_TYPE.pageTitle.size,
-    font: "bold",
-    color: BRAND_DARK,
     lineHeight: PDF_TYPE.pageTitle.lineHeight,
     after: 8,
   });
@@ -350,42 +364,136 @@ function drawSimplePageTitle(builder: PdfTextBuilder, title: string, subtitle?: 
   if (subtitle) {
     drawText(builder, subtitle, {
       size: PDF_TYPE.body.size,
-      color: TEXT_MUTED,
       lineHeight: PDF_TYPE.body.lineHeight,
       after: 8,
     });
   }
 
-  drawDivider(builder, 8, 16);
+  drawDivider(builder);
 }
 
-function drawRecordBlock(builder: PdfTextBuilder, index: number, recordDate: string, fields: Array<{ label: string; value: string }>) {
-  const estimatedHeight = 34 + fields.length * 19;
-  ensureSpace(builder, estimatedHeight);
-  drawText(builder, `Registro ${index}`, {
-    size: PDF_TYPE.recordTitle.size,
-    font: "bold",
-    color: BRAND_ACCENT,
-    lineHeight: PDF_TYPE.recordTitle.lineHeight,
-  });
-  drawText(builder, recordDate, {
-    size: PDF_TYPE.recordDate.size,
-    color: TEXT_SOFT,
-    lineHeight: PDF_TYPE.recordDate.lineHeight,
-    after: 4,
-  });
+function getOperationalRecordTime(value: string) {
+  const time = Date.parse(value);
 
-  for (const field of fields) {
-    drawText(builder, `${field.label}: ${field.value}`, {
-      size: PDF_TYPE.recordField.size,
-      color: TEXT_MUTED,
-      lineHeight: PDF_TYPE.recordField.lineHeight,
-      x: PAGE_MARGIN + 10,
-      width: TEXT_WIDTH - 10,
-    });
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function sortOperationalRecordsNewestFirst(records: OperationalReportRecord[]) {
+  return [...records].sort((left, right) => {
+    const recordedAtDelta = getOperationalRecordTime(right.recordedAt) - getOperationalRecordTime(left.recordedAt);
+
+    if (recordedAtDelta !== 0) {
+      return recordedAtDelta;
+    }
+
+    const createdAtDelta = getOperationalRecordTime(right.createdAt) - getOperationalRecordTime(left.createdAt);
+
+    if (createdAtDelta !== 0) {
+      return createdAtDelta;
+    }
+
+    return right.id.localeCompare(left.id);
+  });
+}
+
+function normalizeRecordFieldLabel(label: string) {
+  const normalizedLabel = normalizePdfText(label);
+  const normalizedKey = normalizedLabel.toLocaleLowerCase("es-CO");
+
+  if (normalizedKey === "fecha y hora") {
+    return null;
   }
 
-  builder.y -= 10;
+  if (normalizedKey === "responsable") {
+    return "Ejecutor";
+  }
+
+  return normalizedLabel;
+}
+
+function getRecordFields(fields: Array<{ label: string; value: string }>) {
+  return fields
+    .map((field) => ({
+      label: normalizeRecordFieldLabel(field.label),
+      value: normalizePdfText(field.value),
+    }))
+    .filter((field): field is { label: string; value: string } => Boolean(field.label) && Boolean(field.value));
+}
+
+function drawTwoColumnFields(builder: PdfTextBuilder, fields: Array<{ label: string; value: string }>, after = 0) {
+  const size = PDF_TYPE.recordField.size;
+  const lineHeight = PDF_TYPE.recordField.lineHeight;
+  const x = PAGE_MARGIN + RECORD_FIELD_INDENT;
+  const valueX = x + RECORD_FIELD_LABEL_WIDTH + RECORD_FIELD_COLUMN_GAP;
+
+  for (const field of fields) {
+    const labelLines = wrapText(field.label, builder.regularFont, size, RECORD_FIELD_LABEL_WIDTH);
+    const valueLines = wrapText(field.value, builder.regularFont, size, RECORD_FIELD_VALUE_WIDTH);
+    const rowLineCount = Math.max(labelLines.length, valueLines.length);
+    const rowHeight = rowLineCount * lineHeight;
+
+    ensureSpace(builder, rowHeight);
+
+    labelLines.forEach((line, lineIndex) => {
+      builder.page.drawText(line, {
+        x,
+        y: builder.y - lineIndex * lineHeight,
+        size,
+        font: builder.regularFont,
+        color: TEXT_COLOR,
+      });
+    });
+
+    valueLines.forEach((line, lineIndex) => {
+      builder.page.drawText(line, {
+        x: valueX,
+        y: builder.y - lineIndex * lineHeight,
+        size,
+        font: builder.regularFont,
+        color: TEXT_COLOR,
+      });
+    });
+
+    builder.y -= rowHeight;
+  }
+
+  builder.y -= after;
+}
+
+function drawRecordSignature(builder: PdfTextBuilder, record: OperationalReportRecord) {
+  const reportedByValue = normalizePdfText(record.reportedBy || "No registrado");
+  const hasAdminSuffix = /\s*\(admin\)$/i.test(reportedByValue);
+  const reportedByName = reportedByValue.replace(/\s*\(admin\)$/i, "").trim() || "No registrado";
+  const reportedBy = `${reportedByName.toLocaleUpperCase("es-CO")}${hasAdminSuffix ? " (Admin)" : ""}`;
+
+  drawText(builder, "Firma del registro", {
+    size: PDF_TYPE.recordField.size,
+    font: "bold",
+    lineHeight: PDF_TYPE.recordField.lineHeight,
+    after: 2,
+    x: PAGE_MARGIN + RECORD_FIELD_INDENT,
+    width: RECORD_FIELD_WIDTH,
+  });
+  drawTwoColumnFields(
+    builder,
+    [
+      { label: "Responsable del reporte", value: reportedBy },
+      { label: "Fecha del registro", value: formatCompactDateTimeForDisplay(record.createdAt) },
+    ],
+    10,
+  );
+}
+
+function drawRecordBlock(builder: PdfTextBuilder, record: OperationalReportRecord) {
+  ensureSpace(builder, 90);
+  drawText(builder, `Acción ejecutada: ${formatCompactDateTimeForDisplay(record.recordedAt)}`, {
+    size: PDF_TYPE.recordTitle.size,
+    color: RECORD_TITLE_COLOR,
+    lineHeight: PDF_TYPE.recordTitle.lineHeight,
+    after: 4,
+  });
+  drawTwoColumnFields(builder, getRecordFields(record.fields), 6);
+  drawRecordSignature(builder, record);
 }
 
 async function saveGeneratedPdf(builder: PdfTextBuilder) {
@@ -428,18 +536,18 @@ export async function createOperationalFormsReportPdf({
 
   for (const section of sections) {
     addPage(builder);
-    drawSimplePageTitle(builder, section.title, `${formatCount(section.records.length, "registro", "registros")} en el periodo.`);
+    const sortedRecords = sortOperationalRecordsNewestFirst(section.records);
+    drawSimplePageTitle(builder, formatSentenceTitle(section.title), `${formatCount(sortedRecords.length, "registro", "registros")} en el periodo.`);
 
-    if (!section.records.length) {
+    if (!sortedRecords.length) {
       drawText(builder, "No se encontraron registros para este formulario en el periodo seleccionado.", {
         size: PDF_TYPE.body.size,
-        color: TEXT_MUTED,
       });
       continue;
     }
 
-    section.records.forEach((record, index) => {
-      drawRecordBlock(builder, index + 1, formatDateTimeForDisplay(record.recordedAt), record.fields);
+    sortedRecords.forEach((record) => {
+      drawRecordBlock(builder, record);
     });
   }
 
@@ -457,6 +565,40 @@ async function appendPdfBytes(target: PDFDocument, sourceBytes: Uint8Array) {
 
 function getBundleFileCount(bundle: Pick<PdfDocumentBundleWithFiles, "entries">) {
   return bundle.entries.length;
+}
+
+function getGroupedBundleOwnerLabel(bundle: Pick<PdfDocumentBundleWithFiles, "id">) {
+  if (bundle.id === "staff_records") {
+    return { singular: "colaborador", plural: "colaboradores" };
+  }
+
+  if (bundle.id === "chemical_products") {
+    return { singular: "producto", plural: "productos" };
+  }
+
+  return null;
+}
+
+function formatBundleFileSummary(
+  bundle: Pick<PdfDocumentBundleWithFiles, "id" | "entries" | "groups">,
+  { includeIncluded = false }: { includeIncluded?: boolean } = {},
+) {
+  const fileCount = getBundleFileCount(bundle);
+  const ownerLabel = getGroupedBundleOwnerLabel(bundle);
+
+  if (ownerLabel && bundle.groups?.length) {
+    return `${formatCount(fileCount, "archivo", "archivos")} de ${formatCount(
+      bundle.groups.length,
+      ownerLabel.singular,
+      ownerLabel.plural,
+    )}`;
+  }
+
+  if (includeIncluded) {
+    return formatCount(fileCount, "archivo incluido", "archivos incluidos");
+  }
+
+  return formatCount(fileCount, "archivo", "archivos");
 }
 
 async function createGeneratedDocumentBase({
@@ -492,7 +634,7 @@ async function createGeneratedDocumentBase({
       subtitle: indexSubtitle,
       items: bundles.map((bundle) => ({
         title: bundle.title,
-        detail: formatCount(getBundleFileCount(bundle), "archivo", "archivos"),
+        detail: formatBundleFileSummary(bundle),
       })),
     },
   });
@@ -510,7 +652,6 @@ function addSeparatorPage(
   builder.y = PAGE_HEIGHT - 180;
   drawText(builder, title, {
     size: PDF_TYPE.separatorTitle.size,
-    font: "bold",
     lineHeight: PDF_TYPE.separatorTitle.lineHeight,
     after: 12,
   });
@@ -518,7 +659,6 @@ function addSeparatorPage(
   if (subtitle) {
     drawText(builder, subtitle, {
       size: PDF_TYPE.body.size,
-      color: TEXT_MUTED,
       lineHeight: PDF_TYPE.body.lineHeight,
       after: 16,
     });
@@ -527,13 +667,29 @@ function addSeparatorPage(
   details.forEach((detail) => {
     drawText(builder, detail, {
       size: PDF_TYPE.detail.size,
-      color: TEXT_SOFT,
       lineHeight: PDF_TYPE.detail.lineHeight,
       after: 4,
     });
   });
 
   drawFooter(builder);
+}
+
+function drawDocumentHistoryList(builder: PdfTextBuilder, details: string[]) {
+  const x = PAGE_MARGIN + HISTORY_DETAIL_INDENT;
+  const width = TEXT_WIDTH - HISTORY_DETAIL_INDENT;
+
+  builder.y -= 2;
+
+  details.forEach((detail) => {
+    drawText(builder, detail, {
+      size: PDF_TYPE.detail.size,
+      lineHeight: PDF_TYPE.detail.lineHeight,
+      after: 4,
+      x,
+      width,
+    });
+  });
 }
 
 export async function createSanitaryDossierPdf({
@@ -559,14 +715,14 @@ export async function createSanitaryDossierPdf({
   });
 
   for (const bundle of bundles) {
-    addSeparatorPage(builder, bundle.title, formatCount(bundle.entries.length, "archivo incluido", "archivos incluidos"));
+    addSeparatorPage(builder, bundle.title, formatBundleFileSummary(bundle, { includeIncluded: true }));
 
     if (bundle.groups?.length) {
       for (const group of bundle.groups) {
         addSeparatorPage(
           builder,
           group.title,
-          bundle.title,
+          undefined,
           group.entries.map((entry) => entry.entry.label),
         );
 
@@ -589,20 +745,18 @@ export async function createHistoricalDocumentPdf({
   companyName,
   branchName,
   generatedAt,
-  categoryTitle,
   periodLabel,
   bundle,
 }: {
   companyName: string;
   branchName: string;
   generatedAt: string;
-  categoryTitle: string;
   periodLabel: string;
   bundle: PdfDocumentBundleWithFiles;
 }) {
   const builder = await createGeneratedDocumentBase({
     title: "Historial documental",
-    description: "Documentos incluidos en el periodo consultado.",
+    description: "Documentos históricos incluidos en el periodo consultado.",
     companyName,
     branchName,
     generatedAt,
@@ -611,13 +765,14 @@ export async function createHistoricalDocumentPdf({
     bundles: [bundle],
   });
 
-  addSeparatorPage(
+  drawDocumentHistoryList(
     builder,
-    categoryTitle,
-    periodLabel,
     bundle.entries.map((attachment) => {
-      const date = attachment.entry.date ? formatDateForDisplay(attachment.entry.date) : "Sin fecha registrada";
-      return `${attachment.entry.label} - ${date}`;
+      if (!attachment.entry.date) {
+        return "Certificado sin fecha de expedición registrada";
+      }
+
+      return `Certificado expedido el ${formatDateForDisplay(attachment.entry.date)}`;
     }),
   );
 

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import {
-  getHistoryDocumentCategory,
   isHistoryDocumentCategoryId,
   type HistoryDocumentCategoryId,
 } from "@/lib/branch-reports/config";
@@ -128,7 +127,6 @@ export async function GET(
     inputSizeBytes = inputStats.sizeBytes;
     assertDocumentInputSizeAllowed(inputSizeBytes);
 
-    const category = getHistoryDocumentCategory(categoryId as HistoryDocumentCategoryId);
     const generationStart = Date.now();
     const attachedBundle = await attachBundlePdfs({
       supabase,
@@ -139,7 +137,6 @@ export async function GET(
       companyName: company.name,
       branchName: branch.name,
       generatedAt: new Date().toISOString(),
-      categoryTitle: category.title,
       periodLabel: rangeResult.label,
       bundle: attachedBundle,
     });
