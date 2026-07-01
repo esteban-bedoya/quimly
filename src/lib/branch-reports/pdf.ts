@@ -601,6 +601,24 @@ function formatBundleFileSummary(
   return formatCount(fileCount, "archivo", "archivos");
 }
 
+function getHistoricalAttachmentDateTime(attachment: PdfFileAttachment) {
+  const time = Date.parse(attachment.entry.date);
+
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function sortHistoricalAttachmentsNewestFirst(entries: PdfFileAttachment[]) {
+  return [...entries].sort((left, right) => {
+    const dateDelta = getHistoricalAttachmentDateTime(right) - getHistoricalAttachmentDateTime(left);
+
+    if (dateDelta !== 0) {
+      return dateDelta;
+    }
+
+    return left.entry.label.localeCompare(right.entry.label, "es-CO");
+  });
+}
+
 async function createGeneratedDocumentBase({
   title,
   description,
@@ -754,6 +772,7 @@ export async function createHistoricalDocumentPdf({
   periodLabel: string;
   bundle: PdfDocumentBundleWithFiles;
 }) {
+  const sortedEntries = sortHistoricalAttachmentsNewestFirst(bundle.entries);
   const builder = await createGeneratedDocumentBase({
     title: "Historial documental",
     description: "Documentos históricos incluidos en el periodo consultado.",
@@ -767,7 +786,7 @@ export async function createHistoricalDocumentPdf({
 
   drawDocumentHistoryList(
     builder,
-    bundle.entries.map((attachment) => {
+    sortedEntries.map((attachment) => {
       if (!attachment.entry.date) {
         return "Certificado sin fecha de expedición registrada";
       }
@@ -776,7 +795,7 @@ export async function createHistoricalDocumentPdf({
     }),
   );
 
-  for (const attachment of bundle.entries) {
+  for (const attachment of sortedEntries) {
     await appendPdfBytes(builder.document, attachment.bytes);
   }
 
