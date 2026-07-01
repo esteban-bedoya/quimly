@@ -485,6 +485,7 @@ create table if not exists public.supply_reception_records (
   decision text not null,
   observations text,
   constraint supply_reception_records_tipo_check check (tipo_formulario = 'supply_reception'),
+  constraint supply_reception_records_decision_check check (decision in ('accepted', 'accepted_with_issue', 'rejected')),
   constraint supply_reception_records_reported_by_fkey foreign key (reported_by) references public.user_profiles (user_id) on delete set null
 );
 
@@ -501,6 +502,28 @@ alter table public.supply_reception_records
   add column if not exists organoleptic_adequate boolean,
   add column if not exists decision text,
   add column if not exists observations text;
+
+update public.supply_reception_records
+set decision = case
+  when lower(trim(decision)) = 'aceptar producto' then 'accepted'
+  when lower(trim(decision)) = 'aceptar producto con novedad' then 'accepted_with_issue'
+  when lower(trim(decision)) = 'rechazar producto' then 'rejected'
+  else decision
+end;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'supply_reception_records_decision_check'
+      and conrelid = 'public.supply_reception_records'::regclass
+  ) then
+    alter table public.supply_reception_records
+      add constraint supply_reception_records_decision_check
+      check (decision in ('accepted', 'accepted_with_issue', 'rejected'));
+  end if;
+end $$;
 
 create table if not exists public.water_quality_records (
   id uuid primary key default gen_random_uuid(),
@@ -2264,11 +2287,11 @@ begin
       raise exception 'Selecciona si color, olor y textura son adecuados.';
     end if;
 
-    if p_decision is null or p_decision not in ('Aceptar Producto', 'Aceptar Producto con novedad', 'Rechazar Producto') then
+    if p_decision is null or p_decision not in ('accepted', 'accepted_with_issue', 'rejected') then
       raise exception 'Selecciona la decisión.';
     end if;
 
-    if p_decision in ('Aceptar Producto con novedad', 'Rechazar Producto')
+    if p_decision in ('accepted_with_issue', 'rejected')
       and nullif(trim(coalesce(p_observations, '')), '') is null then
       raise exception 'Describe la medida tomada para esta recepción.';
     end if;

@@ -104,7 +104,7 @@ export async function GET(
       return jsonError("No se encontraron registros para el periodo seleccionado.", 404);
     }
 
-    const periodLabel = `${formatDateForDisplay(validation.from)} - ${formatDateForDisplay(validation.to)}`;
+    const periodLabel = `${formatDateForDisplay(validation.from)} · ${formatDateForDisplay(validation.to)}`;
     const generationStart = Date.now();
     const pdf = await createOperationalFormsReportPdf({
       companyName: company.name,

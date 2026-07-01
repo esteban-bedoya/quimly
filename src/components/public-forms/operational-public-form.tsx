@@ -37,8 +37,9 @@ const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType,
 const supplyProductTypes = ["Ambiente", "Refrigerado", "Congelado"] as const;
 type SupplyProductType = (typeof supplyProductTypes)[number];
 
-const supplyDecisions = ["Aceptar Producto", "Rechazar Producto"] as const;
+const supplyDecisions = ["accepted", "rejected"] as const;
 type SupplyDecision = (typeof supplyDecisions)[number];
+type SupplySubmittedDecision = SupplyDecision | "accepted_with_issue";
 
 type YesNoValue = "true" | "false";
 type SupplyStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
@@ -664,26 +665,26 @@ export function OperationalPublicForm({
     showTemperaturePicker,
     temperatureCompliant,
   ]);
-  const showActionTakenBlock = supplyActionTakenItems.length > 0 || decision === "Rechazar Producto";
-  const supplySubmittedDecision =
-    decision === "Aceptar Producto" && supplyActionTakenItems.length > 0 ? "Aceptar Producto con novedad" : decision;
+  const showActionTakenBlock = supplyActionTakenItems.length > 0 || decision === "rejected";
+  const supplySubmittedDecision: SupplySubmittedDecision | "" =
+    decision === "accepted" && supplyActionTakenItems.length > 0 ? "accepted_with_issue" : decision;
   const supplyDecisionTakenItem: SupplyActionTakenItem | null =
-    supplySubmittedDecision === "Aceptar Producto" || supplySubmittedDecision === "Aceptar Producto con novedad"
+    supplySubmittedDecision === "accepted" || supplySubmittedDecision === "accepted_with_issue"
       ? {
           key: "accepted",
           text:
-            supplySubmittedDecision === "Aceptar Producto con novedad"
+            supplySubmittedDecision === "accepted_with_issue"
               ? "Producto ACEPTADO con novedad."
               : "Producto ACEPTADO.",
         }
-      : supplySubmittedDecision === "Rechazar Producto"
+      : supplySubmittedDecision === "rejected"
         ? {
             key: "rejected",
             text: "Producto RECHAZADO.",
           }
         : null;
   const supplyActionTakenOptions =
-    decision === "Rechazar Producto" ? supplyRejectedActionOptions : supplyAcceptedActionOptions;
+    decision === "rejected" ? supplyRejectedActionOptions : supplyAcceptedActionOptions;
   const isCustomActionTaken = actionTakenChoice === otherActionTakenValue;
   const hasCompletedActionTaken = Boolean(actionTakenChoice && (!isCustomActionTaken || customActionTaken.trim()));
   const showActionTakenError = Boolean(actionTakenError && showActionTakenBlock && !hasCompletedActionTaken);
@@ -2011,7 +2012,7 @@ export function OperationalPublicForm({
                 </div>
                 <div className="grid gap-3">
                   {supplyDecisions.map((option) => {
-                    const isAccept = option === "Aceptar Producto";
+                    const isAccept = option === "accepted";
                     const optionLabel = isAccept ? "Aceptar" : "Rechazar";
 
                     return (
@@ -2036,7 +2037,7 @@ export function OperationalPublicForm({
                 <button
                   type="button"
                   disabled={!decision}
-                  onClick={() => setCurrentStep(decision === "Rechazar Producto" || supplyActionTakenItems.length > 0 ? 9 : 10)}
+                  onClick={() => setCurrentStep(decision === "rejected" || supplyActionTakenItems.length > 0 ? 9 : 10)}
                   className="min-h-16 rounded-2xl bg-[#111816] px-5 text-lg font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#aeb9b6]"
                 >
                   Continuar

@@ -538,6 +538,36 @@ function formatNumber(value: number | string | null | undefined, suffix = "") {
   return suffix ? `${display} ${suffix}` : display;
 }
 
+function formatMeasurementWithEvaluation(
+  value: number | string | null | undefined,
+  suffix: string,
+  evaluation: boolean | null | undefined,
+) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return `${formatNumber(value, suffix)} · ${compliantLabel(evaluation)}`;
+}
+
+function formatSupplyDecisionForReport(value: string | null | undefined) {
+  const normalizedValue = value?.trim().toLocaleLowerCase("es-CO");
+
+  if (normalizedValue === "accepted" || normalizedValue === "aceptar producto") {
+    return "Producto aceptado";
+  }
+
+  if (normalizedValue === "accepted_with_issue" || normalizedValue === "aceptar producto con novedad") {
+    return "Producto aceptado con novedad";
+  }
+
+  if (normalizedValue === "rejected" || normalizedValue === "rechazar producto") {
+    return "Producto rechazado";
+  }
+
+  return value;
+}
+
 function getSingleRelation<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
@@ -653,9 +683,8 @@ function mapThermalRecord(row: ThermalControlRecordRow): OperationalReportRecord
       label: "Tipo de equipo",
       value: row.equipment_type === "freezer" ? "Congelador" : row.equipment_type === "refrigerator" ? "Refrigerador" : null,
     },
-    { label: "Temperatura", value: formatNumber(row.temperature_c, "°C") },
-    { label: "Resultado", value: compliantLabel(row.temperature_compliant) },
-    { label: "Observaciones", value: row.observations },
+    { label: "Temperatura del equipo", value: formatMeasurementWithEvaluation(row.temperature_c, "°C", row.temperature_compliant) },
+    { label: "Medida correctiva", value: row.observations },
   ]);
 }
 
@@ -678,12 +707,11 @@ function mapSupplyRecord(row: SupplyReceptionRecordRow): OperationalReportRecord
     { label: "Proveedor", value: row.provider_name },
     { label: "Fecha de vencimiento", value: row.expiration_date ? formatDateForDisplay(row.expiration_date) : null },
     { label: "Tipo de producto", value: row.product_type },
-    { label: "Temperatura", value: row.temperature_c !== null ? formatNumber(row.temperature_c, "°C") : null },
-    { label: "Resultado temperatura", value: compliantLabel(row.temperature_compliant) },
-    { label: "Empaque y fecha", value: yesNo(row.package_intact_date_valid) },
-    { label: "Condición organoléptica", value: yesNo(row.organoleptic_adequate) },
-    { label: "Decisión", value: row.decision },
-    { label: "Observaciones", value: row.observations },
+    { label: "Temperatura de recepción", value: formatMeasurementWithEvaluation(row.temperature_c, "°C", row.temperature_compliant) },
+    { label: "Empaque y vencimiento", value: compliantLabel(row.package_intact_date_valid) },
+    { label: "Aspecto y olor", value: compliantLabel(row.organoleptic_adequate) },
+    { label: "Decisión", value: formatSupplyDecisionForReport(row.decision) },
+    { label: "Medida correctiva", value: row.observations },
   ]);
 }
 
@@ -691,11 +719,9 @@ function mapWaterRecord(row: WaterQualityRecordRow): OperationalReportRecord {
   return createOperationalRecord(row.id, row.fecha_hora_servidor, row.created_at, getReportedByDisplayName(row, row.operator_name), [
     { label: "Fecha y hora", value: formatDateTimeForDisplay(row.fecha_hora_servidor) },
     { label: "Responsable", value: getExecutorDisplayName(row) },
-    { label: "Cloro libre residual", value: formatNumber(row.chlorine_ppm, "ppm") },
-    { label: "Resultado cloro", value: compliantLabel(row.chlorine_compliant) },
-    { label: "pH", value: formatNumber(row.ph_level) },
-    { label: "Resultado pH", value: compliantLabel(row.ph_compliant) },
-    { label: "Observaciones", value: row.observations },
+    { label: "Cloro libre residual", value: formatMeasurementWithEvaluation(row.chlorine_ppm, "ppm", row.chlorine_compliant) },
+    { label: "pH", value: formatMeasurementWithEvaluation(row.ph_level, "", row.ph_compliant) },
+    { label: "Medida correctiva", value: row.observations },
   ]);
 }
 

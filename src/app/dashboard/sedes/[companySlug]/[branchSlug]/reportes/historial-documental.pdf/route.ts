@@ -60,7 +60,7 @@ function resolveHistoryRange(searchParams: URLSearchParams) {
   return {
     ok: true as const,
     range: { from: validation.from, to: validation.to },
-    label: `${formatDateForDisplay(validation.from)} - ${formatDateForDisplay(validation.to)}`,
+    label: `${formatDateForDisplay(validation.from)} · ${formatDateForDisplay(validation.to)}`,
   };
 }
 

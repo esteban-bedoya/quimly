@@ -235,6 +235,10 @@ function formatCount(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function formatRecordTotal(count: number) {
+  return `Total de registros: ${count}`;
+}
+
 function formatSentenceTitle(title: string) {
   const lowerTitle = normalizePdfText(title).toLocaleLowerCase("es-CO");
   const [firstCharacter = "", ...restCharacters] = Array.from(lowerTitle);
@@ -537,7 +541,7 @@ export async function createOperationalFormsReportPdf({
   for (const section of sections) {
     addPage(builder);
     const sortedRecords = sortOperationalRecordsNewestFirst(section.records);
-    drawSimplePageTitle(builder, formatSentenceTitle(section.title), `${formatCount(sortedRecords.length, "registro", "registros")} en el periodo.`);
+    drawSimplePageTitle(builder, formatSentenceTitle(section.title), formatRecordTotal(sortedRecords.length));
 
     if (!sortedRecords.length) {
       drawText(builder, "No se encontraron registros para este formulario en el periodo seleccionado.", {
