@@ -50,6 +50,7 @@ create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
   email text not null unique,
   full_name text,
+  phone text,
   global_role public.app_role not null default 'company_admin',
   is_active boolean not null default true,
   default_company_id uuid references public.companies (id) on delete set null,
@@ -57,6 +58,9 @@ create table if not exists public.user_profiles (
   updated_at timestamptz not null default now(),
   constraint user_profiles_email_lowercase check (email = lower(email))
 );
+
+alter table if exists public.user_profiles
+add column if not exists phone text;
 
 create table if not exists public.branches (
   id uuid primary key default gen_random_uuid(),
@@ -2860,6 +2864,31 @@ with check (
     and global_role = 'company_admin'
   )
 );
+
+drop policy if exists "user_profiles_self_update_policy" on public.user_profiles;
+
+-- Decision arquitectonica:
+-- user_profiles.is_active es un campo exclusivamente administrativo y nunca debe
+-- modificarse desde el flujo de edicion del propio perfil. Las futuras
+-- operaciones para bloquear o habilitar usuarios deben implementarse por una
+-- via exclusiva de Super Administracion (Server Action, RPC u otra solucion
+-- revisada en ese momento), sin reutilizar este flujo. El control de acceso por
+-- membresias debe depender del estado de la suscripcion y no de is_active.
+create policy "user_profiles_self_update_policy"
+on public.user_profiles
+for update
+using (
+  user_id = auth.uid()
+  and is_active = true
+)
+with check (
+  user_id = auth.uid()
+  and is_active = true
+  and global_role = public.current_profile_role()
+);
+
+revoke update on public.user_profiles from authenticated;
+grant update (full_name, phone) on public.user_profiles to authenticated;
 
 drop policy if exists "branches_select_policy" on public.branches;
 create policy "branches_select_policy"

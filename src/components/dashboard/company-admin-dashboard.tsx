@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { logout } from "@/app/login/actions";
+import { DashboardHeaderMenu } from "@/components/dashboard/dashboard-header-menu";
 import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
 
 function PremiumStat({
@@ -19,8 +19,8 @@ function PremiumStat({
   } as const;
 
   return (
-    <div className={`rounded-3xl border px-4 py-4 shadow-[0_20px_50px_rgba(18,17,15,0.08)] ${toneStyles[tone]}`}>
-      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] opacity-60">{label}</p>
+    <div className={`rounded-[1.15rem] border px-4 py-4 shadow-[0_20px_50px_rgba(18,17,15,0.08)] ${toneStyles[tone]}`}>
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] opacity-60">{label}</p>
       <p className="mt-3 text-2xl font-semibold tracking-[-0.04em]">{value}</p>
     </div>
   );
@@ -28,7 +28,7 @@ function PremiumStat({
 
 function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
   return (
-    <article className="group rounded-[1.75rem] border border-[#d9dfe0] bg-white p-5 transition duration-300 hover:border-[#bfcfd1] hover:shadow-[0_24px_70px_rgba(18,17,15,0.08)]">
+    <article className="group rounded-[1.45rem] border border-[#eef1f2] bg-white p-5 shadow-[0_18px_44px_rgba(18,17,15,0.12)] transition duration-300 hover:-translate-y-0.5 hover:border-white hover:shadow-[0_24px_58px_rgba(18,17,15,0.16)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -70,53 +70,45 @@ export function CompanyAdminDashboard({
   const mainBranches = branches.filter((branch) => branch.isMain);
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#f8fafb_45%,#eef4f5_100%)] px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <section className="overflow-hidden rounded-[2rem] border border-[#dfe7e8] bg-white shadow-[0_20px_60px_rgba(18,17,15,0.06)]">
-          <div className="border-b border-[#dfe7e8] bg-[radial-gradient(circle_at_top_left,#ffffff_0%,#f9fbfb_45%,#eef7f7_100%)] px-6 py-8 sm:px-8">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-4">
-                <span className="w-fit rounded-full bg-[#12110f] px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-[#7ad9dd]">
-                  Quimly / company_admin
-                </span>
-                <div>
-                  <h1 className="max-w-3xl text-4xl font-semibold tracking-[-0.05em] text-[#12110f] sm:text-5xl">
-                    {profile.fullName || profile.email}
-                  </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-7 text-[#5e6770] sm:text-base">
-                    Selecciona una sede para operar de forma directa, sin pasos intermedios, con una interfaz
-                    ejecutiva y enfocada en acciones.
-                  </p>
-                </div>
+        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
+          <DashboardHeaderMenu profile={profile} branchCount={branches.length} />
+
+          <div className="flex flex-col gap-4 lg:items-start">
+            <div className="w-full space-y-3 pr-14 sm:pr-44">
+              <div>
+                <p className="text-sm uppercase tracking-[0.24em] text-[#8fe3d5]">ADMINISTRACIÓN</p>
+                <h1 className="mt-2 max-w-3xl text-2xl font-semibold tracking-[-0.05em] text-[#e5ecec] sm:text-4xl">
+                  {profile.fullName || profile.email}
+                </h1>
               </div>
 
-              <div className="flex flex-col gap-3 lg:min-w-[26rem]">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <PremiumStat label="Sedes" value={branches.length} />
-                  <PremiumStat label="Activas" value={activeBranches.length} tone="accent" />
-                  <PremiumStat label="Principales" value={mainBranches.length} tone="gold" />
-                </div>
-                <form action={logout} className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#d9dfe0] bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:border-[#bfcfd1] hover:bg-[#f8fbfb]"
-                  >
-                    Cerrar sesión
-                  </button>
-                </form>
-              </div>
+              <p className="max-w-2xl text-sm leading-6 text-white/72 sm:text-base sm:leading-7">
+                Mantén el control del cumplimiento sanitario de todas tus sedes desde un solo lugar.
+              </p>
             </div>
           </div>
+        </section>
 
-          <div className="grid gap-6 p-6 sm:p-8">
-            <div className="max-w-3xl space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a7f86]">Acceso directo</p>
-              <h2 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">
-                Sedes asociadas a tu operación
-              </h2>
-              <p className="text-sm leading-7 text-[#5e6770]">
-                Cada sede abre su propio espacio de control con bitácoras QR y repositorio documental.
-              </p>
+        <div className="mx-auto w-full max-w-[74rem]">
+          <section className="grid gap-6 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+              <div className="max-w-3xl space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Acceso directo</p>
+                <h2 className="text-base font-bold uppercase leading-6 tracking-[0.08em] text-[#2a7f86]">
+                  Sedes asociadas a tu operación
+                </h2>
+                <p className="max-w-2xl text-sm leading-6 text-[#5e6770]">
+                  Selecciona una sede para mantener tu establecimiento siempre preparado ante auditorías e inspecciones.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[26rem]">
+                <PremiumStat label="Sedes" value={branches.length} />
+                <PremiumStat label="Activas" value={activeBranches.length} tone="accent" />
+                <PremiumStat label="Principales" value={mainBranches.length} tone="gold" />
+              </div>
             </div>
 
             <div className="grid gap-4">
@@ -128,8 +120,8 @@ export function CompanyAdminDashboard({
                 </div>
               )}
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
     </main>
   );

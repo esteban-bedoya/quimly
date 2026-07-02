@@ -2352,7 +2352,7 @@ export function CompanyAdminDocumentsView({
           }
         >
           <DocumentModalDivider />
-          <DocumentUploadField label="Plan de saneamiento pdf">
+          <DocumentUploadField label="Plan de saneamiento básico">
             <CompactPdfInput
               id="sanitation-plan-pdf"
               label="Plan de saneamiento PDF"

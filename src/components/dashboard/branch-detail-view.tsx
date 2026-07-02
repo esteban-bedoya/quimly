@@ -145,12 +145,13 @@ function BranchLayout({
                     onClick={() => setIsMenuOpen(false)}
                     className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16"
                   >
-                    Cambiar de sede
+                    Administración
                   </Link>
+                  <div className="my-1 h-px bg-[#48c7d2]/20" />
                   <form action={logout} className="flex">
                     <button
                       type="submit"
-                      className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16"
+                      className="inline-flex min-h-10 w-full cursor-pointer items-center justify-center rounded-full px-5 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-white/5 hover:text-[0.95rem] hover:text-white"
                     >
                       Cerrar sesión
                     </button>

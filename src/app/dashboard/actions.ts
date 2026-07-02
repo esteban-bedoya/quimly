@@ -36,6 +36,15 @@ type SanitaryDocumentActionState = AdminActionState & {
   id?: string;
 };
 
+export type CurrentUserProfileDetailsState = AdminActionState & {
+  profile?: {
+    fullName: string | null;
+    email: string;
+    phone: string | null;
+  };
+  optionalFieldsAvailable?: boolean;
+};
+
 type BranchSanitaryDocumentFileRow = {
   id: string;
   branch_id: string;
@@ -203,6 +212,15 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   }
 
   return error.message || fallback;
+}
+
+function isMissingOptionalProfileFieldError(error: PostgrestErrorLike | null) {
+  if (!error) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return error.code === "42703" || error.code === "PGRST204" || message.includes("phone");
 }
 
 function readSanitaryDocumentKind(formData: FormData, key = "documentKind") {
@@ -436,6 +454,105 @@ export async function createCompany(
 
   revalidatePath("/dashboard");
   return { success: `Empresa "${name}" creada correctamente con su sede principal.` };
+}
+
+export async function updateCurrentUserProfile(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const context = await requireUserContext();
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCurrentUserProfile" });
+
+  const fullName = readString(formData, "fullName");
+  const phone = readString(formData, "phone");
+
+  if (!fullName) {
+    return { error: "Debes indicar tu nombre." };
+  }
+
+  if (phone.length > 32) {
+    return { error: "El celular no puede superar 32 caracteres." };
+  }
+
+  const { error } = await supabase
+    .from("user_profiles")
+    .update({
+      full_name: fullName,
+      phone: phone || null,
+    })
+    .eq("user_id", context.profile.userId);
+
+  if (error) {
+    if (isMissingOptionalProfileFieldError(error)) {
+      const { error: fallbackError } = await supabase
+        .from("user_profiles")
+        .update({ full_name: fullName })
+        .eq("user_id", context.profile.userId);
+
+      if (fallbackError) {
+        return { error: formatDatabaseError(fallbackError, "No fue posible actualizar tu perfil.") };
+      }
+
+      revalidatePath("/dashboard");
+      return {
+        success: "Nombre actualizado correctamente. El celular quedará disponible cuando se aplique la migración.",
+      };
+    }
+
+    return { error: formatDatabaseError(error, "No fue posible actualizar tu perfil.") };
+  }
+
+  revalidatePath("/dashboard");
+  return { success: "Perfil actualizado correctamente." };
+}
+
+export async function getCurrentUserProfileDetails(): Promise<CurrentUserProfileDetailsState> {
+  const context = await requireUserContext();
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "getCurrentUserProfileDetails" });
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("full_name, email, phone")
+    .eq("user_id", context.profile.userId)
+    .maybeSingle<{ full_name: string | null; email: string; phone: string | null }>();
+
+  if (!error && data) {
+    return {
+      profile: {
+        fullName: data.full_name,
+        email: data.email,
+        phone: data.phone,
+      },
+      optionalFieldsAvailable: true,
+    };
+  }
+
+  if (!isMissingOptionalProfileFieldError(error)) {
+    return {
+      error: error?.message ?? "No fue posible cargar tu perfil.",
+    };
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from("user_profiles")
+    .select("full_name, email")
+    .eq("user_id", context.profile.userId)
+    .maybeSingle<{ full_name: string | null; email: string }>();
+
+  if (fallbackError || !fallbackData) {
+    return {
+      error: fallbackError?.message ?? "No fue posible cargar tu perfil.",
+    };
+  }
+
+  return {
+    profile: {
+      fullName: fallbackData.full_name,
+      email: fallbackData.email,
+      phone: null,
+    },
+    optionalFieldsAvailable: false,
+  };
 }
 
 export async function createCompanyBranch(
