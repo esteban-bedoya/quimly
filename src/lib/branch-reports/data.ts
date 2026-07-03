@@ -46,7 +46,8 @@ type NamedEntityRow = {
 
 type OperationalReportReporterProfileRow = {
   full_name: string | null;
-  email: string;
+  phone: string | null;
+  email: string | null;
 };
 
 type OperationalReportAuditRow = {
@@ -600,7 +601,7 @@ function formatExecutorDisplayName(value: string, { isAdmin = false }: { isAdmin
 function getReporterProfileDisplayName(row: OperationalReportAuditRow) {
   const profile = getSingleRelation(row.reported_by_profile);
 
-  return profile?.full_name?.trim() || profile?.email || null;
+  return profile?.full_name?.trim() || profile?.phone || profile?.email || null;
 }
 
 function getReportedByDisplayName(row: OperationalReportAuditRow, fallbackName: string) {
@@ -744,7 +745,7 @@ export async function loadOperationalReportSections({
   if (wants("thermal_control")) {
     const { data, error } = await supabase
       .from("thermal_control_records")
-      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!thermal_control_records_reported_by_fkey(full_name, email), equipment_name, equipment_type, operator_name, temperature_c, temperature_compliant, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!thermal_control_records_reported_by_fkey(full_name, phone, email), equipment_name, equipment_type, operator_name, temperature_c, temperature_compliant, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
@@ -766,7 +767,7 @@ export async function loadOperationalReportSections({
   if (wants("area_sanitation")) {
     const { data, error } = await supabase
       .from("area_sanitation_records")
-      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!area_sanitation_records_reported_by_fkey(full_name, email), area_name, operator_name, cleaning_type, used_exclusive_implements, used_authorized_chemicals, is_compliant")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!area_sanitation_records_reported_by_fkey(full_name, phone, email), area_name, operator_name, cleaning_type, used_exclusive_implements, used_authorized_chemicals, is_compliant")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
@@ -788,7 +789,7 @@ export async function loadOperationalReportSections({
   if (wants("supply_reception")) {
     const { data, error } = await supabase
       .from("supply_reception_records")
-      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!supply_reception_records_reported_by_fkey(full_name, email), operator_name, product_name, provider_name, expiration_date, product_type, temperature_c, temperature_compliant, package_intact_date_valid, organoleptic_adequate, decision, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!supply_reception_records_reported_by_fkey(full_name, phone, email), operator_name, product_name, provider_name, expiration_date, product_type, temperature_c, temperature_compliant, package_intact_date_valid, organoleptic_adequate, decision, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)
@@ -810,7 +811,7 @@ export async function loadOperationalReportSections({
   if (wants("water_quality")) {
     const { data, error } = await supabase
       .from("water_quality_records")
-      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!water_quality_records_reported_by_fkey(full_name, email), operator_name, chlorine_ppm, chlorine_compliant, ph_level, ph_compliant, observations")
+      .select("id, fecha_hora_servidor, created_at, reported_by_profile:user_profiles!water_quality_records_reported_by_fkey(full_name, phone, email), operator_name, chlorine_ppm, chlorine_compliant, ph_level, ph_compliant, observations")
       .eq("sede_id", branch.id)
       .eq("company_id", branch.companyId)
       .gte("fecha_hora_servidor", fromIso)

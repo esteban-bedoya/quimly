@@ -38,7 +38,7 @@ const roleDescriptions = {
 
 export const dynamic = "force-dynamic";
 
-type ManagedUserSummary = Pick<UserProfile, "userId" | "email" | "fullName" | "globalRole" | "isActive"> & {
+type ManagedUserSummary = Pick<UserProfile, "userId" | "email" | "phone" | "fullName" | "globalRole" | "isActive"> & {
   defaultCompanyName: string | null;
 };
 
@@ -49,7 +49,8 @@ type ManagedBranchSummary = CompanyBranchSummary & {
 
 type ManagedUserRow = {
   user_id: string;
-  email: string;
+  email: string | null;
+  phone: string;
   full_name: string | null;
   global_role: UserProfile["globalRole"];
   is_active: boolean;
@@ -89,7 +90,7 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       .returns<ManagedBranchRow[]>(),
     supabase
       .from("user_profiles")
-      .select("user_id, email, full_name, global_role, is_active, default_company:companies(name)")
+      .select("user_id, email, phone, full_name, global_role, is_active, default_company:companies(name)")
       .in("global_role", role === "owner" ? ["super_admin", "company_admin"] : ["company_admin"])
       .order("created_at", { ascending: false })
       .returns<ManagedUserRow[]>(),
@@ -129,6 +130,7 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       managedUsers?.map((user) => ({
         userId: user.user_id,
         email: user.email,
+        phone: user.phone,
         fullName: user.full_name,
         globalRole: user.global_role,
         isActive: user.is_active,
@@ -140,14 +142,15 @@ async function getManagementData(role: UserProfile["globalRole"]) {
 }
 
 export default async function DashboardPage() {
-  const { profile } = await requireAuthenticatedUser();
+  const context = await requireAuthenticatedUser();
+  const { profile } = context;
 
   if (profile.globalRole === "company_admin") {
-    const accessibleBranches = await getAccessibleBranches({ profile });
+    const accessibleBranches = await getAccessibleBranches(context);
     return <CompanyAdminDashboard profile={profile} branches={accessibleBranches} />;
   }
 
-  const accessibleCompanies = await getAccessibleCompanies({ profile });
+  const accessibleCompanies = await getAccessibleCompanies(context);
   const managementData = await getManagementData(profile.globalRole);
   const companiesAvailableForAdminAssignment =
     managementData?.companies.filter((company) => !company.companyAdminUserId) ?? [];
@@ -163,7 +166,7 @@ export default async function DashboardPage() {
               </p>
               <div>
                 <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#12110f]">
-                  {profile.fullName || profile.email}
+                  {profile.fullName || profile.phone}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-7 text-[#565149] sm:text-base">
                   {roleDescriptions[profile.globalRole]}
@@ -431,8 +434,9 @@ export default async function DashboardPage() {
                       >
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <p className="font-semibold text-[#12110f]">{user.fullName || user.email}</p>
-                            <p className="text-sm text-[#5d574f]">{user.email}</p>
+                            <p className="font-semibold text-[#12110f]">{user.fullName || user.phone}</p>
+                            <p className="text-sm text-[#5d574f]">{user.phone}</p>
+                            {user.email ? <p className="text-xs text-[#7d766d]">{user.email}</p> : null}
                             {user.defaultCompanyName ? (
                               <p className="text-xs uppercase tracking-[0.14em] text-[#7d766d]">
                                 Empresa base: {user.defaultCompanyName}

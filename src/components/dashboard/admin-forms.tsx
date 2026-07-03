@@ -8,6 +8,8 @@ import {
   createCompanyAdmin,
   createCompanyBranch,
   createSuperAdmin,
+  sendCompanyAdminRegistrationOTP,
+  sendSuperAdminRegistrationOTP,
   setMainCompanyBranch,
   updateCompany,
   updateCompanyBranch,
@@ -55,11 +57,13 @@ function Field({
   label,
   placeholder,
   type = "text",
+  required = true,
 }: {
   id: string;
   label: string;
   placeholder: string;
-  type?: "text" | "email" | "password";
+  type?: "text" | "email" | "password" | "tel";
+  required?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -71,7 +75,7 @@ function Field({
         name={id}
         type={type}
         placeholder={placeholder}
-        required
+        required={required}
         className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
       />
     </div>
@@ -95,13 +99,25 @@ export function CreateCompanyForm() {
 
 export function CreateSuperAdminForm() {
   const [state, formAction] = useActionState(createSuperAdmin, undefined);
+  const [otpState, otpAction] = useActionState(sendSuperAdminRegistrationOTP, undefined);
 
   return (
     <form action={formAction} className="space-y-4">
       <Field id="fullName" label="Nombre completo" placeholder="Laura Gómez" />
-      <Field id="email" label="Correo electrónico" placeholder="laura@quimly.co" type="email" />
+      <Field id="phone" label="Número de celular" placeholder="3001234567" type="tel" />
+      <Field id="email" label="Correo opcional" placeholder="laura@quimly.co" type="email" required={false} />
+      <button
+        type="submit"
+        formAction={otpAction}
+        formNoValidate
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+      >
+        Enviar código WhatsApp
+      </button>
+      <Field id="phoneOtpCode" label="Código WhatsApp" placeholder="123456" />
       <Field id="password" label="Contraseña temporal" placeholder="Mínimo 8 caracteres" type="password" />
 
+      <ActionFeedback state={otpState} />
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear super admin" pendingLabel="Creando super admin..." />
     </form>
@@ -110,11 +126,22 @@ export function CreateSuperAdminForm() {
 
 export function CreateCompanyAdminForm({ companies }: { companies: CompanySummary[] }) {
   const [state, formAction] = useActionState(createCompanyAdmin, undefined);
+  const [otpState, otpAction] = useActionState(sendCompanyAdminRegistrationOTP, undefined);
 
   return (
     <form action={formAction} className="space-y-4">
       <Field id="fullName" label="Nombre completo" placeholder="María Pérez" />
-      <Field id="email" label="Correo electrónico" placeholder="admin@cliente.com" type="email" />
+      <Field id="phone" label="Número de celular" placeholder="3001234567" type="tel" />
+      <Field id="email" label="Correo opcional" placeholder="admin@cliente.com" type="email" required={false} />
+      <button
+        type="submit"
+        formAction={otpAction}
+        formNoValidate
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+      >
+        Enviar código WhatsApp
+      </button>
+      <Field id="phoneOtpCode" label="Código WhatsApp" placeholder="123456" />
       <Field id="password" label="Contraseña temporal" placeholder="Mínimo 8 caracteres" type="password" />
 
       <div className="space-y-2">
@@ -139,6 +166,7 @@ export function CreateCompanyAdminForm({ companies }: { companies: CompanySummar
         </select>
       </div>
 
+      <ActionFeedback state={otpState} />
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear company admin" pendingLabel="Creando company admin..." />
     </form>

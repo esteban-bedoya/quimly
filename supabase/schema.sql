@@ -17,6 +17,17 @@ begin
   if not exists (
     select 1
     from pg_type
+    where typname = 'company_subscription_status'
+  ) then
+    create type public.company_subscription_status as enum ('trialing', 'active', 'past_due', 'expired', 'canceled');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
     where typname = 'branch_catalog_status'
   ) then
     create type public.branch_catalog_status as enum ('active', 'inactive', 'archived');
@@ -46,21 +57,53 @@ create table if not exists public.companies (
   constraint companies_slug_format check (slug = lower(slug))
 );
 
+create table if not exists public.company_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null unique references public.companies (id) on delete cascade,
+  status public.company_subscription_status not null default 'trialing',
+  trial_started_at timestamptz not null default now(),
+  trial_ends_at timestamptz not null default (now() + interval '14 days'),
+  current_period_ends_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint company_subscriptions_trial_period_check check (trial_ends_at > trial_started_at)
+);
+
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
-  email text not null unique,
+  email text unique,
   full_name text,
-  phone text,
+  phone text not null,
+  phone_verified boolean not null default false,
   global_role public.app_role not null default 'company_admin',
   is_active boolean not null default true,
   default_company_id uuid references public.companies (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint user_profiles_email_lowercase check (email = lower(email))
+  constraint user_profiles_email_lowercase check (email is null or email = lower(email))
 );
 
 alter table if exists public.user_profiles
 add column if not exists phone text;
+
+alter table if exists public.user_profiles
+alter column phone set not null;
+
+alter table if exists public.user_profiles
+alter column email drop not null;
+
+alter table if exists public.user_profiles
+drop constraint if exists user_profiles_email_lowercase;
+
+alter table if exists public.user_profiles
+add constraint user_profiles_email_lowercase check (email is null or email = lower(email));
+
+alter table if exists public.user_profiles
+add column if not exists phone_verified boolean not null default false;
+
+create unique index if not exists user_profiles_phone_unique_idx
+on public.user_profiles (phone)
+where phone is not null;
 
 create table if not exists public.branches (
   id uuid primary key default gen_random_uuid(),
@@ -1335,9 +1378,29 @@ begin
 end;
 $$;
 
+create or replace function public.reset_user_profile_phone_verification()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.phone is distinct from old.phone and new.phone_verified is not true then
+    new.phone_verified := false;
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists set_companies_updated_at on public.companies;
 create trigger set_companies_updated_at
 before update on public.companies
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_company_subscriptions_updated_at on public.company_subscriptions;
+create trigger set_company_subscriptions_updated_at
+before update on public.company_subscriptions
 for each row
 execute function public.set_updated_at();
 
@@ -1352,6 +1415,12 @@ create trigger set_user_profiles_updated_at
 before update on public.user_profiles
 for each row
 execute function public.set_updated_at();
+
+drop trigger if exists reset_user_profiles_phone_verification on public.user_profiles;
+create trigger reset_user_profiles_phone_verification
+before update of phone on public.user_profiles
+for each row
+execute function public.reset_user_profile_phone_verification();
 
 drop trigger if exists set_branches_updated_at on public.branches;
 create trigger set_branches_updated_at
@@ -2457,6 +2526,119 @@ create unique index if not exists branches_one_main_per_company_idx
 on public.branches (company_id)
 where is_main = true;
 
+drop function if exists public.onboard_company_trial(uuid, text, text, text);
+
+create or replace function public.onboard_company_trial(
+  target_user_id uuid,
+  target_phone text,
+  target_admin_name text,
+  target_company_name text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_company_id uuid;
+begin
+  if target_user_id is null
+    or nullif(trim(coalesce(target_phone, '')), '') is null
+    or nullif(trim(coalesce(target_admin_name, '')), '') is null
+    or nullif(trim(coalesce(target_company_name, '')), '') is null
+  then
+    raise exception 'Datos de onboarding inválidos.';
+  end if;
+
+  if not exists (
+    select 1
+    from auth.users au
+    where au.id = target_user_id
+  ) then
+    raise exception 'El usuario Auth indicado no existe.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_profiles up
+    where up.user_id = target_user_id
+  ) then
+    raise exception 'El usuario ya tiene un perfil asignado.';
+  end if;
+
+  if exists (
+    select 1
+    from public.user_profiles up
+    where up.phone = trim(target_phone)
+  ) then
+    raise exception 'Ya existe una cuenta con ese celular.';
+  end if;
+
+  insert into public.companies (
+    name,
+    company_admin_user_id,
+    created_by
+  )
+  values (
+    trim(target_company_name),
+    target_user_id,
+    target_user_id
+  )
+  returning id into new_company_id;
+
+  insert into public.branches (
+    company_id,
+    name,
+    is_main,
+    is_active,
+    created_by
+  )
+  values (
+    new_company_id,
+    'Sede Principal',
+    true,
+    true,
+    target_user_id
+  );
+
+  insert into public.user_profiles (
+    user_id,
+    email,
+    phone,
+    phone_verified,
+    full_name,
+    global_role,
+    is_active,
+    default_company_id
+  )
+  values (
+    target_user_id,
+    null,
+    trim(target_phone),
+    true,
+    trim(target_admin_name),
+    'company_admin',
+    true,
+    new_company_id
+  );
+
+  insert into public.company_subscriptions (
+    company_id,
+    status,
+    trial_started_at,
+    trial_ends_at
+  )
+  values (
+    new_company_id,
+    'trialing',
+    now(),
+    now() + interval '14 days'
+  );
+
+  return new_company_id;
+end;
+$$;
+
 create or replace function public.create_company_with_main_branch(
   company_name text,
   actor_user_id uuid default null,
@@ -2561,10 +2743,13 @@ begin
 end;
 $$;
 
+drop function if exists public.bootstrap_owner(uuid, text, text);
+
 create or replace function public.bootstrap_owner(
   target_user_id uuid,
-  target_email text,
-  target_name text default null
+  target_phone text,
+  target_name text default null,
+  target_email text default null
 )
 returns void
 language plpgsql
@@ -2572,16 +2757,26 @@ security definer
 set search_path = public
 as $$
 begin
+  if target_user_id is null
+    or nullif(trim(coalesce(target_phone, '')), '') is null
+  then
+    raise exception 'Datos de owner inválidos.';
+  end if;
+
   insert into public.user_profiles (
     user_id,
     email,
+    phone,
+    phone_verified,
     full_name,
     global_role,
     is_active
   )
   values (
     target_user_id,
-    lower(target_email),
+    lower(nullif(trim(coalesce(target_email, '')), '')),
+    trim(target_phone),
+    true,
     target_name,
     'owner',
     true
@@ -2589,6 +2784,8 @@ begin
   on conflict (user_id) do update
   set
     email = excluded.email,
+    phone = excluded.phone,
+    phone_verified = true,
     full_name = excluded.full_name,
     global_role = 'owner',
     is_active = true,
@@ -2596,12 +2793,15 @@ begin
 end;
 $$;
 
+drop function if exists public.provision_app_user(uuid, text, text, public.app_role, uuid);
+
 create or replace function public.provision_app_user(
   target_user_id uuid,
-  target_email text,
+  target_phone text,
   target_full_name text,
   target_role public.app_role,
-  target_company_id uuid default null
+  target_company_id uuid default null,
+  target_email text default null
 )
 returns void
 language plpgsql
@@ -2639,7 +2839,7 @@ begin
   end if;
 
   if target_user_id is null
-    or nullif(trim(coalesce(target_email, '')), '') is null
+    or nullif(trim(coalesce(target_phone, '')), '') is null
     or nullif(trim(coalesce(target_full_name, '')), '') is null
   then
     raise exception 'Datos de usuario inválidos.';
@@ -2687,6 +2887,8 @@ begin
   insert into public.user_profiles (
     user_id,
     email,
+    phone,
+    phone_verified,
     full_name,
     global_role,
     is_active,
@@ -2694,7 +2896,9 @@ begin
   )
   values (
     target_user_id,
-    lower(trim(target_email)),
+    lower(nullif(trim(coalesce(target_email, '')), '')),
+    trim(target_phone),
+    true,
     trim(target_full_name),
     target_role,
     true,
@@ -2775,6 +2979,7 @@ end;
 $$;
 
 alter table public.companies enable row level security;
+alter table public.company_subscriptions enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.branches enable row level security;
 alter table public.branch_dashboard_items enable row level security;
@@ -2811,6 +3016,24 @@ on public.companies
 for update
 using (public.is_owner() or public.is_super_admin())
 with check (public.is_owner() or public.is_super_admin());
+
+drop policy if exists "company_subscriptions_select_policy" on public.company_subscriptions;
+create policy "company_subscriptions_select_policy"
+on public.company_subscriptions
+for select
+using (
+  public.is_owner()
+  or public.is_super_admin()
+  or (
+    public.current_profile_role() = 'company_admin'
+    and exists (
+      select 1
+      from public.companies c
+      where c.id = company_subscriptions.company_id
+        and c.company_admin_user_id = auth.uid()
+    )
+  )
+);
 
 drop policy if exists "user_profiles_select_policy" on public.user_profiles;
 create policy "user_profiles_select_policy"
@@ -2888,7 +3111,7 @@ with check (
 );
 
 revoke update on public.user_profiles from authenticated;
-grant update (full_name, phone) on public.user_profiles to authenticated;
+grant update (full_name) on public.user_profiles to authenticated;
 
 drop policy if exists "branches_select_policy" on public.branches;
 create policy "branches_select_policy"
@@ -3188,6 +3411,10 @@ on public.demo_requests
 for select
 using (public.is_owner() or public.is_super_admin());
 
+revoke all on function public.onboard_company_trial(uuid, text, text, text) from public;
+revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;
+grant execute on function public.onboard_company_trial(uuid, text, text, text) to service_role;
+
 revoke all on function public.create_company_with_main_branch(text, uuid, text) from public;
 revoke all on function public.create_company_with_main_branch(text, uuid, text) from anon;
 grant execute on function public.create_company_with_main_branch(text, uuid, text) to authenticated;
@@ -3196,9 +3423,9 @@ revoke all on function public.set_main_branch(uuid) from public;
 revoke all on function public.set_main_branch(uuid) from anon;
 grant execute on function public.set_main_branch(uuid) to authenticated;
 
-revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid) from public;
-revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid) from anon;
-grant execute on function public.provision_app_user(uuid, text, text, public.app_role, uuid) to authenticated;
+revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid, text) from public;
+revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid, text) from anon;
+grant execute on function public.provision_app_user(uuid, text, text, public.app_role, uuid, text) to authenticated;
 
 revoke all on function public.submit_demo_lead(text, text, text, text, text) from public;
 grant execute on function public.submit_demo_lead(text, text, text, text, text) to anon, authenticated;
@@ -3253,5 +3480,5 @@ grant execute on function public.submit_public_operational_form(
   timestamptz
 ) to anon, authenticated;
 
-comment on function public.bootstrap_owner(uuid, text, text) is
+comment on function public.bootstrap_owner(uuid, text, text, text) is
 'Run this manually after creating the first auth user in Supabase Auth to promote that user to owner.';

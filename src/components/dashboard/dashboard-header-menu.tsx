@@ -2,7 +2,11 @@
 
 import { useActionState, useCallback, useEffect, useState } from "react";
 
-import { getCurrentUserProfileDetails, updateCurrentUserProfile } from "@/app/dashboard/actions";
+import {
+  getCurrentUserProfileDetails,
+  sendCurrentUserPhoneChangeOTP,
+  updateCurrentUserProfile,
+} from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
 import {
   AdminDrawerButton,
@@ -37,6 +41,10 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     updateCurrentUserProfile,
     undefined,
   );
+  const [phoneOtpState, phoneOtpAction] = useActionState<AdminActionState | undefined, FormData>(
+    sendCurrentUserPhoneChangeOTP,
+    undefined,
+  );
   const [detailsState, setDetailsState] = useState<CurrentUserProfileDetailsState | null>(null);
 
   useEffect(() => {
@@ -66,12 +74,11 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
   }
 
   const profileDetails = detailsState.profile;
-  const canEditOptionalFields = detailsState.optionalFieldsAvailable ?? true;
 
   return (
     <>
       <form
-        key={`${profileDetails.email}-${profileDetails.fullName ?? ""}-${profileDetails.phone ?? ""}`}
+        key={`${profileDetails.phone}-${profileDetails.email ?? ""}-${profileDetails.fullName ?? ""}`}
         action={formAction}
         className="grid gap-5"
       >
@@ -88,24 +95,46 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
             />
           </AdminDrawerField>
 
-          <AdminDrawerField id="email" label="Correo">
-            <input
-              id="email"
-              type="email"
-              value={profileDetails.email}
-              readOnly
-              className={`${adminDrawerInputClassName} bg-[#f7f8f9] text-[#5e6770]`}
-            />
-          </AdminDrawerField>
-
           <AdminDrawerField id="phone" label="Celular">
             <input
               id="phone"
               name="phone"
               type="tel"
-              defaultValue={profileDetails.phone ?? ""}
-              placeholder="No registrado"
-              disabled={!canEditOptionalFields}
+              inputMode="tel"
+              defaultValue={profileDetails.phone}
+              placeholder="3001234567"
+              required
+              className={adminDrawerInputClassName}
+            />
+          </AdminDrawerField>
+
+          <AdminDrawerField id="phoneOtpCode" label="Código WhatsApp">
+            <input
+              id="phoneOtpCode"
+              name="phoneOtpCode"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="Solo si cambias el celular"
+              className={adminDrawerInputClassName}
+            />
+          </AdminDrawerField>
+
+          <button
+            type="submit"
+            formAction={phoneOtpAction}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f7f8f9]"
+          >
+            Enviar código WhatsApp
+          </button>
+
+          <AdminDrawerField id="email" label="Correo opcional">
+            <input
+              id="email"
+              name="email"
+              type="email"
+              defaultValue={profileDetails.email ?? ""}
+              placeholder="nombre@empresa.com"
               className={adminDrawerInputClassName}
             />
           </AdminDrawerField>
@@ -113,6 +142,7 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
           <AdminDrawerButton disabled>Cambiar contraseña</AdminDrawerButton>
         </AdminDrawerSection>
 
+        <AdminDrawerFeedback state={phoneOtpState} />
         <AdminDrawerFeedback state={state} />
         <AdminDrawerSubmitButton idleLabel="Guardar cambios" pendingLabel="Guardando cambios..." />
       </form>

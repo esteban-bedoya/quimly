@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
+import { notificationService } from "@/lib/notifications/notification.service";
+import { normalizeOptionalEmail, normalizePhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -39,10 +41,10 @@ type SanitaryDocumentActionState = AdminActionState & {
 export type CurrentUserProfileDetailsState = AdminActionState & {
   profile?: {
     fullName: string | null;
-    email: string;
-    phone: string | null;
+    email: string | null;
+    phone: string;
+    phoneVerified: boolean;
   };
-  optionalFieldsAvailable?: boolean;
 };
 
 type BranchSanitaryDocumentFileRow = {
@@ -214,15 +216,6 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   return error.message || fallback;
 }
 
-function isMissingOptionalProfileFieldError(error: PostgrestErrorLike | null) {
-  if (!error) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-  return error.code === "42703" || error.code === "PGRST204" || message.includes("phone");
-}
-
 function readSanitaryDocumentKind(formData: FormData, key = "documentKind") {
   const value = readString(formData, key);
   return sanitaryDocumentKinds.find((kind) => kind === value) ?? null;
@@ -354,6 +347,15 @@ function getSupabaseAdminClientOrThrow(context: Record<string, unknown> = {}) {
   return supabase;
 }
 
+async function sendWhatsAppOTP(phone: string) {
+  await notificationService.sendOTP(phone);
+}
+
+async function verifyWhatsAppOTP(phone: string, code: string) {
+  const verification = await notificationService.checkOTP(phone, code);
+  return verification.approved;
+}
+
 async function getSupabaseRlsClientOrThrow(context: Record<string, unknown> = {}) {
   const supabase = await getSupabaseRlsClient();
 
@@ -461,49 +463,86 @@ export async function updateCurrentUserProfile(
   formData: FormData,
 ): Promise<AdminActionState> {
   const context = await requireUserContext();
-  const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCurrentUserProfile" });
+  const adminClient = getSupabaseAdminClientOrThrow({ operation: "updateCurrentUserProfile" });
 
   const fullName = readString(formData, "fullName");
-  const phone = readString(formData, "phone");
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const email = normalizeOptionalEmail(readString(formData, "email"));
+  const phoneOtpCode = readString(formData, "phoneOtpCode");
 
   if (!fullName) {
     return { error: "Debes indicar tu nombre." };
   }
 
-  if (phone.length > 32) {
-    return { error: "El celular no puede superar 32 caracteres." };
+  if (!phone) {
+    return { error: "Debes indicar un celular válido." };
   }
 
-  const { error } = await supabase
+  const phoneChanged = phone !== context.profile.phone;
+
+  if (phoneChanged) {
+    if (!phoneOtpCode) {
+      return { error: "Debes ingresar el código de WhatsApp para cambiar el celular." };
+    }
+
+    const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
+
+    if (!approved) {
+      return { error: "El código de WhatsApp no es válido o expiró." };
+    }
+
+    const { error: authError } = await adminClient.auth.admin.updateUserById(context.profile.userId, {
+      phone,
+      phone_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        email,
+      },
+    });
+
+    if (authError) {
+      return { error: authError.message };
+    }
+  }
+
+  const { error } = await adminClient
     .from("user_profiles")
     .update({
       full_name: fullName,
-      phone: phone || null,
+      email,
+      phone,
+      phone_verified: true,
     })
     .eq("user_id", context.profile.userId);
 
   if (error) {
-    if (isMissingOptionalProfileFieldError(error)) {
-      const { error: fallbackError } = await supabase
-        .from("user_profiles")
-        .update({ full_name: fullName })
-        .eq("user_id", context.profile.userId);
-
-      if (fallbackError) {
-        return { error: formatDatabaseError(fallbackError, "No fue posible actualizar tu perfil.") };
-      }
-
-      revalidatePath("/dashboard");
-      return {
-        success: "Nombre actualizado correctamente. El celular quedará disponible cuando se aplique la migración.",
-      };
-    }
-
     return { error: formatDatabaseError(error, "No fue posible actualizar tu perfil.") };
   }
 
   revalidatePath("/dashboard");
   return { success: "Perfil actualizado correctamente." };
+}
+
+export async function sendCurrentUserPhoneChangeOTP(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireUserContext();
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+
+  if (!phone) {
+    return { error: "Debes indicar un celular válido." };
+  }
+
+  try {
+    await sendWhatsAppOTP(phone);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+    };
+  }
+
+  return { success: "Código enviado por WhatsApp." };
 }
 
 export async function getCurrentUserProfileDetails(): Promise<CurrentUserProfileDetailsState> {
@@ -512,46 +551,29 @@ export async function getCurrentUserProfileDetails(): Promise<CurrentUserProfile
 
   const { data, error } = await supabase
     .from("user_profiles")
-    .select("full_name, email, phone")
+    .select("full_name, email, phone, phone_verified")
     .eq("user_id", context.profile.userId)
-    .maybeSingle<{ full_name: string | null; email: string; phone: string | null }>();
+    .maybeSingle<{ full_name: string | null; email: string | null; phone: string; phone_verified: boolean }>();
 
-  if (!error && data) {
-    return {
-      profile: {
-        fullName: data.full_name,
-        email: data.email,
-        phone: data.phone,
-      },
-      optionalFieldsAvailable: true,
-    };
-  }
-
-  if (!isMissingOptionalProfileFieldError(error)) {
+  if (error || !data) {
     return {
       error: error?.message ?? "No fue posible cargar tu perfil.",
     };
   }
 
-  const { data: fallbackData, error: fallbackError } = await supabase
-    .from("user_profiles")
-    .select("full_name, email")
-    .eq("user_id", context.profile.userId)
-    .maybeSingle<{ full_name: string | null; email: string }>();
-
-  if (fallbackError || !fallbackData) {
+  if (!data.phone) {
     return {
-      error: fallbackError?.message ?? "No fue posible cargar tu perfil.",
+      error: "Tu perfil no tiene celular configurado para autenticación.",
     };
   }
 
   return {
     profile: {
-      fullName: fallbackData.full_name,
-      email: fallbackData.email,
-      phone: null,
+      fullName: data.full_name,
+      email: data.email,
+      phone: data.phone,
+      phoneVerified: data.phone_verified,
     },
-    optionalFieldsAvailable: false,
   };
 }
 
@@ -1712,12 +1734,16 @@ export async function archiveBranchSanitationAreaStateAction(
 
 async function createUserRecord({
   email,
+  phone,
+  phoneOtpCode,
   fullName,
   password,
   role,
   companyId,
 }: {
-  email: string;
+  email: string | null;
+  phone: string;
+  phoneOtpCode: string;
   fullName: string;
   password: string;
   role: AppRole;
@@ -1754,17 +1780,24 @@ async function createUserRecord({
     throw new Error("Solo un company_admin puede tener empresa asignada.");
   }
 
+  const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
+
+  if (!approved) {
+    throw new Error("El código de WhatsApp no es válido o expiró.");
+  }
+
   const adminClient = getSupabaseAdminClientOrThrow({
     operation: "createUserRecord.authAdmin",
     role,
   });
 
   const { data: createdUser, error: authError } = await adminClient.auth.admin.createUser({
-    email,
+    phone,
     password,
-    email_confirm: true,
+    phone_confirm: true,
     user_metadata: {
       full_name: fullName,
+      email,
     },
   });
 
@@ -1776,10 +1809,11 @@ async function createUserRecord({
 
   const { error: provisionError } = await supabase.rpc("provision_app_user", {
     target_user_id: userId,
-    target_email: email,
+    target_phone: phone,
     target_full_name: fullName,
     target_role: role,
     target_company_id: role === "company_admin" ? companyId : null,
+    target_email: email,
   });
 
   if (provisionError) {
@@ -1803,18 +1837,23 @@ export async function createSuperAdmin(
 ): Promise<AdminActionState> {
   await requireOwnerAccess();
 
-  const email = readString(formData, "email").toLowerCase();
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const email = normalizeOptionalEmail(readString(formData, "email"));
   const fullName = readString(formData, "fullName");
   const password = readString(formData, "password");
-  if (!email || !fullName || password.length < 8) {
+  const phoneOtpCode = readString(formData, "phoneOtpCode");
+
+  if (!phone || !fullName || password.length < 8 || !phoneOtpCode) {
     return {
-      error: "El super_admin requiere nombre, correo y una contraseña de mínimo 8 caracteres.",
+      error: "El super_admin requiere nombre, celular, código WhatsApp y una contraseña de mínimo 8 caracteres.",
     };
   }
 
   try {
     await createUserRecord({
       email,
+      phone,
+      phoneOtpCode,
       fullName,
       password,
       role: "super_admin",
@@ -1835,20 +1874,24 @@ export async function createCompanyAdmin(
 ): Promise<AdminActionState> {
   await requireOperatorAccess();
 
-  const email = readString(formData, "email").toLowerCase();
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const email = normalizeOptionalEmail(readString(formData, "email"));
   const fullName = readString(formData, "fullName");
   const password = readString(formData, "password");
   const companyId = readString(formData, "companyId");
+  const phoneOtpCode = readString(formData, "phoneOtpCode");
 
-  if (!email || !fullName || password.length < 8 || !companyId) {
+  if (!phone || !fullName || password.length < 8 || !companyId || !phoneOtpCode) {
     return {
-      error: "El company_admin requiere nombre, correo, contraseña y empresa asignada.",
+      error: "El company_admin requiere nombre, celular, código WhatsApp, contraseña y empresa asignada.",
     };
   }
 
   try {
     await createUserRecord({
       email,
+      phone,
+      phoneOtpCode,
       fullName,
       password,
       role: "company_admin",
@@ -1862,6 +1905,50 @@ export async function createCompanyAdmin(
 
   revalidatePath("/dashboard");
   return { success: `Company admin "${fullName}" creado correctamente.` };
+}
+
+export async function sendSuperAdminRegistrationOTP(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireOwnerAccess();
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+
+  if (!phone) {
+    return { error: "Debes indicar un celular válido." };
+  }
+
+  try {
+    await sendWhatsAppOTP(phone);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+    };
+  }
+
+  return { success: "Código enviado por WhatsApp." };
+}
+
+export async function sendCompanyAdminRegistrationOTP(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireOperatorAccess();
+  const phone = normalizePhoneNumber(readString(formData, "phone"));
+
+  if (!phone) {
+    return { error: "Debes indicar un celular válido." };
+  }
+
+  try {
+    await sendWhatsAppOTP(phone);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+    };
+  }
+
+  return { success: "Código enviado por WhatsApp." };
 }
 
 export async function updateCompany(

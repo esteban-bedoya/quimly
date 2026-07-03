@@ -65,7 +65,7 @@ export default async function LoginPage() {
                 <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#2a7f86]">Login</p>
                 <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Accede a tu panel</h2>
                 <p className="text-sm leading-7 text-[#4c4943]">
-                  Usa tus credenciales para iniciar.
+                  Usa tu celular y contraseña. El código por WhatsApp se usa para crear cuenta o recuperar acceso.
                 </p>
               </div>
 
@@ -74,7 +74,7 @@ export default async function LoginPage() {
               </div>
 
               <p className="mt-4 text-xs leading-6 text-[#6a665f]">
-                Si aún no tienes acceso, comunicate con Quimly para acceder a los servicios.
+                Si eres nuevo, crea tu cuenta y activa tu prueba gratuita desde aquí.
               </p>
             </div>
           </section>

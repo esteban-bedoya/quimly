@@ -80,7 +80,7 @@ export function CompanyAdminDashboard({
               <div>
                 <p className="text-sm uppercase tracking-[0.24em] text-[#8fe3d5]">ADMINISTRACIÓN</p>
                 <h1 className="mt-2 max-w-3xl text-2xl font-semibold tracking-[-0.05em] text-[#e5ecec] sm:text-4xl">
-                  {profile.fullName || profile.email}
+                  {profile.fullName || profile.phone}
                 </h1>
               </div>
 

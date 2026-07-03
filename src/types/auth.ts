@@ -2,11 +2,23 @@ export type AppRole = "owner" | "super_admin" | "company_admin";
 
 export type UserProfile = {
   userId: string;
-  email: string;
+  email: string | null;
+  phone: string;
+  phoneVerified: boolean;
   fullName: string | null;
   globalRole: AppRole;
   isActive: boolean;
   defaultCompanyId: string | null;
+};
+
+export type UserIdentityType = "phone";
+
+export type ResolvedUserIdentity = {
+  type: "phone";
+  value: string;
+  email: string | null;
+  phone: string;
+  phoneVerified: boolean;
 };
 
 export type CompanySummary = {
@@ -141,4 +153,5 @@ export type BranchCatalogItemSummary = {
 
 export type AuthenticatedUserContext = {
   profile: UserProfile;
+  identity: ResolvedUserIdentity;
 };

@@ -113,8 +113,8 @@ async function loadCompletedRecordDateKeys(token: string) {
   return Array.isArray(data) ? data.filter((dateKey): dateKey is string => typeof dateKey === "string") : [];
 }
 
-function getAdminDisplayName(fullName: string | null, email: string) {
-  return (fullName?.trim() || email).toLocaleUpperCase("es-CO");
+function getAdminDisplayName(fullName: string | null, phone: string) {
+  return (fullName?.trim() || phone).toLocaleUpperCase("es-CO");
 }
 
 function isDashboardAdminLaunch(source: string | string[] | undefined, admin: string | string[] | undefined) {
@@ -167,7 +167,7 @@ async function loadOperationalFormAdminContext({
   }
 
   return {
-    administratorName: getAdminDisplayName(userContext.profile.fullName, userContext.profile.email),
+    administratorName: getAdminDisplayName(userContext.profile.fullName, userContext.profile.phone),
   };
 }
 

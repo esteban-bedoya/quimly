@@ -15,7 +15,8 @@ import type { CompanyBranchSummary } from "@/types/auth";
 type CompanyMember = {
   userId: string;
   fullName: string | null;
-  email: string;
+  email: string | null;
+  phone: string;
   isActive: boolean;
 };
 
@@ -36,12 +37,12 @@ async function getCompanyModuleData(companyId: string) {
   const [{ data: companyAdmin }, { data: branches }] = await Promise.all([
     supabase
       .from("companies")
-      .select("company_admin:user_profiles!companies_company_admin_user_id_fkey(user_id, full_name, email, is_active)")
+      .select("company_admin:user_profiles!companies_company_admin_user_id_fkey(user_id, full_name, email, phone, is_active)")
       .eq("id", companyId)
       .maybeSingle<{
         company_admin:
-          | { user_id: string; full_name: string | null; email: string; is_active: boolean }
-          | { user_id: string; full_name: string | null; email: string; is_active: boolean }[]
+          | { user_id: string; full_name: string | null; email: string | null; phone: string; is_active: boolean }
+          | { user_id: string; full_name: string | null; email: string | null; phone: string; is_active: boolean }[]
           | null;
       }>(),
     supabase
@@ -61,6 +62,7 @@ async function getCompanyModuleData(companyId: string) {
           userId: admin.user_id,
           fullName: admin.full_name,
           email: admin.email,
+          phone: admin.phone,
           isActive: admin.is_active,
         } satisfies CompanyMember)
       : null,
@@ -234,9 +236,12 @@ export default async function CompanyDashboardPage({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-semibold text-[#12110f]">
-                          {moduleData.companyAdmin.fullName || moduleData.companyAdmin.email}
+                          {moduleData.companyAdmin.fullName || moduleData.companyAdmin.phone}
                         </p>
-                        <p className="text-sm text-[#5d574f]">{moduleData.companyAdmin.email}</p>
+                        <p className="text-sm text-[#5d574f]">{moduleData.companyAdmin.phone}</p>
+                        {moduleData.companyAdmin.email ? (
+                          <p className="text-xs text-[#7d766d]">{moduleData.companyAdmin.email}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <RoleBadge role="company_admin" />
