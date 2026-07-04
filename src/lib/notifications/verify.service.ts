@@ -16,7 +16,15 @@ function normalizeVerifyPhoneNumber(phone: PhoneNumber) {
 
 export async function sendOTP(phone: PhoneNumber) {
   const to = normalizeVerifyPhoneNumber(phone);
-  const verification = await getTwilioClient().verify.v2.services(getTwilioVerifyServiceSid()).verifications.create({
+  const verifyServiceSid = getTwilioVerifyServiceSid();
+
+  console.log("[Twilio Verify OTP]", {
+    channel: "whatsapp",
+    to,
+    verifyServiceSid: `${verifyServiceSid.slice(0, 6)}...${verifyServiceSid.slice(-4)}`,
+  });
+
+  const verification = await getTwilioClient().verify.v2.services(verifyServiceSid).verifications.create({
     to,
     channel: "whatsapp",
     locale: "en",
