@@ -21,7 +21,7 @@ export async function sendOTP(phone: PhoneNumber) {
   const verification = await getTwilioClient().verify.v2.services(verifyServiceSid).verifications.create({
     to,
     channel: "whatsapp",
-    locale: "en",
+    locale: "es",
   });
 
   return {
