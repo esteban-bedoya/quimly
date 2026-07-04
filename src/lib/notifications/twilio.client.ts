@@ -48,6 +48,11 @@ export function getTwilioWhatsAppFrom() {
 }
 
 export function getTwilioVerifyServiceSid() {
-  requireTwilioConfig(["verifyServiceSid"]);
-  return readEnv("verifyServiceSid")!;
+  const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
+
+  if (!verifyServiceSid) {
+    throw new Error("Missing Twilio configuration: TWILIO_VERIFY_SERVICE_SID");
+  }
+
+  return verifyServiceSid;
 }

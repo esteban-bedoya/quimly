@@ -18,8 +18,8 @@ export async function sendOTP(phone: PhoneNumber) {
   const to = normalizeVerifyPhoneNumber(phone);
   const verification = await getTwilioClient().verify.v2.services(getTwilioVerifyServiceSid()).verifications.create({
     to,
-    channel: "sms",
-    locale: "es",
+    channel: "whatsapp",
+    locale: "en",
   });
 
   return {
