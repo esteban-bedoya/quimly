@@ -13,6 +13,8 @@ import {
   type PasswordResetFormState,
   type SignupFormState,
 } from "@/app/login/actions";
+import { InternationalPhoneField } from "@/components/phone/international-phone-field";
+import { formatPhoneNumberForDisplay } from "@/lib/phone";
 
 type AuthPanel = "login" | "signup" | "recovery";
 
@@ -48,31 +50,10 @@ function Feedback({ state }: { state: LoginFormState | PasswordResetFormState | 
   );
 }
 
-function PhoneField({ defaultValue = "" }: { defaultValue?: string }) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor="phone" className="block text-sm font-medium text-[#12110f]">
-        Número de celular
-      </label>
-      <input
-        id="phone"
-        name="phone"
-        type="tel"
-        inputMode="tel"
-        autoComplete="tel"
-        className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-        placeholder="3001234567"
-        defaultValue={defaultValue}
-        required
-      />
-    </div>
-  );
-}
-
 function LoginContent({ state }: { state: LoginFormState | undefined }) {
   return (
     <>
-      <PhoneField />
+      <InternationalPhoneField id="loginPhone" />
 
       <div className="space-y-2">
         <label htmlFor="password" className="block text-sm font-medium text-[#12110f]">
@@ -111,7 +92,6 @@ function SignupContent({
   const [draft, setDraft] = useState({
     establishmentName: "",
     adminName: "",
-    phone: "",
     password: "",
   });
 
@@ -120,7 +100,7 @@ function SignupContent({
       <form action={verifyAction} className="space-y-5">
         <input type="hidden" name="establishmentName" value={activeState?.establishmentName ?? draft.establishmentName} />
         <input type="hidden" name="adminName" value={activeState?.adminName ?? draft.adminName} />
-        <input type="hidden" name="phone" value={activeState?.phone ?? draft.phone} />
+        <input type="hidden" name="phone" value={activeState?.phone ?? ""} />
         <input type="hidden" name="password" value={draft.password} />
 
         <div className="space-y-2">
@@ -138,7 +118,8 @@ function SignupContent({
             required
           />
           <p className="text-xs leading-5 text-[#6a665f]">
-            Revisa WhatsApp. Si no lo ves, revisa tus SMS. Enviado a {activeState?.phone ?? draft.phone}.
+            Revisa WhatsApp. Si no lo ves, revisa tus SMS. Enviado a{" "}
+            {activeState?.phone ? formatPhoneNumberForDisplay(activeState.phone) : ""}.
           </p>
         </div>
 
@@ -184,23 +165,7 @@ function SignupContent({
         />
       </div>
 
-      <div className="space-y-2">
-        <label htmlFor="signupPhone" className="block text-sm font-medium text-[#12110f]">
-          Número de celular
-        </label>
-        <input
-          id="signupPhone"
-          name="phone"
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-          placeholder="3001234567"
-          value={draft.phone}
-          onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))}
-          required
-        />
-      </div>
+      <InternationalPhoneField id="signupPhone" defaultValue={activeState?.phone ?? ""} />
 
       <div className="space-y-2">
         <label htmlFor="signupPassword" className="block text-sm font-medium text-[#12110f]">
@@ -282,7 +247,7 @@ function PasswordResetContent({
 
   return (
     <form action={requestAction} className="space-y-5">
-      <PhoneField defaultValue={activeState?.phone ?? ""} />
+      <InternationalPhoneField id="resetPhone" defaultValue={activeState?.phone ?? ""} />
       <Feedback state={activeState} />
       <SubmitButton idleLabel="Enviar código" pendingLabel="Enviando código..." />
     </form>

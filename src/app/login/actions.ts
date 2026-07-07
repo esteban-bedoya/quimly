@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { clearSessionTokens, storeSessionTokens } from "@/lib/auth/session";
 import { notificationService } from "@/lib/notifications/notification.service";
-import { normalizePhoneNumber } from "@/lib/phone";
+import { normalizeInternationalPhoneInput, type E164PhoneNumber } from "@/lib/phone";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseAuthClient } from "@/lib/supabase/auth";
 
@@ -17,7 +17,7 @@ export type PasswordResetFormState = {
   error?: string;
   success?: string;
   step?: "request" | "verify";
-  phone?: string;
+  phone?: E164PhoneNumber;
 };
 
 export type SignupFormState = {
@@ -26,12 +26,20 @@ export type SignupFormState = {
   step?: "details" | "verify";
   establishmentName?: string;
   adminName?: string;
-  phone?: string;
+  phone?: E164PhoneNumber;
 };
 
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readPhone(formData: FormData) {
+  return normalizeInternationalPhoneInput({
+    phone: readString(formData, "phone"),
+    country: readString(formData, "phoneCountry"),
+    nationalNumber: readString(formData, "phoneNational"),
+  });
 }
 
 function getSupabaseAdminClientOrThrow() {
@@ -44,7 +52,7 @@ function getSupabaseAdminClientOrThrow() {
   return supabase;
 }
 
-async function markPhoneVerified(userId: string, phone: string) {
+async function markPhoneVerified(userId: string, phone: E164PhoneNumber) {
   const adminClient = getSupabaseAdminClientOrThrow();
 
   const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
@@ -69,7 +77,7 @@ async function markPhoneVerified(userId: string, phone: string) {
   }
 }
 
-async function findUserProfileByPhone(phone: string) {
+async function findUserProfileByPhone(phone: E164PhoneNumber) {
   const adminClient = getSupabaseAdminClientOrThrow();
   const { data, error } = await adminClient
     .from("user_profiles")
@@ -84,21 +92,21 @@ async function findUserProfileByPhone(phone: string) {
   return data;
 }
 
-async function sendPhoneOTP(phone: string) {
+async function sendPhoneOTP(phone: E164PhoneNumber) {
   await notificationService.sendOTP(phone);
 }
 
-async function verifyPhoneOTP(phone: string, code: string) {
+async function verifyPhoneOTP(phone: E164PhoneNumber, code: string) {
   const verification = await notificationService.checkOTP(phone, code);
   return verification.approved;
 }
 
 export async function login(_: LoginFormState | undefined, formData: FormData): Promise<LoginFormState | undefined> {
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const password = readString(formData, "password");
 
   if (!phone || !password) {
-    return { error: "Debes ingresar celular y contraseña." };
+    return { error: "Debes ingresar un celular internacional válido y contraseña." };
   }
 
   const supabase = getSupabaseAuthClient();
@@ -131,12 +139,12 @@ export async function requestSignupOTP(
 ): Promise<SignupFormState> {
   const establishmentName = readString(formData, "establishmentName");
   const adminName = readString(formData, "adminName");
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const password = readString(formData, "password");
 
   if (!establishmentName || !adminName || !phone || password.length < 8) {
     return {
-      error: "Completa establecimiento, administrador, celular y una contraseña de mínimo 8 caracteres.",
+      error: "Completa establecimiento, administrador, celular internacional válido y una contraseña de mínimo 8 caracteres.",
       step: "details",
       establishmentName,
       adminName,
@@ -183,7 +191,7 @@ export async function completeSignupWithOTP(
 ): Promise<SignupFormState | undefined> {
   const establishmentName = readString(formData, "establishmentName");
   const adminName = readString(formData, "adminName");
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const password = readString(formData, "password");
   const code = readString(formData, "otpCode");
 
@@ -292,10 +300,10 @@ export async function requestPasswordReset(
   _: PasswordResetFormState | undefined,
   formData: FormData,
 ): Promise<PasswordResetFormState> {
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
 
   if (!phone) {
-    return { error: "Debes ingresar un celular válido.", step: "request" };
+    return { error: "Debes ingresar un celular internacional válido.", step: "request" };
   }
 
   try {
@@ -318,7 +326,7 @@ export async function resetPasswordWithOTP(
   _: PasswordResetFormState | undefined,
   formData: FormData,
 ): Promise<PasswordResetFormState> {
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const code = readString(formData, "otpCode");
   const password = readString(formData, "password");
 

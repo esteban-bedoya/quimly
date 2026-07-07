@@ -1,4 +1,6 @@
-export type PhoneNumber = string;
+import type { E164PhoneNumber } from "@/lib/phone";
+
+export type PhoneNumber = E164PhoneNumber;
 
 export type NotificationType = "otp" | "trial_reminder" | "subscription_expired";
 

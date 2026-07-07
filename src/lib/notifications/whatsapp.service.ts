@@ -8,7 +8,7 @@ function normalizeWhatsAppPhoneNumber(phone: PhoneNumber) {
   const normalizedPhone = formatPhoneForWhatsApp(phone);
 
   if (!normalizedPhone) {
-    throw new Error("WhatsApp phone number must be E.164 or a Colombian mobile number.");
+    throw new Error("Twilio WhatsApp requires a valid E.164 phone number.");
   }
 
   return normalizedPhone;

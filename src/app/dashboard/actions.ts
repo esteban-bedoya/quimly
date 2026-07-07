@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
 import { notificationService } from "@/lib/notifications/notification.service";
-import { normalizeOptionalEmail, normalizePhoneNumber } from "@/lib/phone";
+import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -42,7 +42,7 @@ export type CurrentUserProfileDetailsState = AdminActionState & {
   profile?: {
     fullName: string | null;
     email: string | null;
-    phone: string;
+    phone: E164PhoneNumber;
     phoneVerified: boolean;
   };
 };
@@ -101,6 +101,14 @@ const MAX_DOCUMENT_SECTION_RECORDS = 40;
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readPhone(formData: FormData) {
+  return normalizeInternationalPhoneInput({
+    phone: readString(formData, "phone"),
+    country: readString(formData, "phoneCountry"),
+    nationalNumber: readString(formData, "phoneNational"),
+  });
 }
 
 function readRefrigerationEquipmentType(formData: FormData) {
@@ -210,6 +218,10 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
 
     if (error.message.includes("branch_staff_members_active_name_idx")) {
       return "Ya existe un empleado activo con ese nombre. Puedes editar el registro existente o usar otro nombre.";
+    }
+
+    if (error.message.includes("user_profiles_phone_unique_idx")) {
+      return "Ya existe una cuenta con ese celular.";
     }
   }
 
@@ -347,13 +359,30 @@ function getSupabaseAdminClientOrThrow(context: Record<string, unknown> = {}) {
   return supabase;
 }
 
-async function sendWhatsAppOTP(phone: string) {
+async function sendWhatsAppOTP(phone: E164PhoneNumber) {
   await notificationService.sendOTP(phone);
 }
 
-async function verifyWhatsAppOTP(phone: string, code: string) {
+async function verifyWhatsAppOTP(phone: E164PhoneNumber, code: string) {
   const verification = await notificationService.checkOTP(phone, code);
   return verification.approved;
+}
+
+async function ensurePhoneIsAvailable(phone: E164PhoneNumber, allowedUserId?: string) {
+  const adminClient = getSupabaseAdminClientOrThrow({ operation: "ensurePhoneIsAvailable" });
+  const { data, error } = await adminClient
+    .from("user_profiles")
+    .select("user_id")
+    .eq("phone", phone)
+    .maybeSingle<{ user_id: string }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (data && data.user_id !== allowedUserId) {
+    throw new Error("Ya existe una cuenta con ese celular.");
+  }
 }
 
 async function getSupabaseRlsClientOrThrow(context: Record<string, unknown> = {}) {
@@ -466,7 +495,7 @@ export async function updateCurrentUserProfile(
   const adminClient = getSupabaseAdminClientOrThrow({ operation: "updateCurrentUserProfile" });
 
   const fullName = readString(formData, "fullName");
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const email = normalizeOptionalEmail(readString(formData, "email"));
   const phoneOtpCode = readString(formData, "phoneOtpCode");
 
@@ -475,12 +504,18 @@ export async function updateCurrentUserProfile(
   }
 
   if (!phone) {
-    return { error: "Debes indicar un celular válido." };
+    return { error: "Debes indicar un celular internacional válido." };
   }
 
   const phoneChanged = phone !== context.profile.phone;
 
   if (phoneChanged) {
+    try {
+      await ensurePhoneIsAvailable(phone, context.profile.userId);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "No fue posible validar el celular." };
+    }
+
     if (!phoneOtpCode) {
       return { error: "Debes ingresar el código de verificación para cambiar el celular." };
     }
@@ -527,14 +562,15 @@ export async function sendCurrentUserPhoneChangeOTP(
   _: AdminActionState | undefined,
   formData: FormData,
 ): Promise<AdminActionState> {
-  await requireUserContext();
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const context = await requireUserContext();
+  const phone = readPhone(formData);
 
   if (!phone) {
-    return { error: "Debes indicar un celular válido." };
+    return { error: "Debes indicar un celular internacional válido." };
   }
 
   try {
+    await ensurePhoneIsAvailable(phone, context.profile.userId);
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {
@@ -573,7 +609,7 @@ export async function getCurrentUserProfileDetails(): Promise<CurrentUserProfile
     profile: {
       fullName: data.full_name,
       email: data.email,
-      phone: data.phone,
+      phone: data.phone as E164PhoneNumber,
       phoneVerified: data.phone_verified,
     },
   };
@@ -1744,7 +1780,7 @@ async function createUserRecord({
   companyId,
 }: {
   email: string | null;
-  phone: string;
+  phone: E164PhoneNumber;
   phoneOtpCode: string;
   fullName: string;
   password: string;
@@ -1759,6 +1795,8 @@ async function createUserRecord({
     operation: "createUserRecord",
     role,
   });
+
+  await ensurePhoneIsAvailable(phone);
 
   if (role === "company_admin") {
     if (!companyId) {
@@ -1839,7 +1877,7 @@ export async function createSuperAdmin(
 ): Promise<AdminActionState> {
   await requireOwnerAccess();
 
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const email = normalizeOptionalEmail(readString(formData, "email"));
   const fullName = readString(formData, "fullName");
   const password = readString(formData, "password");
@@ -1847,7 +1885,7 @@ export async function createSuperAdmin(
 
   if (!phone || !fullName || password.length < 8 || !phoneOtpCode) {
     return {
-      error: "El super_admin requiere nombre, celular, código de verificación y una contraseña de mínimo 8 caracteres.",
+      error: "El super_admin requiere nombre, celular internacional válido, código de verificación y una contraseña de mínimo 8 caracteres.",
     };
   }
 
@@ -1876,7 +1914,7 @@ export async function createCompanyAdmin(
 ): Promise<AdminActionState> {
   await requireOperatorAccess();
 
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
   const email = normalizeOptionalEmail(readString(formData, "email"));
   const fullName = readString(formData, "fullName");
   const password = readString(formData, "password");
@@ -1885,7 +1923,7 @@ export async function createCompanyAdmin(
 
   if (!phone || !fullName || password.length < 8 || !companyId || !phoneOtpCode) {
     return {
-      error: "El company_admin requiere nombre, celular, código de verificación, contraseña y empresa asignada.",
+      error: "El company_admin requiere nombre, celular internacional válido, código de verificación, contraseña y empresa asignada.",
     };
   }
 
@@ -1914,13 +1952,14 @@ export async function sendSuperAdminRegistrationOTP(
   formData: FormData,
 ): Promise<AdminActionState> {
   await requireOwnerAccess();
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
 
   if (!phone) {
-    return { error: "Debes indicar un celular válido." };
+    return { error: "Debes indicar un celular internacional válido." };
   }
 
   try {
+    await ensurePhoneIsAvailable(phone);
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {
@@ -1938,13 +1977,14 @@ export async function sendCompanyAdminRegistrationOTP(
   formData: FormData,
 ): Promise<AdminActionState> {
   await requireOperatorAccess();
-  const phone = normalizePhoneNumber(readString(formData, "phone"));
+  const phone = readPhone(formData);
 
   if (!phone) {
-    return { error: "Debes indicar un celular válido." };
+    return { error: "Debes indicar un celular internacional válido." };
   }
 
   try {
+    await ensurePhoneIsAvailable(phone);
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {

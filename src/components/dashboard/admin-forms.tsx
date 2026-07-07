@@ -18,6 +18,7 @@ import {
   toggleUserStatus,
   type AdminActionState,
 } from "@/app/dashboard/actions";
+import { InternationalPhoneField } from "@/components/phone/international-phone-field";
 import type { CompanyBranchSummary, CompanySummary, AppRole } from "@/types/auth";
 
 function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingLabel: string }) {
@@ -104,7 +105,7 @@ export function CreateSuperAdminForm() {
   return (
     <form action={formAction} className="space-y-4">
       <Field id="fullName" label="Nombre completo" placeholder="Laura Gómez" />
-      <Field id="phone" label="Número de celular" placeholder="3001234567" type="tel" />
+      <InternationalPhoneField id="superAdminPhone" />
       <Field id="email" label="Correo opcional" placeholder="laura@quimly.co" type="email" required={false} />
       <button
         type="submit"
@@ -131,7 +132,7 @@ export function CreateCompanyAdminForm({ companies }: { companies: CompanySummar
   return (
     <form action={formAction} className="space-y-4">
       <Field id="fullName" label="Nombre completo" placeholder="María Pérez" />
-      <Field id="phone" label="Número de celular" placeholder="3001234567" type="tel" />
+      <InternationalPhoneField id="companyAdminPhone" />
       <Field id="email" label="Correo opcional" placeholder="admin@cliente.com" type="email" required={false} />
       <button
         type="submit"

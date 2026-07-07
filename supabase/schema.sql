@@ -1,6 +1,60 @@
 create extension if not exists pgcrypto;
 create extension if not exists unaccent;
 
+create or replace function public.is_e164_phone(phone_value text)
+returns boolean
+language sql
+immutable
+as $$
+  select phone_value is not null
+    and char_length(btrim(phone_value)) between 2 and 16
+    and left(btrim(phone_value), 1) = '+'
+    and substring(btrim(phone_value) from 2 for 1) <> '0'
+    and translate(substring(btrim(phone_value) from 2), '0123456789', '') = '';
+$$;
+
+create or replace function public.normalize_legacy_phone_to_e164(raw_phone text)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  cleaned_phone text;
+  phone_digits text;
+  candidate_phone text;
+begin
+  cleaned_phone := btrim(coalesce(raw_phone, ''));
+
+  if cleaned_phone = '' then
+    return null;
+  end if;
+
+  cleaned_phone := btrim(replace(lower(cleaned_phone), 'whatsapp:', ''));
+
+  if public.is_e164_phone(cleaned_phone) then
+    return cleaned_phone;
+  end if;
+
+  phone_digits := translate(cleaned_phone, ' +()-.', '');
+
+  if translate(phone_digits, '0123456789', '') <> '' then
+    return cleaned_phone;
+  end if;
+
+  if left(phone_digits, 2) = '00' then
+    candidate_phone := '+' || substring(phone_digits from 3);
+  elsif char_length(phone_digits) = 10 then
+    candidate_phone := '+57' || phone_digits;
+  elsif char_length(phone_digits) = 12 and left(phone_digits, 2) = '57' then
+    candidate_phone := '+' || phone_digits;
+  else
+    candidate_phone := cleaned_phone;
+  end if;
+
+  return candidate_phone;
+end;
+$$;
+
 do $$
 begin
   if not exists (
@@ -80,7 +134,8 @@ create table if not exists public.user_profiles (
   default_company_id uuid references public.companies (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint user_profiles_email_lowercase check (email is null or email = lower(email))
+  constraint user_profiles_email_lowercase check (email is null or email = lower(email)),
+  constraint user_profiles_phone_e164 check (public.is_e164_phone(phone))
 );
 
 alter table if exists public.user_profiles
@@ -100,6 +155,76 @@ add constraint user_profiles_email_lowercase check (email is null or email = low
 
 alter table if exists public.user_profiles
 add column if not exists phone_verified boolean not null default false;
+
+alter table if exists public.user_profiles
+drop constraint if exists user_profiles_phone_e164;
+
+do $$
+declare
+  duplicated_phone text;
+begin
+  select normalized_phone
+  into duplicated_phone
+  from (
+    select public.normalize_legacy_phone_to_e164(phone) as normalized_phone, count(*) as profile_count
+    from public.user_profiles
+    where phone is not null
+    group by public.normalize_legacy_phone_to_e164(phone)
+  ) normalized_profiles
+  where normalized_phone is not null
+    and profile_count > 1
+  limit 1;
+
+  if duplicated_phone is not null then
+    raise exception 'No se puede migrar teléfonos a E.164: existen perfiles duplicados para %.', duplicated_phone;
+  end if;
+end;
+$$;
+
+update public.user_profiles
+set phone = public.normalize_legacy_phone_to_e164(phone)
+where phone is not null
+  and phone is distinct from public.normalize_legacy_phone_to_e164(phone);
+
+do $$
+declare
+  invalid_phone text;
+  conflicting_phone text;
+begin
+  select phone
+  into invalid_phone
+  from public.user_profiles
+  where not public.is_e164_phone(phone)
+  limit 1;
+
+  if invalid_phone is not null then
+    raise exception 'No se puede aplicar formato E.164: el teléfono % requiere corrección manual.', invalid_phone;
+  end if;
+
+  select up.phone
+  into conflicting_phone
+  from public.user_profiles up
+  join auth.users au on au.id = up.user_id
+  join auth.users other_au on other_au.phone = up.phone and other_au.id <> au.id
+  limit 1;
+
+  if conflicting_phone is not null then
+    raise exception 'No se puede sincronizar Auth: el teléfono % ya pertenece a otro usuario Auth.', conflicting_phone;
+  end if;
+end;
+$$;
+
+update auth.users au
+set
+  phone = up.phone,
+  phone_confirmed_at = coalesce(au.phone_confirmed_at, now()),
+  updated_at = now()
+from public.user_profiles up
+where au.id = up.user_id
+  and au.phone is distinct from up.phone;
+
+alter table if exists public.user_profiles
+add constraint user_profiles_phone_e164 check (public.is_e164_phone(phone));
 
 create unique index if not exists user_profiles_phone_unique_idx
 on public.user_profiles (phone)
@@ -2541,13 +2666,20 @@ set search_path = public
 as $$
 declare
   new_company_id uuid;
+  normalized_phone text;
 begin
+  normalized_phone := btrim(coalesce(target_phone, ''));
+
   if target_user_id is null
-    or nullif(trim(coalesce(target_phone, '')), '') is null
+    or nullif(normalized_phone, '') is null
     or nullif(trim(coalesce(target_admin_name, '')), '') is null
     or nullif(trim(coalesce(target_company_name, '')), '') is null
   then
     raise exception 'Datos de onboarding inválidos.';
+  end if;
+
+  if not public.is_e164_phone(normalized_phone) then
+    raise exception 'El celular debe estar en formato E.164.';
   end if;
 
   if not exists (
@@ -2569,7 +2701,7 @@ begin
   if exists (
     select 1
     from public.user_profiles up
-    where up.phone = trim(target_phone)
+    where up.phone = normalized_phone
   ) then
     raise exception 'Ya existe una cuenta con ese celular.';
   end if;
@@ -2614,7 +2746,7 @@ begin
   values (
     target_user_id,
     null,
-    trim(target_phone),
+    normalized_phone,
     true,
     trim(target_admin_name),
     'company_admin',
@@ -2756,11 +2888,19 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  normalized_phone text;
 begin
+  normalized_phone := btrim(coalesce(target_phone, ''));
+
   if target_user_id is null
-    or nullif(trim(coalesce(target_phone, '')), '') is null
+    or nullif(normalized_phone, '') is null
   then
     raise exception 'Datos de owner inválidos.';
+  end if;
+
+  if not public.is_e164_phone(normalized_phone) then
+    raise exception 'El celular debe estar en formato E.164.';
   end if;
 
   insert into public.user_profiles (
@@ -2775,7 +2915,7 @@ begin
   values (
     target_user_id,
     lower(nullif(trim(coalesce(target_email, '')), '')),
-    trim(target_phone),
+    normalized_phone,
     true,
     target_name,
     'owner',
@@ -2812,8 +2952,10 @@ declare
   actor_id uuid;
   actor_role public.app_role;
   existing_company_admin_user_id uuid;
+  normalized_phone text;
 begin
   actor_id := auth.uid();
+  normalized_phone := btrim(coalesce(target_phone, ''));
 
   if actor_id is null then
     raise exception 'No tienes permisos para crear usuarios.';
@@ -2839,10 +2981,14 @@ begin
   end if;
 
   if target_user_id is null
-    or nullif(trim(coalesce(target_phone, '')), '') is null
+    or nullif(normalized_phone, '') is null
     or nullif(trim(coalesce(target_full_name, '')), '') is null
   then
     raise exception 'Datos de usuario inválidos.';
+  end if;
+
+  if not public.is_e164_phone(normalized_phone) then
+    raise exception 'El celular debe estar en formato E.164.';
   end if;
 
   if not exists (
@@ -2897,7 +3043,7 @@ begin
   values (
     target_user_id,
     lower(nullif(trim(coalesce(target_email, '')), '')),
-    trim(target_phone),
+    normalized_phone,
     true,
     trim(target_full_name),
     target_role,

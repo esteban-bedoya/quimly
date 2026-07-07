@@ -18,6 +18,7 @@ import {
   AdminSideDrawer,
   adminDrawerInputClassName,
 } from "@/components/dashboard/admin-side-drawer";
+import { InternationalPhoneField } from "@/components/phone/international-phone-field";
 import type { AdminActionState, CurrentUserProfileDetailsState } from "@/app/dashboard/actions";
 import type { UserProfile } from "@/types/auth";
 
@@ -95,18 +96,13 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
             />
           </AdminDrawerField>
 
-          <AdminDrawerField id="phone" label="Celular">
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              inputMode="tel"
-              defaultValue={profileDetails.phone}
-              placeholder="3001234567"
-              required
-              className={adminDrawerInputClassName}
-            />
-          </AdminDrawerField>
+          <InternationalPhoneField
+            id="profilePhone"
+            label="Celular"
+            defaultValue={profileDetails.phone}
+            labelClassName="ui-form-label"
+            controlClassName={adminDrawerInputClassName}
+          />
 
           <AdminDrawerField id="phoneOtpCode" label="Código de verificación">
             <input

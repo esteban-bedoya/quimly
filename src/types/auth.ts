@@ -1,9 +1,11 @@
+import type { E164PhoneNumber } from "@/lib/phone";
+
 export type AppRole = "owner" | "super_admin" | "company_admin";
 
 export type UserProfile = {
   userId: string;
   email: string | null;
-  phone: string;
+  phone: E164PhoneNumber;
   phoneVerified: boolean;
   fullName: string | null;
   globalRole: AppRole;
@@ -15,9 +17,9 @@ export type UserIdentityType = "phone";
 
 export type ResolvedUserIdentity = {
   type: "phone";
-  value: string;
+  value: E164PhoneNumber;
   email: string | null;
-  phone: string;
+  phone: E164PhoneNumber;
   phoneVerified: boolean;
 };
 

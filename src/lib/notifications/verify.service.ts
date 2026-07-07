@@ -8,7 +8,7 @@ function normalizeVerifyPhoneNumber(phone: PhoneNumber) {
   const normalizedPhone = normalizePhoneNumber(phone);
 
   if (!normalizedPhone) {
-    throw new Error("Verify phone number must be E.164 or a Colombian mobile number.");
+    throw new Error("Twilio Verify requires a valid E.164 phone number.");
   }
 
   return normalizedPhone;

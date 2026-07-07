@@ -13,6 +13,7 @@
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.40.0",
+    "libphonenumber-js": "^1.13.8",
     "next": "16.2.6",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",

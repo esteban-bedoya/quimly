@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { resolveUserIdentity } from "@/lib/auth/identity";
 import { readSessionTokens } from "@/lib/auth/session";
+import type { E164PhoneNumber } from "@/lib/phone";
 import { getSupabaseAuthClient } from "@/lib/supabase/auth";
 import type { AuthenticatedUserContext, UserProfile } from "@/types/auth";
 
@@ -56,7 +57,7 @@ export const getCurrentUserContext = cache(async (): Promise<AuthenticatedUserCo
   const profile = {
     userId: profileRow.user_id,
     email: profileRow.email,
-    phone: profileRow.phone,
+    phone: profileRow.phone as E164PhoneNumber,
     phoneVerified: profileRow.phone_verified ?? false,
     fullName: profileRow.full_name,
     globalRole: profileRow.global_role,
