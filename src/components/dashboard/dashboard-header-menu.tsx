@@ -108,7 +108,7 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
             />
           </AdminDrawerField>
 
-          <AdminDrawerField id="phoneOtpCode" label="Código WhatsApp">
+          <AdminDrawerField id="phoneOtpCode" label="Código de verificación">
             <input
               id="phoneOtpCode"
               name="phoneOtpCode"
@@ -125,7 +125,7 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
             formAction={phoneOtpAction}
             className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f7f8f9]"
           >
-            Enviar código WhatsApp
+            Enviar código
           </button>
 
           <AdminDrawerField id="email" label="Correo opcional">

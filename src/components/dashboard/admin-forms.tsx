@@ -112,9 +112,9 @@ export function CreateSuperAdminForm() {
         formNoValidate
         className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
       >
-        Enviar código WhatsApp
+        Enviar código
       </button>
-      <Field id="phoneOtpCode" label="Código WhatsApp" placeholder="123456" />
+      <Field id="phoneOtpCode" label="Código de verificación" placeholder="123456" />
       <Field id="password" label="Contraseña temporal" placeholder="Mínimo 8 caracteres" type="password" />
 
       <ActionFeedback state={otpState} />
@@ -139,9 +139,9 @@ export function CreateCompanyAdminForm({ companies }: { companies: CompanySummar
         formNoValidate
         className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
       >
-        Enviar código WhatsApp
+        Enviar código
       </button>
-      <Field id="phoneOtpCode" label="Código WhatsApp" placeholder="123456" />
+      <Field id="phoneOtpCode" label="Código de verificación" placeholder="123456" />
       <Field id="password" label="Contraseña temporal" placeholder="Mínimo 8 caracteres" type="password" />
 
       <div className="space-y-2">

@@ -482,13 +482,13 @@ export async function updateCurrentUserProfile(
 
   if (phoneChanged) {
     if (!phoneOtpCode) {
-      return { error: "Debes ingresar el código de WhatsApp para cambiar el celular." };
+      return { error: "Debes ingresar el código de verificación para cambiar el celular." };
     }
 
     const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
 
     if (!approved) {
-      return { error: "El código de WhatsApp no es válido o expiró." };
+      return { error: "El código de verificación no es válido o expiró." };
     }
 
     const { error: authError } = await adminClient.auth.admin.updateUserById(context.profile.userId, {
@@ -538,11 +538,13 @@ export async function sendCurrentUserPhoneChangeOTP(
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+      error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
     };
   }
 
-  return { success: "Código enviado por WhatsApp." };
+  return {
+    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+  };
 }
 
 export async function getCurrentUserProfileDetails(): Promise<CurrentUserProfileDetailsState> {
@@ -1783,7 +1785,7 @@ async function createUserRecord({
   const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
 
   if (!approved) {
-    throw new Error("El código de WhatsApp no es válido o expiró.");
+    throw new Error("El código de verificación no es válido o expiró.");
   }
 
   const adminClient = getSupabaseAdminClientOrThrow({
@@ -1845,7 +1847,7 @@ export async function createSuperAdmin(
 
   if (!phone || !fullName || password.length < 8 || !phoneOtpCode) {
     return {
-      error: "El super_admin requiere nombre, celular, código WhatsApp y una contraseña de mínimo 8 caracteres.",
+      error: "El super_admin requiere nombre, celular, código de verificación y una contraseña de mínimo 8 caracteres.",
     };
   }
 
@@ -1883,7 +1885,7 @@ export async function createCompanyAdmin(
 
   if (!phone || !fullName || password.length < 8 || !companyId || !phoneOtpCode) {
     return {
-      error: "El company_admin requiere nombre, celular, código WhatsApp, contraseña y empresa asignada.",
+      error: "El company_admin requiere nombre, celular, código de verificación, contraseña y empresa asignada.",
     };
   }
 
@@ -1922,11 +1924,13 @@ export async function sendSuperAdminRegistrationOTP(
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+      error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
     };
   }
 
-  return { success: "Código enviado por WhatsApp." };
+  return {
+    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+  };
 }
 
 export async function sendCompanyAdminRegistrationOTP(
@@ -1944,11 +1948,13 @@ export async function sendCompanyAdminRegistrationOTP(
     await sendWhatsAppOTP(phone);
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+      error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
     };
   }
 
-  return { success: "Código enviado por WhatsApp." };
+  return {
+    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+  };
 }
 
 export async function updateCompany(
