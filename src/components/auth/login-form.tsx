@@ -125,7 +125,7 @@ function SignupContent({
 
         <div className="space-y-2">
           <label htmlFor="signupOtpCode" className="block text-sm font-medium text-[#12110f]">
-            Código de WhatsApp
+            Código de verificación
           </label>
           <input
             id="signupOtpCode"
@@ -137,7 +137,9 @@ function SignupContent({
             placeholder="123456"
             required
           />
-          <p className="text-xs leading-5 text-[#6a665f]">Código enviado a {activeState?.phone ?? draft.phone}.</p>
+          <p className="text-xs leading-5 text-[#6a665f]">
+            Revisa WhatsApp. Si no lo ves, revisa tus SMS. Enviado a {activeState?.phone ?? draft.phone}.
+          </p>
         </div>
 
         <Feedback state={activeState} />
@@ -218,7 +220,7 @@ function SignupContent({
       </div>
 
       <Feedback state={activeState} />
-      <SubmitButton idleLabel="Enviar código por WhatsApp" pendingLabel="Enviando código..." />
+      <SubmitButton idleLabel="Enviar código" pendingLabel="Enviando código..." />
     </form>
   );
 }
@@ -243,7 +245,7 @@ function PasswordResetContent({
         <input type="hidden" name="phone" value={activeState?.phone ?? ""} />
         <div className="space-y-2">
           <label htmlFor="resetOtpCode" className="block text-sm font-medium text-[#12110f]">
-            Código de WhatsApp
+            Código de verificación
           </label>
           <input
             id="resetOtpCode"
@@ -282,7 +284,7 @@ function PasswordResetContent({
     <form action={requestAction} className="space-y-5">
       <PhoneField defaultValue={activeState?.phone ?? ""} />
       <Feedback state={activeState} />
-      <SubmitButton idleLabel="Enviar código de recuperación" pendingLabel="Enviando código..." />
+      <SubmitButton idleLabel="Enviar código" pendingLabel="Enviando código..." />
     </form>
   );
 }
@@ -348,7 +350,7 @@ export function LoginForm() {
           onClick={() => setActivePanel("recovery")}
           className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-4 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
         >
-          Recuperar contraseña por WhatsApp
+          Recuperar contraseña
         </button>
       </div>
     </div>

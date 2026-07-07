@@ -65,7 +65,8 @@ export default async function LoginPage() {
                 <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#2a7f86]">Login</p>
                 <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Accede a tu panel</h2>
                 <p className="text-sm leading-7 text-[#4c4943]">
-                  Usa tu celular y contraseña. El código por WhatsApp se usa para crear cuenta o recuperar acceso.
+                  Usa tu celular y contraseña. Para crear cuenta o recuperar acceso, te enviaremos un código de
+                  verificación a tu celular.
                 </p>
               </div>
 

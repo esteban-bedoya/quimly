@@ -160,7 +160,7 @@ export async function requestSignupOTP(
     await sendPhoneOTP(phone);
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+      error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
       step: "details",
       establishmentName,
       adminName,
@@ -169,7 +169,7 @@ export async function requestSignupOTP(
   }
 
   return {
-    success: "Te enviamos un código por WhatsApp para crear tu cuenta.",
+    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
     step: "verify",
     establishmentName,
     adminName,
@@ -302,13 +302,13 @@ export async function requestPasswordReset(
     await sendPhoneOTP(phone);
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "No fue posible enviar el código por WhatsApp.",
+      error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
       step: "request",
     };
   }
 
   return {
-    success: "Te enviamos un código por WhatsApp para recuperar tu contraseña.",
+    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
     step: "verify",
     phone,
   };
