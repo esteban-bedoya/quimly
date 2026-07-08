@@ -8,6 +8,25 @@ import { navItems } from "@/data/landing";
 
 const darkHeaderSections = new Set(["hero", "productos", "footer"]);
 
+function LoginIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+    </svg>
+  );
+}
+
 export function Header() {
   const [useSolidHeader, setUseSolidHeader] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -104,9 +123,10 @@ export function Header() {
           <div className="flex items-center gap-2 md:hidden">
             <Link
               href="/login"
-              className="rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
             >
-              Iniciar sesión
+              <LoginIcon />
+              Acceso
             </Link>
             <button
               type="button"
@@ -125,9 +145,10 @@ export function Header() {
 
           <Link
             href="/login"
-            className="hidden rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] md:inline-flex md:px-4 md:text-sm"
+            className="hidden items-center gap-1.5 rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-3.5 py-2 text-xs font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] md:inline-flex md:px-4 md:text-sm"
           >
-            Iniciar sesión
+            <LoginIcon />
+            Acceso
           </Link>
         </div>
 

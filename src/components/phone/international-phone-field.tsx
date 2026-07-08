@@ -1,7 +1,8 @@
 "use client";
 
 import { AsYouType, getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
 import { DEFAULT_PHONE_COUNTRY, normalizePhoneCountry } from "@/lib/phone";
 
@@ -32,6 +33,9 @@ const defaultControlClassName =
 
 const maxE164Digits = 15;
 const maxFormattingCharacters = 8;
+const countryMenuWidth = 304;
+const countryMenuMargin = 16;
+const countryMenuOffset = 8;
 
 function countryToFlag(country: CountryCode) {
   const baseCodePoint = 127397;
@@ -108,7 +112,10 @@ export function InternationalPhoneField({
   const [hasBlurred, setHasBlurred] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [countryMenuPosition, setCountryMenuPosition] = useState({ left: countryMenuMargin, top: countryMenuMargin });
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const countryMenuPanelRef = useRef<HTMLDivElement | null>(null);
+  const countryButtonRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedOption = options.find((option) => option.code === selectedCountry) ?? options[0];
@@ -135,7 +142,9 @@ export function InternationalPhoneField({
     }
 
     function handlePointerDown(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+
+      if (!menuRef.current?.contains(target) && !countryMenuPanelRef.current?.contains(target)) {
         setIsCountryMenuOpen(false);
       }
     }
@@ -144,6 +153,36 @@ export function InternationalPhoneField({
 
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isCountryMenuOpen]);
+
+  useEffect(() => {
+    if (!isCountryMenuOpen) {
+      return;
+    }
+
+    function syncCountryMenuPosition() {
+      const buttonRect = countryButtonRef.current?.getBoundingClientRect();
+
+      if (!buttonRect) {
+        return;
+      }
+
+      const maxLeft = Math.max(countryMenuMargin, window.innerWidth - countryMenuWidth - countryMenuMargin);
+
+      setCountryMenuPosition({
+        left: Math.min(Math.max(buttonRect.left, countryMenuMargin), maxLeft),
+        top: buttonRect.bottom + countryMenuOffset,
+      });
+    }
+
+    syncCountryMenuPosition();
+    window.addEventListener("resize", syncCountryMenuPosition);
+    window.addEventListener("scroll", syncCountryMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", syncCountryMenuPosition);
+      window.removeEventListener("scroll", syncCountryMenuPosition, true);
     };
   }, [isCountryMenuOpen]);
 
@@ -186,6 +225,11 @@ export function InternationalPhoneField({
     setNationalNumber(formattedValue);
   }
 
+  const countryMenuStyle = {
+    "--country-menu-left": `${countryMenuPosition.left}px`,
+    "--country-menu-top": `${countryMenuPosition.top}px`,
+  } as CSSProperties;
+
   return (
     <div className={`space-y-2 ${className}`}>
       <label htmlFor={id} className={labelClassName}>
@@ -195,14 +239,15 @@ export function InternationalPhoneField({
       <input type="hidden" name={name} value={e164Phone} />
       <input type="hidden" name={countryName} value={selectedCountry} />
 
-      <div className="grid gap-2 sm:grid-cols-[minmax(7.5rem,9rem)_1fr]">
+      <div className="grid grid-cols-[minmax(7rem,8rem)_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(7.5rem,9rem)_minmax(0,1fr)]">
         <div className="relative" ref={menuRef}>
           <button
+            ref={countryButtonRef}
             type="button"
             aria-expanded={isCountryMenuOpen}
             aria-label={`${label}: país`}
             onClick={() => setIsCountryMenuOpen((currentValue) => !currentValue)}
-            className={`${controlClassName} inline-flex items-center justify-center gap-3 text-left`}
+            className={`${controlClassName} inline-flex min-w-0 items-center justify-center gap-3 text-left`}
           >
             <span aria-hidden="true" className="shrink-0 text-base">
               {selectedOption.flag}
@@ -210,40 +255,53 @@ export function InternationalPhoneField({
             <span className="shrink-0 font-semibold text-[#2a7f86]">+{selectedOption.callingCode}</span>
           </button>
 
-          {isCountryMenuOpen ? (
-            <div className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-[min(19rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#12110f]/12 bg-white p-2 shadow-[0_18px_44px_rgba(18,17,15,0.18)] sm:w-[19rem]">
-              <input
-                type="search"
-                value={countrySearch}
-                onChange={(event) => setCountrySearch(event.target.value)}
-                placeholder="Buscar país"
-                className="mb-2 min-h-10 w-full rounded-xl border border-[#12110f]/12 bg-[#fbfaf7] px-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          {isCountryMenuOpen && typeof document !== "undefined"
+            ? createPortal(
+                <>
+              <div
+                className="fixed inset-0 z-40 bg-[#12110f]/15 backdrop-blur-sm sm:hidden"
+                onClick={() => setIsCountryMenuOpen(false)}
               />
+              <div
+                ref={countryMenuPanelRef}
+                className="fixed left-1/2 top-1/2 z-50 w-[min(19rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-[#12110f]/12 bg-white p-2 shadow-[0_18px_44px_rgba(18,17,15,0.18)] sm:left-[var(--country-menu-left)] sm:top-[var(--country-menu-top)] sm:w-[19rem] sm:translate-x-0 sm:translate-y-0"
+                style={countryMenuStyle}
+              >
+                <input
+                  type="search"
+                  value={countrySearch}
+                  onChange={(event) => setCountrySearch(event.target.value)}
+                  placeholder="Buscar país"
+                  className="mb-2 min-h-10 w-full rounded-xl border border-[#12110f]/12 bg-[#fbfaf7] px-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+                />
 
-              <div className="max-h-64 overflow-y-auto">
-                {filteredOptions.map((option) => (
-                  <button
-                    key={option.code}
-                    type="button"
-                    onClick={() => handleCountryChange(option.code)}
-                    className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
-                      option.code === selectedCountry
-                        ? "bg-[#e8f5f5] text-[#12110f]"
-                        : "text-[#3d392f] hover:bg-[#f3eee6]"
-                    }`}
-                  >
-                    <span className="inline-flex min-w-0 items-center gap-2">
-                      <span aria-hidden="true" className="shrink-0 text-base">
-                        {option.flag}
+                <div className="max-h-[calc(100vh-15rem)] overflow-y-auto sm:max-h-64">
+                  {filteredOptions.map((option) => (
+                    <button
+                      key={option.code}
+                      type="button"
+                      onClick={() => handleCountryChange(option.code)}
+                      className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
+                        option.code === selectedCountry
+                          ? "bg-[#e8f5f5] text-[#12110f]"
+                          : "text-[#3d392f] hover:bg-[#f3eee6]"
+                      }`}
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <span aria-hidden="true" className="shrink-0 text-base">
+                          {option.flag}
+                        </span>
+                        <span className="min-w-0 truncate">{option.name}</span>
                       </span>
-                      <span className="min-w-0 truncate">{option.name}</span>
-                    </span>
-                    <span className="shrink-0 font-semibold text-[#2a7f86]">+{option.callingCode}</span>
-                  </button>
-                ))}
+                      <span className="shrink-0 font-semibold text-[#2a7f86]">+{option.callingCode}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : null}
+                </>,
+                document.body,
+              )
+            : null}
         </div>
 
         <input
@@ -264,7 +322,7 @@ export function InternationalPhoneField({
           maxLength={maxPhoneInputLength}
           required={required}
           aria-invalid={shouldShowError}
-          className={controlClassName}
+          className={`${controlClassName} min-w-0`}
         />
       </div>
 
