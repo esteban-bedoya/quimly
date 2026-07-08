@@ -161,20 +161,17 @@ export function InternationalPhoneField({
       <input type="hidden" name={name} value={e164Phone} />
       <input type="hidden" name={countryName} value={selectedCountry} />
 
-      <div className="grid gap-2 sm:grid-cols-[minmax(12rem,15rem)_1fr]">
+      <div className="grid gap-2 sm:grid-cols-[minmax(7.5rem,9rem)_1fr]">
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             aria-expanded={isCountryMenuOpen}
             aria-label={`${label}: país`}
             onClick={() => setIsCountryMenuOpen((currentValue) => !currentValue)}
-            className={`${controlClassName} inline-flex items-center justify-between gap-3 text-left`}
+            className={`${controlClassName} inline-flex items-center justify-center gap-3 text-left`}
           >
-            <span className="inline-flex min-w-0 items-center gap-2">
-              <span aria-hidden="true" className="shrink-0 text-base">
-                {selectedOption.flag}
-              </span>
-              <span className="min-w-0 truncate">{selectedOption.name}</span>
+            <span aria-hidden="true" className="shrink-0 text-base">
+              {selectedOption.flag}
             </span>
             <span className="shrink-0 font-semibold text-[#2a7f86]">+{selectedOption.callingCode}</span>
           </button>

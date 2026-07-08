@@ -205,7 +205,7 @@ begin
   into conflicting_phone
   from public.user_profiles up
   join auth.users au on au.id = up.user_id
-  join auth.users other_au on other_au.phone = up.phone and other_au.id <> au.id
+  join auth.users other_au on other_au.phone = ltrim(up.phone, '+') and other_au.id <> au.id
   limit 1;
 
   if conflicting_phone is not null then
@@ -216,12 +216,12 @@ $$;
 
 update auth.users au
 set
-  phone = up.phone,
+  phone = ltrim(up.phone, '+'),
   phone_confirmed_at = coalesce(au.phone_confirmed_at, now()),
   updated_at = now()
 from public.user_profiles up
 where au.id = up.user_id
-  and au.phone is distinct from up.phone;
+  and au.phone is distinct from ltrim(up.phone, '+');
 
 alter table if exists public.user_profiles
 add constraint user_profiles_phone_e164 check (public.is_e164_phone(phone));
