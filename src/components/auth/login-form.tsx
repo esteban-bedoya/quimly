@@ -1,22 +1,50 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useActionState, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
   completeSignupWithOTP,
+  identifyPhone,
   login,
   requestSignupOTP,
   requestPasswordReset,
   resetPasswordWithOTP,
+  type IdentifyPhoneFormState,
   type LoginFormState,
   type PasswordResetFormState,
   type SignupFormState,
 } from "@/app/login/actions";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
-import { formatPhoneNumberForDisplay } from "@/lib/phone";
+import { formatPhoneNumberForDisplay, type E164PhoneNumber } from "@/lib/phone";
 
-type AuthPanel = "login" | "signup" | "recovery";
+type AuthPanel = "identify" | "password" | "signup" | "recovery";
+
+type LoginFormProps = {
+  activePanel: AuthPanel;
+  identifiedPhone?: E164PhoneNumber;
+  onIdentified: (status: "existing" | "new", phone: E164PhoneNumber) => void;
+  onRecoverPassword: () => void;
+};
+
+function useIsTwoColumnLayout() {
+  const [isTwoColumnLayout, setIsTwoColumnLayout] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const syncLayout = () => setIsTwoColumnLayout(mediaQuery.matches);
+
+    syncLayout();
+    mediaQuery.addEventListener("change", syncLayout);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncLayout);
+    };
+  }, []);
+
+  return isTwoColumnLayout;
+}
 
 function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
@@ -32,7 +60,11 @@ function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingL
   );
 }
 
-function Feedback({ state }: { state: LoginFormState | PasswordResetFormState | SignupFormState | undefined }) {
+function Feedback({
+  state,
+}: {
+  state: IdentifyPhoneFormState | LoginFormState | PasswordResetFormState | SignupFormState | undefined;
+}) {
   if (!state?.error && !state?.success) {
     return null;
   }
@@ -50,10 +82,30 @@ function Feedback({ state }: { state: LoginFormState | PasswordResetFormState | 
   );
 }
 
-function LoginContent({ state }: { state: LoginFormState | undefined }) {
+function IdentifyContent({ state, action }: { state: IdentifyPhoneFormState | undefined; action: (formData: FormData) => void }) {
   return (
-    <>
-      <InternationalPhoneField id="loginPhone" />
+    <form action={action} className="space-y-5">
+      <InternationalPhoneField id="identifyPhone" />
+      <Feedback state={state} />
+      <SubmitButton idleLabel="Continuar" pendingLabel="Verificando..." />
+    </form>
+  );
+}
+
+function PasswordLoginContent({
+  phone,
+  action,
+  state,
+  onRecoverPassword,
+}: {
+  phone: E164PhoneNumber;
+  action: (formData: FormData) => void;
+  state: LoginFormState | undefined;
+  onRecoverPassword: () => void;
+}) {
+  return (
+    <form action={action} className="space-y-5">
+      <input type="hidden" name="phone" value={phone} />
 
       <div className="space-y-2">
         <label htmlFor="password" className="block text-sm font-medium text-[#12110f]">
@@ -72,16 +124,26 @@ function LoginContent({ state }: { state: LoginFormState | undefined }) {
 
       <Feedback state={state} />
       <SubmitButton idleLabel="Ingresar" pendingLabel="Validando..." />
-    </>
+
+      <button
+        type="button"
+        onClick={onRecoverPassword}
+        className="w-full text-center text-sm font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
+      >
+        Olvidé mi contraseña
+      </button>
+    </form>
   );
 }
 
 function SignupContent({
+  phone,
   requestAction,
   requestState,
   verifyAction,
   verifyState,
 }: {
+  phone: E164PhoneNumber;
   requestAction: (formData: FormData) => void;
   requestState: SignupFormState | undefined;
   verifyAction: (formData: FormData) => void;
@@ -100,7 +162,7 @@ function SignupContent({
       <form action={verifyAction} className="space-y-5">
         <input type="hidden" name="establishmentName" value={activeState?.establishmentName ?? draft.establishmentName} />
         <input type="hidden" name="adminName" value={activeState?.adminName ?? draft.adminName} />
-        <input type="hidden" name="phone" value={activeState?.phone ?? ""} />
+        <input type="hidden" name="phone" value={activeState?.phone ?? phone} />
         <input type="hidden" name="password" value={draft.password} />
 
         <div className="space-y-2">
@@ -119,7 +181,7 @@ function SignupContent({
           />
           <p className="text-xs leading-5 text-[#6a665f]">
             Revisa WhatsApp. Si no lo ves, revisa tus SMS. Enviado a{" "}
-            {activeState?.phone ? formatPhoneNumberForDisplay(activeState.phone) : ""}.
+            {formatPhoneNumberForDisplay(activeState?.phone ?? phone)}.
           </p>
         </div>
 
@@ -131,6 +193,8 @@ function SignupContent({
 
   return (
     <form action={requestAction} className="space-y-5">
+      <input type="hidden" name="phone" value={phone} />
+
       <div className="space-y-2">
         <label htmlFor="establishmentName" className="block text-sm font-medium text-[#12110f]">
           Nombre del establecimiento
@@ -141,7 +205,7 @@ function SignupContent({
           type="text"
           autoComplete="organization"
           className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-          placeholder="Restaurante Quimly"
+          placeholder="Restaurante"
           value={draft.establishmentName}
           onChange={(event) => setDraft((current) => ({ ...current, establishmentName: event.target.value }))}
           required
@@ -165,11 +229,9 @@ function SignupContent({
         />
       </div>
 
-      <InternationalPhoneField id="signupPhone" defaultValue={activeState?.phone ?? ""} />
-
       <div className="space-y-2">
         <label htmlFor="signupPassword" className="block text-sm font-medium text-[#12110f]">
-          Contraseña
+          Crea contraseña
         </label>
         <input
           id="signupPassword"
@@ -185,17 +247,19 @@ function SignupContent({
       </div>
 
       <Feedback state={activeState} />
-      <SubmitButton idleLabel="Enviar código" pendingLabel="Enviando código..." />
+      <SubmitButton idleLabel="Verificar número" pendingLabel="Enviando código..." />
     </form>
   );
 }
 
 function PasswordResetContent({
+  phone,
   requestAction,
   requestState,
   verifyAction,
   verifyState,
 }: {
+  phone: E164PhoneNumber;
   requestAction: (formData: FormData) => void;
   requestState: PasswordResetFormState | undefined;
   verifyAction: (formData: FormData) => void;
@@ -207,7 +271,7 @@ function PasswordResetContent({
   if (isVerifyStep) {
     return (
       <form action={verifyAction} className="space-y-5">
-        <input type="hidden" name="phone" value={activeState?.phone ?? ""} />
+        <input type="hidden" name="phone" value={activeState?.phone ?? phone} />
         <div className="space-y-2">
           <label htmlFor="resetOtpCode" className="block text-sm font-medium text-[#12110f]">
             Código de verificación
@@ -247,89 +311,173 @@ function PasswordResetContent({
 
   return (
     <form action={requestAction} className="space-y-5">
-      <InternationalPhoneField id="resetPhone" defaultValue={activeState?.phone ?? ""} />
+      <input type="hidden" name="phone" value={phone} />
       <Feedback state={activeState} />
       <SubmitButton idleLabel="Enviar código" pendingLabel="Enviando código..." />
     </form>
   );
 }
 
-export function LoginForm() {
-  const [activePanel, setActivePanel] = useState<AuthPanel>("login");
+export function LoginPanel({ whatsappUrl }: { whatsappUrl: string }) {
+  const [activePanel, setActivePanel] = useState<AuthPanel>("identify");
+  const [identifiedPhone, setIdentifiedPhone] = useState<E164PhoneNumber | undefined>();
+
+  const handleIdentified = useCallback((status: "existing" | "new", phone: E164PhoneNumber) => {
+    setIdentifiedPhone(phone);
+    setActivePanel(status === "existing" ? "password" : "signup");
+  }, []);
+
+  const resetIdentification = () => {
+    setIdentifiedPhone(undefined);
+    setActivePanel("identify");
+  };
+
+  const panelTitle =
+    activePanel === "signup"
+      ? "Comienza tus 14 días gratis en Quimly"
+      : activePanel === "password"
+        ? "Bienvenido de nuevo"
+        : activePanel === "recovery"
+          ? "Recupera tu acceso"
+          : "Comencemos...";
+
+  const panelDescription =
+    activePanel === "identify"
+      ? "Ingresa tu número para continuar"
+      : activePanel === "signup"
+        ? "Completa tus datos para continuar"
+        : activePanel === "recovery"
+          ? "Te enviaremos un código para crear una nueva contraseña"
+          : "Ingresa tu contraseña para acceder";
+
+  return (
+    <>
+      <div className="space-y-2">
+        <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">{panelTitle}</h2>
+        <p className="text-sm leading-7 text-[#4c4943]">{panelDescription}</p>
+      </div>
+
+      <div
+        className={`mt-8 rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_18px_50px_rgba(18,17,15,0.06)] transition-[min-height] duration-500 ease-out sm:p-6 ${
+          activePanel === "signup" ? "lg:min-h-[20rem]" : ""
+        }`}
+      >
+        {activePanel !== "identify" && identifiedPhone ? (
+          <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[#12110f]/8 pb-4 text-sm text-[#6a665f]">
+            <span>
+              {activePanel === "signup" ? "Creando con" : "Ingresando con"}{" "}
+              <span className="font-semibold text-[#12110f]">{formatPhoneNumberForDisplay(identifiedPhone)}</span>
+            </span>
+            <span aria-hidden="true" className="text-[#c0b8aa]">
+              ·
+            </span>
+            <button
+              type="button"
+              onClick={resetIdentification}
+              className="font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
+            >
+              Usar otro número
+            </button>
+          </div>
+        ) : null}
+
+        <LoginForm
+          key={identifiedPhone ?? "identify"}
+          activePanel={activePanel}
+          identifiedPhone={identifiedPhone}
+          onIdentified={handleIdentified}
+          onRecoverPassword={() => setActivePanel("recovery")}
+        />
+      </div>
+
+      <div className="mt-4">
+        <p className="text-xs leading-6 text-[#6a665f]">
+          ¿Necesitas ayuda para ingresar? Escríbenos por{" "}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
+          >
+            WhatsApp
+          </a>
+          .
+        </p>
+      </div>
+    </>
+  );
+}
+
+export function LoginForm({ activePanel, identifiedPhone, onIdentified, onRecoverPassword }: LoginFormProps) {
+  const shouldAnimatePanel = useIsTwoColumnLayout();
+  const [identifyState, identifyAction] = useActionState(identifyPhone, undefined);
   const [loginState, loginFormAction] = useActionState(login, undefined);
   const [requestSignupState, requestSignupAction] = useActionState(requestSignupOTP, undefined);
   const [verifySignupState, verifySignupAction] = useActionState(completeSignupWithOTP, undefined);
   const [requestResetState, requestResetAction] = useActionState(requestPasswordReset, undefined);
   const [verifyResetState, verifyResetAction] = useActionState(resetPasswordWithOTP, undefined);
 
-  if (activePanel === "signup") {
-    return (
-      <div className="space-y-5">
-        <SignupContent
-          requestAction={requestSignupAction}
-          requestState={requestSignupState}
-          verifyAction={verifySignupAction}
-          verifyState={verifySignupState}
-        />
-        <button
-          type="button"
-          onClick={() => setActivePanel("login")}
-          className="text-sm font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
-        >
-          Ya tengo cuenta
-        </button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (identifyState?.status && identifyState.phone) {
+      onIdentified(identifyState.status, identifyState.phone);
+    }
+  }, [identifyState, onIdentified]);
 
-  if (activePanel === "recovery") {
-    return (
-      <div className="space-y-5">
-        <PasswordResetContent
-          requestAction={requestResetAction}
-          requestState={requestResetState}
-          verifyAction={verifyResetAction}
-          verifyState={verifyResetState}
-        />
-        <button
-          type="button"
-          onClick={() => setActivePanel("login")}
-          className="text-sm font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
-        >
-          Volver al ingreso
-        </button>
-      </div>
+  let panelContent: ReactNode;
+
+  if (activePanel === "identify" || !identifiedPhone) {
+    panelContent = <IdentifyContent state={identifyState} action={identifyAction} />;
+  } else if (activePanel === "signup") {
+    panelContent = (
+      <SignupContent
+        phone={identifiedPhone}
+        requestAction={requestSignupAction}
+        requestState={requestSignupState}
+        verifyAction={verifySignupAction}
+        verifyState={verifySignupState}
+      />
+    );
+  } else if (activePanel === "recovery") {
+    panelContent = (
+      <PasswordResetContent
+        phone={identifiedPhone}
+        requestAction={requestResetAction}
+        requestState={requestResetState}
+        verifyAction={verifyResetAction}
+        verifyState={verifyResetState}
+      />
+    );
+  } else {
+    panelContent = (
+      <PasswordLoginContent
+        phone={identifiedPhone}
+        action={loginFormAction}
+        state={loginState}
+        onRecoverPassword={onRecoverPassword}
+      />
     );
   }
 
   return (
-    <div className="space-y-5">
-      <form action={loginFormAction} className="space-y-5">
-        <LoginContent state={loginState} />
-      </form>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SecondarySubmitButtonWrapper onClick={() => setActivePanel("signup")}>Crear cuenta</SecondarySubmitButtonWrapper>
-        <button
-          type="button"
-          onClick={() => setActivePanel("recovery")}
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-4 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
-        >
-          Recuperar contraseña
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SecondarySubmitButtonWrapper({ children, onClick }: { children: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-4 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f3eee6]"
+    <motion.div
+      data-auth-panel={activePanel}
+      layout={shouldAnimatePanel}
+      transition={{ duration: 0.32, ease: "easeOut" }}
+      className={`space-y-5 ${activePanel === "signup" ? "lg:min-h-[15rem]" : ""}`}
     >
-      {children}
-    </button>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={activePanel}
+          layout={shouldAnimatePanel}
+          initial={shouldAnimatePanel ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          exit={shouldAnimatePanel ? { opacity: 0, y: -8 } : { opacity: 1, y: 0 }}
+          transition={shouldAnimatePanel ? { duration: 0.24, ease: "easeOut" } : { duration: 0 }}
+          className="space-y-5"
+        >
+          {panelContent}
+        </motion.div>
+      </AnimatePresence>
+    </motion.div>
   );
 }

@@ -839,4 +839,15 @@ body:has([data-dashboard-shell]) {
 .animate-fadeIn {
   animation: fadeIn 220ms ease-out;
 }
+
+@media (min-width: 1024px) {
+  [data-login-shell]:has([data-auth-panel="signup"]) [data-login-left-header] {
+    transform: translateY(0.625rem);
+  }
+
+  [data-login-shell]:has([data-auth-panel="signup"]) [data-login-left-cards] {
+    transform: translateY(-0.625rem);
+  }
+}
+
 }

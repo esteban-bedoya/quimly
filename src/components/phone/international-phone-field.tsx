@@ -30,6 +30,9 @@ type InternationalPhoneFieldProps = {
 const defaultControlClassName =
   "min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35";
 
+const maxE164Digits = 15;
+const maxFormattingCharacters = 8;
+
 function countryToFlag(country: CountryCode) {
   const baseCodePoint = 127397;
 
@@ -77,6 +80,13 @@ function parseInputPhone(value: string, country: CountryCode) {
   return parsePhoneNumberFromString(value, country);
 }
 
+function getMaxPhoneInputLength(country: CountryCode) {
+  const callingCodeLength = getCountryCallingCode(country).length;
+  const maxNationalDigits = Math.max(4, maxE164Digits - callingCodeLength);
+
+  return maxNationalDigits + maxFormattingCharacters;
+}
+
 export function InternationalPhoneField({
   id,
   label = "Número de celular",
@@ -95,14 +105,19 @@ export function InternationalPhoneField({
   const [nationalNumber, setNationalNumber] = useState(() => getInitialPhoneState(defaultValue).nationalNumber);
   const [isCountryMenuOpen, setIsCountryMenuOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
-  const [wasTouched, setWasTouched] = useState(false);
+  const [hasBlurred, setHasBlurred] = useState(false);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedOption = options.find((option) => option.code === selectedCountry) ?? options[0];
   const parsedPhone = parseInputPhone(nationalNumber, selectedCountry);
   const isValidPhone = Boolean(parsedPhone?.isValid());
   const e164Phone = isValidPhone ? parsedPhone?.number ?? "" : "";
-  const shouldShowError = wasTouched && nationalNumber.trim().length > 0 && !isValidPhone;
+  const maxPhoneInputLength = getMaxPhoneInputLength(selectedCountry);
+  const shouldShowError =
+    (hasAttemptedSubmit || (hasBlurred && !isFocused)) && nationalNumber.trim().length > 0 && !isValidPhone;
 
   const filteredOptions = useMemo(() => {
     const normalizedSearch = countrySearch.trim().toLowerCase();
@@ -132,6 +147,24 @@ export function InternationalPhoneField({
     };
   }, [isCountryMenuOpen]);
 
+  useEffect(() => {
+    const form = inputRef.current?.form;
+
+    if (!form) {
+      return;
+    }
+
+    function handleSubmit() {
+      setHasAttemptedSubmit(true);
+    }
+
+    form.addEventListener("submit", handleSubmit);
+
+    return () => {
+      form.removeEventListener("submit", handleSubmit);
+    };
+  }, []);
+
   function handleCountryChange(country: CountryCode) {
     setSelectedCountry(country);
     setNationalNumber((currentValue) => formatNationalInput(currentValue, country));
@@ -140,9 +173,10 @@ export function InternationalPhoneField({
   }
 
   function handleNationalNumberChange(value: string) {
-    setWasTouched(true);
+    setHasAttemptedSubmit(false);
 
-    const formattedValue = formatNationalInput(value, selectedCountry);
+    const limitedValue = value.slice(0, maxPhoneInputLength);
+    const formattedValue = formatNationalInput(limitedValue, selectedCountry).slice(0, maxPhoneInputLength);
     const parsedValue = parseInputPhone(formattedValue, selectedCountry);
 
     if (parsedValue?.country) {
@@ -177,7 +211,7 @@ export function InternationalPhoneField({
           </button>
 
           {isCountryMenuOpen ? (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-[#12110f]/12 bg-white p-2 shadow-[0_18px_44px_rgba(18,17,15,0.18)]">
+            <div className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-[min(19rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#12110f]/12 bg-white p-2 shadow-[0_18px_44px_rgba(18,17,15,0.18)] sm:w-[19rem]">
               <input
                 type="search"
                 value={countrySearch}
@@ -213,15 +247,21 @@ export function InternationalPhoneField({
         </div>
 
         <input
+          ref={inputRef}
           id={id}
           name={nationalName}
           type="tel"
           inputMode="tel"
           autoComplete="tel-national"
           value={nationalNumber}
-          onBlur={() => setWasTouched(true)}
+          onBlur={() => {
+            setHasBlurred(true);
+            setIsFocused(false);
+          }}
+          onFocus={() => setIsFocused(true)}
           onChange={(event) => handleNationalNumberChange(event.target.value)}
           placeholder="Número nacional"
+          maxLength={maxPhoneInputLength}
           required={required}
           aria-invalid={shouldShowError}
           className={controlClassName}
@@ -230,7 +270,7 @@ export function InternationalPhoneField({
 
       {shouldShowError ? (
         <p className={errorClassName} role="alert">
-          Ingresa un número válido para el país seleccionado.
+          Ingresa un número celular válido.
         </p>
       ) : null}
     </div>

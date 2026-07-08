@@ -13,6 +13,13 @@ export type LoginFormState = {
   success?: string;
 };
 
+export type IdentifyPhoneFormState = {
+  error?: string;
+  success?: string;
+  status?: "existing" | "new";
+  phone?: E164PhoneNumber;
+};
+
 export type PasswordResetFormState = {
   error?: string;
   success?: string;
@@ -99,6 +106,31 @@ async function sendPhoneOTP(phone: E164PhoneNumber) {
 async function verifyPhoneOTP(phone: E164PhoneNumber, code: string) {
   const verification = await notificationService.checkOTP(phone, code);
   return verification.approved;
+}
+
+export async function identifyPhone(
+  _: IdentifyPhoneFormState | undefined,
+  formData: FormData,
+): Promise<IdentifyPhoneFormState> {
+  const phone = readPhone(formData);
+
+  if (!phone) {
+    return { error: "Ingresa un número celular válido." };
+  }
+
+  try {
+    const existingProfile = await findUserProfileByPhone(phone);
+
+    return {
+      status: existingProfile ? "existing" : "new",
+      phone,
+    };
+  } catch {
+    return {
+      error: "No fue posible verificar el celular.",
+      phone,
+    };
+  }
 }
 
 export async function login(_: LoginFormState | undefined, formData: FormData): Promise<LoginFormState | undefined> {
