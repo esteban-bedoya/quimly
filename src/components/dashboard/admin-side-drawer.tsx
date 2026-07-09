@@ -173,16 +173,18 @@ export function AdminDrawerFeedback({ state }: { state: AdminActionState | undef
 export function AdminDrawerSubmitButton({
   idleLabel,
   pendingLabel,
+  disabled = false,
 }: {
   idleLabel: string;
   pendingLabel: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
 
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       className="ui-pill-button-primary w-full disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-70"
     >
       {pending ? pendingLabel : idleLabel}

@@ -21,7 +21,10 @@ type InternationalPhoneFieldProps = {
   countryName?: string;
   nationalName?: string;
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
   required?: boolean;
+  disabled?: boolean;
   className?: string;
   labelClassName?: string;
   controlClassName?: string;
@@ -98,15 +101,19 @@ export function InternationalPhoneField({
   countryName = "phoneCountry",
   nationalName = "phoneNational",
   defaultValue,
+  value,
+  onValueChange,
   required = true,
+  disabled = false,
   className = "",
   labelClassName = "block text-sm font-medium text-[#12110f]",
   controlClassName = defaultControlClassName,
   errorClassName = "text-xs leading-5 text-[#8a2d1f]",
 }: InternationalPhoneFieldProps) {
   const options = useMemo(() => createCountryOptions(), []);
-  const [selectedCountry, setSelectedCountry] = useState<CountryCode>(() => getInitialPhoneState(defaultValue).country);
-  const [nationalNumber, setNationalNumber] = useState(() => getInitialPhoneState(defaultValue).nationalNumber);
+  const initialPhoneValue = value ?? defaultValue;
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>(() => getInitialPhoneState(initialPhoneValue).country);
+  const [nationalNumber, setNationalNumber] = useState(() => getInitialPhoneState(initialPhoneValue).nationalNumber);
   const [isCountryMenuOpen, setIsCountryMenuOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
   const [hasBlurred, setHasBlurred] = useState(false);
@@ -135,6 +142,24 @@ export function InternationalPhoneField({
 
     return options.filter((option) => option.searchText.includes(normalizedSearch));
   }, [countrySearch, options]);
+
+  useEffect(() => {
+    if (value === undefined) {
+      return;
+    }
+
+    const nextPhoneState = getInitialPhoneState(value);
+    setSelectedCountry(nextPhoneState.country);
+    setNationalNumber(nextPhoneState.nationalNumber);
+  }, [value]);
+
+  useEffect(() => {
+    if (!isValidPhone && nationalNumber.trim().length > 0) {
+      return;
+    }
+
+    onValueChange?.(e164Phone);
+  }, [e164Phone, isValidPhone, nationalNumber, onValueChange]);
 
   useEffect(() => {
     if (!isCountryMenuOpen) {
@@ -205,6 +230,10 @@ export function InternationalPhoneField({
   }, []);
 
   function handleCountryChange(country: CountryCode) {
+    if (disabled) {
+      return;
+    }
+
     setSelectedCountry(country);
     setNationalNumber((currentValue) => formatNationalInput(currentValue, country));
     setIsCountryMenuOpen(false);
@@ -212,6 +241,10 @@ export function InternationalPhoneField({
   }
 
   function handleNationalNumberChange(value: string) {
+    if (disabled) {
+      return;
+    }
+
     setHasAttemptedSubmit(false);
 
     const limitedValue = value.slice(0, maxPhoneInputLength);
@@ -246,8 +279,9 @@ export function InternationalPhoneField({
             type="button"
             aria-expanded={isCountryMenuOpen}
             aria-label={`${label}: país`}
+            disabled={disabled}
             onClick={() => setIsCountryMenuOpen((currentValue) => !currentValue)}
-            className={`${controlClassName} inline-flex min-w-0 items-center justify-center gap-3 text-left`}
+            className={`${controlClassName} inline-flex min-w-0 items-center justify-center gap-3 text-left disabled:cursor-not-allowed disabled:bg-[#f7f8f9] disabled:text-[#5e6770]`}
           >
             <span aria-hidden="true" className="shrink-0 text-base">
               {selectedOption.flag}
@@ -321,8 +355,9 @@ export function InternationalPhoneField({
           placeholder="Número nacional"
           maxLength={maxPhoneInputLength}
           required={required}
+          disabled={disabled}
           aria-invalid={shouldShowError}
-          className={`${controlClassName} min-w-0`}
+          className={`${controlClassName} min-w-0 disabled:cursor-not-allowed disabled:bg-[#f7f8f9] disabled:text-[#5e6770]`}
         />
       </div>
 

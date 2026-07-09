@@ -1,19 +1,19 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useState } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useFormStatus } from "react-dom";
 
 import {
   getCurrentUserProfileDetails,
   sendCurrentUserPhoneChangeOTP,
+  updateCurrentUserPassword,
   updateCurrentUserProfile,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
 import {
   AdminDrawerButton,
   AdminDrawerFeedback,
-  AdminDrawerField,
   AdminDrawerSection,
-  AdminDrawerSubmitButton,
   AdminDrawerSummaryRow,
   AdminSideDrawer,
   adminDrawerInputClassName,
@@ -36,6 +36,98 @@ const panelLabels: Record<DashboardMenuPanel, string> = {
 };
 
 const currentPlanLabel = "Plan operativo";
+const passwordMinLength = 8;
+const passwordMaxLength = 72;
+
+type ProfileFormData = {
+  fullName: string;
+  phone: string;
+  email: string;
+};
+
+type PasswordFormData = {
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+};
+
+type ProfileFieldKey = keyof ProfileFormData;
+type ProfileEditableFieldKey = ProfileFieldKey | "password";
+
+const emptyPasswordFormData = {
+  currentPassword: "",
+  newPassword: "",
+  confirmNewPassword: "",
+} satisfies PasswordFormData;
+
+function getProfileFormData(
+  profileDetails: CurrentUserProfileDetailsState["profile"] | null,
+  fallbackProfile: UserProfile,
+) {
+  return {
+    fullName: profileDetails?.fullName ?? fallbackProfile.fullName ?? "",
+    phone: profileDetails?.phone ?? fallbackProfile.phone,
+    email: profileDetails?.email ?? "",
+  } satisfies ProfileFormData;
+}
+
+function EditIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125 16.875 4.5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.25">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.25">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function InlineActionButton({
+  label,
+  disabled = false,
+  type = "button",
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  type?: "button" | "submit";
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  const { pending } = useFormStatus();
+  const isDisabled = disabled || (type === "submit" && pending);
+  const enabledSubmitClassName =
+    type === "submit" && !isDisabled
+      ? "border-[#9edfc1] bg-[#e8f7ef] text-[#21734f] hover:bg-[#d9f1e6]"
+      : "border-[#12110f]/12 bg-white text-[#12110f] hover:bg-[#f7f8f9]";
+
+  return (
+    <button
+      type={type}
+      aria-label={label}
+      disabled={isDisabled}
+      onClick={onClick}
+      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition hover:scale-105 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-45 ${enabledSubmitClassName}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
   const [state, formAction] = useActionState<AdminActionState | undefined, FormData>(
@@ -46,7 +138,18 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     sendCurrentUserPhoneChangeOTP,
     undefined,
   );
+  const [passwordState, passwordAction] = useActionState<AdminActionState | undefined, FormData>(
+    updateCurrentUserPassword,
+    undefined,
+  );
   const [detailsState, setDetailsState] = useState<CurrentUserProfileDetailsState | null>(null);
+  const [initialData, setInitialData] = useState<ProfileFormData | null>(null);
+  const [formData, setFormData] = useState<ProfileFormData>(() => getProfileFormData(null, profile));
+  const [passwordData, setPasswordData] = useState<PasswordFormData>(emptyPasswordFormData);
+  const [phoneOtpCode, setPhoneOtpCode] = useState("");
+  const [activeProfileField, setActiveProfileField] = useState<ProfileEditableFieldKey | null>(null);
+  const handledProfileSaveState = useRef<AdminActionState | undefined>(undefined);
+  const handledPasswordSaveState = useRef<AdminActionState | undefined>(undefined);
 
   useEffect(() => {
     let isActive = true;
@@ -62,6 +165,106 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!detailsState?.profile) {
+      return;
+    }
+
+    const nextData = getProfileFormData(detailsState.profile, profile);
+    setInitialData(nextData);
+    setFormData(nextData);
+    setPasswordData(emptyPasswordFormData);
+    setPhoneOtpCode("");
+    setActiveProfileField(null);
+  }, [detailsState?.profile, profile]);
+
+  useEffect(() => {
+    if (!state?.success || handledProfileSaveState.current === state) {
+      return;
+    }
+
+    handledProfileSaveState.current = state;
+    setInitialData(formData);
+    setPhoneOtpCode("");
+    setActiveProfileField(null);
+  }, [formData, state]);
+
+  useEffect(() => {
+    if (!passwordState?.success || handledPasswordSaveState.current === passwordState) {
+      return;
+    }
+
+    handledPasswordSaveState.current = passwordState;
+    setPasswordData(emptyPasswordFormData);
+    setActiveProfileField(null);
+  }, [passwordState]);
+
+  const isFullNameDirty = Boolean(initialData && formData.fullName !== initialData.fullName);
+  const isPhoneDirty = Boolean(initialData && formData.phone !== initialData.phone);
+  const isEmailDirty = Boolean(initialData && formData.email !== initialData.email);
+  const isPasswordConfirmationDifferent =
+    Boolean(passwordData.confirmNewPassword) && passwordData.newPassword !== passwordData.confirmNewPassword;
+  const isPasswordLengthInvalid =
+    Boolean(passwordData.newPassword) &&
+    (passwordData.newPassword.length < passwordMinLength || passwordData.newPassword.length > passwordMaxLength);
+  const isPasswordPadded =
+    Boolean(passwordData.newPassword) && passwordData.newPassword !== passwordData.newPassword.trim();
+  const isNewPasswordSameAsCurrent =
+    Boolean(passwordData.currentPassword && passwordData.newPassword) &&
+    passwordData.currentPassword === passwordData.newPassword;
+  const canSubmitPasswordChange =
+    Boolean(passwordData.currentPassword && passwordData.newPassword && passwordData.confirmNewPassword) &&
+    !isPasswordConfirmationDifferent &&
+    !isPasswordLengthInvalid &&
+    !isPasswordPadded &&
+    !isNewPasswordSameAsCurrent;
+  const dirtyInputClassName = "border-yellow-400 focus:border-yellow-400";
+  const invalidInputClassName = "border-red-300 focus:border-red-400";
+  const getInputClassName = (isFieldDirty: boolean) =>
+    `${adminDrawerInputClassName} ${isFieldDirty ? dirtyInputClassName : ""}`;
+  const getPasswordInputClassName = (value: string, isInvalid = false) =>
+    `${adminDrawerInputClassName} ${isInvalid ? invalidInputClassName : value ? dirtyInputClassName : ""}`;
+
+  const handlePhoneChange = useCallback((phone: string) => {
+    setFormData((currentData) => (currentData.phone === phone ? currentData : { ...currentData, phone }));
+  }, []);
+
+  const startEditingField = useCallback(
+    (field: ProfileEditableFieldKey) => {
+      if (initialData) {
+        setFormData(initialData);
+      }
+
+      setPasswordData(emptyPasswordFormData);
+      setPhoneOtpCode("");
+      setActiveProfileField(field);
+    },
+    [initialData],
+  );
+
+  const cancelEditingField = useCallback(
+    (field: ProfileEditableFieldKey) => {
+      if (field === "password") {
+        setPasswordData(emptyPasswordFormData);
+        setActiveProfileField(null);
+        return;
+      }
+
+      if (initialData) {
+        setFormData((currentData) => ({ ...currentData, [field]: initialData[field] }));
+      }
+
+      setPasswordData(emptyPasswordFormData);
+
+      if (field === "phone") {
+        setPhoneOtpCode("");
+      }
+
+      setActiveProfileField(null);
+    },
+    [initialData],
+  );
+
   if (!detailsState) {
     return (
       <AdminDrawerSection>
@@ -74,85 +277,286 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     return <AdminDrawerFeedback state={{ error: detailsState.error ?? "No fue posible cargar tu perfil." }} />;
   }
 
-  const profileDetails = detailsState.profile;
-
   return (
     <>
-      <form
-        key={`${profileDetails.phone}-${profileDetails.email ?? ""}-${profileDetails.fullName ?? ""}`}
-        action={formAction}
-        className="grid gap-5"
-      >
-        <AdminDrawerSection>
-          <AdminDrawerField id="fullName" label="Nombre">
-            <input
-              id="fullName"
-              name="fullName"
-              type="text"
-              defaultValue={profileDetails.fullName ?? profile.fullName ?? ""}
-              placeholder="Nombre completo"
-              required
-              className={adminDrawerInputClassName}
-            />
-          </AdminDrawerField>
+      <AdminDrawerSection>
+        <div className="grid gap-5">
+          <form action={formAction} className="border-b border-[#e6eaed] pb-4">
+            <input type="hidden" name="phone" value={formData.phone} />
+            <input type="hidden" name="email" value={formData.email} />
+            <div className="grid gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <label htmlFor="fullName" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">
+                    Nombre
+                  </label>
+                  {activeProfileField === "fullName" ? (
+                    <input
+                      id="fullName"
+                      name="fullName"
+                      type="text"
+                      value={formData.fullName}
+                      onChange={(event) => setFormData((currentData) => ({ ...currentData, fullName: event.target.value }))}
+                      placeholder="Nombre completo"
+                      required
+                      className={`mt-2 ${getInputClassName(isFullNameDirty)}`}
+                    />
+                  ) : (
+                    <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">
+                      {formData.fullName || "No registrado"}
+                    </p>
+                  )}
+                </div>
 
-          <InternationalPhoneField
-            id="profilePhone"
-            label="Celular"
-            defaultValue={profileDetails.phone}
-            labelClassName="ui-form-label"
-            controlClassName={adminDrawerInputClassName}
-          />
+                {activeProfileField === "fullName" ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <InlineActionButton type="submit" label="Guardar nombre" disabled={!isFullNameDirty || !formData.fullName}>
+                      <CheckIcon />
+                    </InlineActionButton>
+                    <InlineActionButton label="Cancelar edición de nombre" onClick={() => cancelEditingField("fullName")}>
+                      <XIcon />
+                    </InlineActionButton>
+                  </div>
+                ) : (
+                  <InlineActionButton label="Editar nombre" onClick={() => startEditingField("fullName")}>
+                    <EditIcon />
+                  </InlineActionButton>
+                )}
+              </div>
+            </div>
+          </form>
 
-          <AdminDrawerField id="phoneOtpCode" label="Código de verificación">
-            <input
-              id="phoneOtpCode"
-              name="phoneOtpCode"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="Solo si cambias el celular"
-              className={adminDrawerInputClassName}
-            />
-          </AdminDrawerField>
+          <form action={formAction} className="border-b border-[#e6eaed] pb-4">
+            <input type="hidden" name="fullName" value={formData.fullName} />
+            <input type="hidden" name="phone" value={formData.phone} />
+            <div className="grid gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">
+                    Correo
+                  </label>
+                  {activeProfileField === "email" ? (
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(event) => setFormData((currentData) => ({ ...currentData, email: event.target.value }))}
+                      placeholder="nombre@empresa.com"
+                      className={`mt-2 ${getInputClassName(isEmailDirty)}`}
+                    />
+                  ) : (
+                    <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">
+                      {formData.email || "No registrado"}
+                    </p>
+                  )}
+                </div>
 
-          <button
-            type="submit"
-            formAction={phoneOtpAction}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f7f8f9]"
-          >
-            Enviar código
-          </button>
+                {activeProfileField === "email" ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <InlineActionButton type="submit" label="Guardar correo" disabled={!isEmailDirty}>
+                      <CheckIcon />
+                    </InlineActionButton>
+                    <InlineActionButton label="Cancelar edición de correo" onClick={() => cancelEditingField("email")}>
+                      <XIcon />
+                    </InlineActionButton>
+                  </div>
+                ) : (
+                  <InlineActionButton label="Editar correo" onClick={() => startEditingField("email")}>
+                    <EditIcon />
+                  </InlineActionButton>
+                )}
+              </div>
+            </div>
+          </form>
 
-          <AdminDrawerField id="email" label="Correo opcional">
-            <input
-              id="email"
-              name="email"
-              type="email"
-              defaultValue={profileDetails.email ?? ""}
-              placeholder="nombre@empresa.com"
-              className={adminDrawerInputClassName}
-            />
-          </AdminDrawerField>
+          <form action={formAction} className="border-b border-[#e6eaed] pb-4">
+            <input type="hidden" name="fullName" value={formData.fullName} />
+            <input type="hidden" name="email" value={formData.email} />
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Celular</p>
+                {activeProfileField === "phone" ? (
+                  <div className="mt-2 grid gap-3">
+                    <InternationalPhoneField
+                      id="profilePhone"
+                      label="Nuevo celular"
+                      value={formData.phone}
+                      onValueChange={handlePhoneChange}
+                      labelClassName="ui-form-label"
+                      controlClassName={getInputClassName(isPhoneDirty)}
+                    />
 
-          <AdminDrawerButton disabled>Cambiar contraseña</AdminDrawerButton>
-        </AdminDrawerSection>
+                    <button
+                      type="submit"
+                      formAction={phoneOtpAction}
+                      disabled={!isPhoneDirty || !formData.phone}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#12110f]/12 bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#f7f8f9] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Verificar número nuevo
+                    </button>
 
-        <AdminDrawerFeedback state={phoneOtpState} />
-        <AdminDrawerFeedback state={state} />
-        <AdminDrawerSubmitButton idleLabel="Guardar cambios" pendingLabel="Guardando cambios..." />
-      </form>
+                    <label htmlFor="phoneOtpCode" className="ui-form-field">
+                      <span className="ui-form-label">Código de verificación</span>
+                      <input
+                        id="phoneOtpCode"
+                        name="phoneOtpCode"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={phoneOtpCode}
+                        onChange={(event) => setPhoneOtpCode(event.target.value)}
+                        placeholder="Código recibido"
+                        className={adminDrawerInputClassName}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">
+                    {formData.phone || "No registrado"}
+                  </p>
+                )}
+              </div>
 
-      <div className="border-t border-[#e6eaed] pt-5">
-        <form action={logout}>
-          <button
-            type="submit"
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-[#5e6770] transition hover:bg-[#f7f8f9] hover:text-[#12110f]"
-          >
-            Cerrar sesión
-          </button>
-        </form>
-      </div>
+              {activeProfileField === "phone" ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <InlineActionButton
+                    type="submit"
+                    label="Verificar y guardar celular"
+                    disabled={!isPhoneDirty || !phoneOtpCode}
+                  >
+                    <CheckIcon />
+                  </InlineActionButton>
+                  <InlineActionButton label="Cancelar edición de celular" onClick={() => cancelEditingField("phone")}>
+                    <XIcon />
+                  </InlineActionButton>
+                </div>
+              ) : (
+                <InlineActionButton label="Editar celular" onClick={() => startEditingField("phone")}>
+                  <EditIcon />
+                </InlineActionButton>
+              )}
+            </div>
+          </form>
+
+          <form action={passwordAction}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Contraseña</p>
+                {activeProfileField === "password" ? (
+                  <div className="mt-2 grid gap-3">
+                    <label htmlFor="currentPassword" className="ui-form-field">
+                      <span className="ui-form-label">Contraseña actual</span>
+                      <input
+                        id="currentPassword"
+                        name="currentPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        value={passwordData.currentPassword}
+                        onChange={(event) =>
+                          setPasswordData((currentData) => ({
+                            ...currentData,
+                            currentPassword: event.target.value,
+                          }))
+                        }
+                        required
+                        className={getPasswordInputClassName(passwordData.currentPassword)}
+                      />
+                    </label>
+
+                    <label htmlFor="newPassword" className="ui-form-field">
+                      <span className="ui-form-label">Nueva contraseña</span>
+                      <input
+                        id="newPassword"
+                        name="newPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        value={passwordData.newPassword}
+                        onChange={(event) =>
+                          setPasswordData((currentData) => ({
+                            ...currentData,
+                            newPassword: event.target.value,
+                          }))
+                        }
+                        minLength={passwordMinLength}
+                        maxLength={passwordMaxLength}
+                        required
+                        className={getPasswordInputClassName(
+                          passwordData.newPassword,
+                          isPasswordLengthInvalid || isPasswordPadded || isNewPasswordSameAsCurrent,
+                        )}
+                      />
+                    </label>
+
+                    <label htmlFor="confirmNewPassword" className="ui-form-field">
+                      <span className="ui-form-label">Confirmar nueva contraseña</span>
+                      <input
+                        id="confirmNewPassword"
+                        name="confirmNewPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        value={passwordData.confirmNewPassword}
+                        onChange={(event) =>
+                          setPasswordData((currentData) => ({
+                            ...currentData,
+                            confirmNewPassword: event.target.value,
+                          }))
+                        }
+                        minLength={passwordMinLength}
+                        maxLength={passwordMaxLength}
+                        required
+                        className={getPasswordInputClassName(
+                          passwordData.confirmNewPassword,
+                          isPasswordConfirmationDifferent,
+                        )}
+                      />
+                    </label>
+
+                    {isPasswordConfirmationDifferent ? (
+                      <p className="text-xs font-medium text-red-500">La confirmación no coincide.</p>
+                    ) : null}
+                    {isPasswordLengthInvalid || isPasswordPadded ? (
+                      <p className="text-xs font-medium text-[#8a6a00]">
+                        Usa mínimo {passwordMinLength} caracteres y sin espacios al inicio o al final.
+                      </p>
+                    ) : null}
+                    {isNewPasswordSameAsCurrent ? (
+                      <p className="text-xs font-medium text-red-500">
+                        La nueva contraseña debe ser diferente a la actual.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm font-semibold leading-6 text-[#12110f]">••••••••</p>
+                )}
+              </div>
+
+              {activeProfileField === "password" ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <InlineActionButton
+                    type="submit"
+                    label="Guardar contraseña"
+                    disabled={!canSubmitPasswordChange}
+                  >
+                    <CheckIcon />
+                  </InlineActionButton>
+                  <InlineActionButton label="Cancelar edición de contraseña" onClick={() => cancelEditingField("password")}>
+                    <XIcon />
+                  </InlineActionButton>
+                </div>
+              ) : (
+                <InlineActionButton label="Editar contraseña" onClick={() => startEditingField("password")}>
+                  <EditIcon />
+                </InlineActionButton>
+              )}
+            </div>
+          </form>
+        </div>
+      </AdminDrawerSection>
+
+      <AdminDrawerFeedback state={phoneOtpState} />
+      <AdminDrawerFeedback state={passwordState} />
+      <AdminDrawerFeedback state={state} />
     </>
   );
 }
@@ -266,7 +670,7 @@ export function DashboardHeaderMenu({
         </div>
       </div>
 
-      <AdminSideDrawer isOpen={Boolean(activePanel)} title={panelTitle} eyebrow="Dashboard" onClose={closePanel}>
+      <AdminSideDrawer isOpen={Boolean(activePanel)} title={panelTitle} onClose={closePanel}>
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "billing" ? <BillingDrawerContent /> : null}
         {activePanel === "subscription" ? <SubscriptionDrawerContent branchCount={branchCount} /> : null}

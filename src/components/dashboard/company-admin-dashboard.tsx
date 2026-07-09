@@ -32,11 +32,9 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            {branch.isMain ? (
-              <span className="rounded-full border border-[#d9dfe0] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#6b655d]">
-                Principal
-              </span>
-            ) : null}
+            <span className="rounded-full border border-[#d9dfe0] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#6b655d]">
+              ACTIVA
+            </span>
             <span className="rounded-full border border-[#bde5e7] bg-[#effbfb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#1c6a71]">
               {branch.isActive ? "Operativa" : "Inactiva"}
             </span>
@@ -67,7 +65,6 @@ export function CompanyAdminDashboard({
   branches: AccessibleBranchSummary[];
 }) {
   const activeBranches = branches.filter((branch) => branch.isActive);
-  const mainBranches = branches.filter((branch) => branch.isMain);
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
@@ -107,7 +104,7 @@ export function CompanyAdminDashboard({
               <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[26rem]">
                 <PremiumStat label="Sedes" value={branches.length} />
                 <PremiumStat label="Activas" value={activeBranches.length} tone="accent" />
-                <PremiumStat label="Principales" value={mainBranches.length} tone="gold" />
+                <PremiumStat label="Texto x de prueba" value="-" tone="gold" />
               </div>
             </div>
 

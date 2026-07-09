@@ -10,6 +10,7 @@ import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164Phon
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAuthClient } from "@/lib/supabase/auth";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type {
   AppRole,
@@ -97,10 +98,53 @@ const sanitaryDocumentKinds = [
 const SANITATION_PLAN_MAX_FILE_SIZE_BYTES = 6 * 1024 * 1024;
 const GENERAL_DOCUMENT_MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024;
 const MAX_DOCUMENT_SECTION_RECORDS = 40;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 72;
 
 function readString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readSensitiveString(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" ? value : "";
+}
+
+function getNewPasswordValidationError({
+  currentPassword,
+  newPassword,
+  confirmNewPassword,
+}: {
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}) {
+  if (!currentPassword || !newPassword || !confirmNewPassword) {
+    return "Debes ingresar tu contraseña actual, la nueva contraseña y su confirmación.";
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    return "La confirmación no coincide con la nueva contraseña.";
+  }
+
+  if (newPassword.length < PASSWORD_MIN_LENGTH) {
+    return `La nueva contraseña debe tener mínimo ${PASSWORD_MIN_LENGTH} caracteres.`;
+  }
+
+  if (newPassword.length > PASSWORD_MAX_LENGTH) {
+    return "La nueva contraseña es demasiado larga.";
+  }
+
+  if (newPassword !== newPassword.trim()) {
+    return "La nueva contraseña no puede iniciar ni terminar con espacios.";
+  }
+
+  if (newPassword === currentPassword) {
+    return "La nueva contraseña debe ser diferente a la contraseña actual.";
+  }
+
+  return null;
 }
 
 function readPhone(formData: FormData) {
@@ -556,6 +600,54 @@ export async function updateCurrentUserProfile(
 
   revalidatePath("/dashboard");
   return { success: "Perfil actualizado correctamente." };
+}
+
+export async function updateCurrentUserPassword(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const context = await requireUserContext();
+  const currentPassword = readSensitiveString(formData, "currentPassword");
+  const newPassword = readSensitiveString(formData, "newPassword");
+  const confirmNewPassword = readSensitiveString(formData, "confirmNewPassword");
+  const validationError = getNewPasswordValidationError({
+    currentPassword,
+    newPassword,
+    confirmNewPassword,
+  });
+
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  const authClient = getSupabaseAuthClient();
+
+  if (!authClient) {
+    return { error: "Faltan variables de entorno de Supabase para validar tu contraseña." };
+  }
+
+  const {
+    data: { user },
+    error: signInError,
+  } = await authClient.auth.signInWithPassword({
+    phone: context.profile.phone,
+    password: currentPassword,
+  });
+
+  if (signInError || !user || user.id !== context.profile.userId) {
+    return { error: "La contraseña actual no es correcta." };
+  }
+
+  const adminClient = getSupabaseAdminClientOrThrow({ operation: "updateCurrentUserPassword" });
+  const { error } = await adminClient.auth.admin.updateUserById(context.profile.userId, {
+    password: newPassword,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { success: "Contraseña actualizada correctamente." };
 }
 
 export async function sendCurrentUserPhoneChangeOTP(
