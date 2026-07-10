@@ -3,8 +3,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-import { requireBranchAccess } from "@/lib/auth/authorization";
+import { requireActiveBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
+import {
+  getAccountCapabilities,
+  getSubscriptionViewState,
+  normalizePlanType,
+  normalizeSubscriptionStatus,
+} from "@/lib/billing";
 import { notificationService } from "@/lib/notifications/notification.service";
 import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
@@ -449,6 +455,19 @@ type BranchRouteTarget = {
   branchSlug: string;
 };
 
+const activeLocationLimitReachedMessage =
+  "Has alcanzado el límite de sedes activas de tu plan. Amplía tu plan para activar otra sede.";
+
+function getCapacityResolutionRequiredMessage({
+  activeBranches,
+  maxBranches,
+}: {
+  activeBranches: number;
+  maxBranches: number;
+}) {
+  return `Tu plan permite administrar ${maxBranches} sede${maxBranches === 1 ? "" : "s"} activa${maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${activeBranches} sedes activas. Selecciona qué sede deseas mantener activa para continuar operando.`;
+}
+
 async function resolveBranchRouteTarget(branchId: string) {
   const supabase = await getSupabaseRlsClientOrThrow({
     operation: "resolveBranchRouteTarget",
@@ -482,6 +501,71 @@ async function resolveBranchRouteTarget(branchId: string) {
     companySlug: company.slug,
     branchSlug: data.slug,
   } satisfies BranchRouteTarget;
+}
+
+function canManageCompanySites(context: Awaited<ReturnType<typeof requireUserContext>>, companyId: string) {
+  return (
+    context.profile.globalRole === "owner" ||
+    context.profile.globalRole === "super_admin" ||
+    context.profile.defaultCompanyId === companyId
+  );
+}
+
+async function getCompanyActiveLocationUsage({
+  companyId,
+  supabase,
+}: {
+  companyId: string;
+  supabase: SupabaseClient;
+}) {
+  const [{ count, error: activeCountError }, { data: subscription, error: subscriptionError }] = await Promise.all([
+    supabase
+      .from("branches")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("status", "active"),
+    supabase
+      .from("company_subscriptions")
+      .select("status, plan_type, trial_ends_at, included_active_sites, max_active_locations")
+      .eq("company_id", companyId)
+      .maybeSingle<{
+        status: string | null;
+        plan_type: string | null;
+        trial_ends_at: string | null;
+        included_active_sites: number | null;
+        max_active_locations: number | null;
+      }>(),
+  ]);
+
+  if (activeCountError) {
+    throw new Error(formatDatabaseError(activeCountError, "No fue posible validar las sedes activas."));
+  }
+
+  if (subscriptionError) {
+    throw new Error(formatDatabaseError(subscriptionError, "No fue posible validar la capacidad del plan."));
+  }
+
+  const maxActiveLocations = subscription?.max_active_locations ?? 0;
+  const subscriptionStatus = normalizeSubscriptionStatus(subscription?.status);
+  const subscriptionViewState = getSubscriptionViewState({
+    status: subscriptionStatus,
+    planType: normalizePlanType(subscription?.plan_type),
+    trialEndsAt: subscription?.trial_ends_at ?? null,
+  });
+  const activeLocations = count ?? 0;
+  const accountCapabilities = getAccountCapabilities({
+    subscriptionViewState,
+    maxActiveLocations,
+    activeBranches: activeLocations,
+  });
+
+  return {
+    activeLocations,
+    accountCapabilities,
+    maxActiveLocations,
+    subscriptionStatus,
+    subscriptionViewState,
+  };
 }
 
 async function requireOwnerAccess() {
@@ -711,14 +795,20 @@ export async function createCompanyBranch(
   _: AdminActionState | undefined,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const context = await requireOperatorAccess();
+  const context = await requireUserContext();
   const supabase = await getSupabaseRlsClientOrThrow({ operation: "createCompanyBranch" });
+  const isOperator = context.profile.globalRole === "owner" || context.profile.globalRole === "super_admin";
 
-  const companyId = readString(formData, "companyId");
+  const requestedCompanyId = readString(formData, "companyId");
+  const companyId = isOperator ? requestedCompanyId : context.profile.defaultCompanyId;
   const name = readString(formData, "name");
 
   if (!companyId || !name) {
     return { error: "Debes indicar empresa y nombre válidos para la sede." };
+  }
+
+  if (!isOperator && requestedCompanyId && requestedCompanyId !== companyId) {
+    return { error: "No puedes crear sedes para otra empresa." };
   }
 
   const { data: company, error: companyError } = await supabase
@@ -731,6 +821,22 @@ export async function createCompanyBranch(
     return { error: companyError?.message ?? "No fue posible encontrar la empresa seleccionada." };
   }
 
+  const activeLocationUsage = await getCompanyActiveLocationUsage({ companyId, supabase });
+
+  if (activeLocationUsage.accountCapabilities.requiresCapacityResolution) {
+    return {
+      error: getCapacityResolutionRequiredMessage(activeLocationUsage.accountCapabilities),
+    };
+  }
+
+  if (!activeLocationUsage.accountCapabilities.canOperate) {
+    return { error: "Activa o recupera tu plan para agregar sedes." };
+  }
+
+  if (!activeLocationUsage.accountCapabilities.canCreateBranch) {
+    return { error: activeLocationLimitReachedMessage };
+  }
+
   const { data: createdBranch, error } = await supabase
     .from("branches")
     .insert({
@@ -738,6 +844,9 @@ export async function createCompanyBranch(
       name,
       created_by: context.profile.userId,
       is_main: false,
+      status: "active",
+      is_active: true,
+      billing_activation_confirmed_at: new Date().toISOString(),
     })
     .select("slug")
     .single<{ slug: string }>();
@@ -749,7 +858,9 @@ export async function createCompanyBranch(
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/sedes/${company.slug}/${createdBranch.slug}`);
   revalidatePath(`/dashboard/companies/${company.slug}`);
-  return { success: `Sede "${name}" creada correctamente.` };
+  return {
+    success: `Sede "${name}" creada activa. Uso: ${activeLocationUsage.activeLocations + 1} / ${activeLocationUsage.accountCapabilities.maxBranches} sedes activas.`,
+  };
 }
 
 export async function createBranchDocument(
@@ -772,7 +883,7 @@ export async function createBranchDocument(
     return { error: "Debes completar la sección, el título y la sede correctamente." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -830,7 +941,7 @@ export async function updateBranchDocument(
     return { error: "Debes completar los datos del documento correctamente." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -896,7 +1007,7 @@ export async function deleteBranchDocument(
     return { error: "Debes indicar el documento y la sede correctamente." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -971,7 +1082,7 @@ export async function saveBranchSanitaryDocumentFileAction(
     return { error: "Debes seleccionar un PDF para guardar el documento." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1216,7 +1327,7 @@ export async function saveBranchChemicalProductAction(
     return { error: "Debes cargar al menos un PDF del producto." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1344,7 +1455,7 @@ export async function saveBranchStaffMemberAction(formData: FormData): Promise<S
     return { error: "Debes indicar la fecha del PDF que vas a guardar." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1479,7 +1590,7 @@ export async function archiveBranchSanitaryDocumentFileAction(
     return { error: "Debes indicar el documento a eliminar." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1518,7 +1629,7 @@ export async function archiveBranchChemicalProductAction(
     return { error: "Debes indicar el producto a eliminar." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1563,7 +1674,7 @@ export async function archiveBranchStaffMemberAction(
     return { error: "Debes indicar el empleado a eliminar." };
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     return { error: "La sede seleccionada no coincide con la ruta actual." };
@@ -1616,7 +1727,7 @@ async function createBranchCatalogItem({
     return;
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
@@ -1668,7 +1779,7 @@ async function toggleBranchCatalogItem({
     return;
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
@@ -1709,7 +1820,7 @@ async function archiveBranchCatalogItem({
     return;
   }
 
-  const { branch } = await requireBranchAccess(companySlug, branchSlug);
+  const { branch } = await requireActiveBranchAccess(companySlug, branchSlug);
 
   if (branch.id !== branchId) {
     throw new Error("La sede seleccionada no coincide con la ruta actual.");
@@ -2226,8 +2337,11 @@ export async function toggleUserStatus(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/companies/[slug]", "page");
 }
 
-export async function toggleCompanyBranchStatus(formData: FormData): Promise<void> {
-  await requireOperatorAccess();
+export async function toggleCompanyBranchStatus(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const context = await requireUserContext();
   const supabase = await getSupabaseRlsClientOrThrow({ operation: "toggleCompanyBranchStatus" });
 
   const branchId = readString(formData, "branchId");
@@ -2235,27 +2349,66 @@ export async function toggleCompanyBranchStatus(formData: FormData): Promise<voi
   const nextIsActive = readString(formData, "nextIsActive") === "true";
 
   if (!branchId) {
-    throw new Error("Sede inválida.");
+    return { error: "Sede inválida." };
   }
 
   const { data: branch, error: branchError } = await supabase
     .from("branches")
-    .select("is_main")
+    .select("company_id, is_main, status")
     .eq("id", branchId)
-    .maybeSingle<{ is_main: boolean }>();
+    .maybeSingle<{ company_id: string; is_main: boolean; status: string | null }>();
 
   if (branchError || !branch) {
-    throw new Error(branchError?.message ?? "No fue posible encontrar la sede.");
+    return { error: branchError?.message ?? "No fue posible encontrar la sede." };
+  }
+
+  if (!canManageCompanySites(context, branch.company_id)) {
+    return { error: "No tienes permisos para modificar esta sede." };
   }
 
   if (branch.is_main && !nextIsActive) {
-    throw new Error("La sede principal no se puede desactivar. Primero asigna otra sede principal.");
+    return { error: "La sede principal no se puede desactivar. Primero asigna otra sede principal." };
   }
 
-  const { error } = await supabase.from("branches").update({ is_active: nextIsActive }).eq("id", branchId);
+  if (nextIsActive) {
+    const activeLocationUsage = await getCompanyActiveLocationUsage({ companyId: branch.company_id, supabase });
+
+    if (activeLocationUsage.accountCapabilities.requiresCapacityResolution) {
+      return {
+        error: getCapacityResolutionRequiredMessage(activeLocationUsage.accountCapabilities),
+      };
+    }
+
+    if (!activeLocationUsage.accountCapabilities.canOperate) {
+      return { error: "Actualiza tu plan para activar esta sede." };
+    }
+
+    const activeLocationsExcludingCurrent = branch.status === "active"
+      ? Math.max(activeLocationUsage.activeLocations - 1, 0)
+      : activeLocationUsage.activeLocations;
+
+    const activationCapabilities = getAccountCapabilities({
+      subscriptionViewState: activeLocationUsage.subscriptionViewState,
+      maxActiveLocations: activeLocationUsage.maxActiveLocations,
+      activeBranches: activeLocationsExcludingCurrent,
+    });
+
+    if (!activationCapabilities.canCreateBranch) {
+      return { error: activeLocationLimitReachedMessage };
+    }
+  }
+
+  const { error } = await supabase
+    .from("branches")
+    .update({
+      is_active: nextIsActive,
+      status: nextIsActive ? "active" : "inactive",
+      billing_activation_confirmed_at: nextIsActive ? new Date().toISOString() : null,
+    })
+    .eq("id", branchId);
 
   if (error) {
-    throw new Error(error.message);
+    return { error: error.message };
   }
 
   const branchRouteTarget = await resolveBranchRouteTarget(branchId);
@@ -2269,6 +2422,123 @@ export async function toggleCompanyBranchStatus(formData: FormData): Promise<voi
   if (branchRouteTarget) {
     revalidatePath(`/dashboard/sedes/${branchRouteTarget.companySlug}/${branchRouteTarget.branchSlug}`);
   }
+
+  return { success: nextIsActive ? "Sede activada correctamente." : "Sede desactivada correctamente." };
+}
+
+export async function resolveCompanyCapacityExceeded(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireUserContext();
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "resolveCompanyCapacityExceeded" });
+  const companyId = readString(formData, "companyId");
+  const companySlug = readString(formData, "companySlug");
+  const selectedBranchIds = [
+    ...new Set(
+      formData
+        .getAll("activeBranchId")
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  if (!companyId) {
+    return { error: "No fue posible identificar la empresa." };
+  }
+
+  if (selectedBranchIds.length === 0) {
+    return { error: "Selecciona al menos una sede para mantener activa." };
+  }
+
+  const { data, error } = await supabase.rpc("resolve_company_capacity_excess", {
+    keep_branch_ids: selectedBranchIds,
+    target_company_id: companyId,
+  }).maybeSingle<{
+    kept_count: number;
+    deactivated_count: number;
+  }>();
+
+  if (error || !data) {
+    return {
+      error: error
+        ? formatDatabaseError(error, "No fue posible resolver la capacidad de sedes.")
+        : "No fue posible resolver la capacidad de sedes.",
+    };
+  }
+
+  revalidatePath("/dashboard");
+
+  if (companySlug) {
+    revalidatePath(`/dashboard/companies/${companySlug}`);
+  }
+
+  return {
+    success: `Capacidad resuelta: ${data.kept_count} sede${data.kept_count === 1 ? "" : "s"} activa${data.kept_count === 1 ? "" : "s"} y ${data.deactivated_count} sede${data.deactivated_count === 1 ? "" : "s"} inactivada${data.deactivated_count === 1 ? "" : "s"}.`,
+  };
+}
+
+export async function deleteCompanyBranch(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "deleteCompanyBranch" });
+  const branchId = readString(formData, "branchId");
+  const companySlug = readString(formData, "companySlug");
+  const confirmationName = readString(formData, "confirmationName");
+
+  if (!branchId) {
+    return { error: "Sede inválida." };
+  }
+
+  if (!confirmationName) {
+    return { error: "Escribe el nombre exacto de la sede para confirmar la eliminación." };
+  }
+
+  let storageAdminClient: SupabaseClient;
+
+  try {
+    storageAdminClient = getSupabaseAdminClientOrThrow({ operation: "deleteCompanyBranch.storageCleanup" });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No fue posible preparar la eliminación de archivos." };
+  }
+
+  const { data: deletedBranch, error } = await supabase
+    .rpc("delete_branch_permanently", {
+      expected_branch_name: confirmationName,
+      target_branch_id: branchId,
+    })
+    .maybeSingle<{
+      branch_name: string;
+      branch_slug: string;
+      file_urls: string[] | null;
+    }>();
+
+  if (error || !deletedBranch) {
+    return {
+      error: error ? formatDatabaseError(error, "No fue posible eliminar la sede.") : "No fue posible eliminar la sede.",
+    };
+  }
+
+  const uniqueFileUrls = [...new Set(deletedBranch.file_urls ?? [])];
+
+  for (const fileUrl of uniqueFileUrls) {
+    try {
+      await deleteBranchDocumentFile(fileUrl, storageAdminClient);
+    } catch (error) {
+      logServerError("branch.delete.storage_file_failed", error, { branchId, fileUrl });
+    }
+  }
+
+  revalidatePath("/dashboard");
+
+  if (companySlug) {
+    revalidatePath(`/dashboard/companies/${companySlug}`);
+    revalidatePath(`/dashboard/sedes/${companySlug}/${deletedBranch.branch_slug}`);
+  }
+
+  return { success: `Sede "${deletedBranch.branch_name}" eliminada permanentemente.` };
 }
 
 export async function setMainCompanyBranch(formData: FormData): Promise<void> {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  CompanyBranchDeleteButton,
   CompanyBranchStatusBadge,
   CompanyBranchStatusToggle,
   EditCompanyBranchForm,
@@ -9,6 +10,7 @@ import {
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
 import { requireCompanyAccess } from "@/lib/auth/authorization";
+import { normalizeSiteStatus } from "@/lib/billing";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 import type { CompanyBranchSummary } from "@/types/auth";
 
@@ -47,7 +49,7 @@ async function getCompanyModuleData(companyId: string) {
       }>(),
     supabase
       .from("branches")
-      .select("id, company_id, name, slug, is_main, is_active")
+      .select("id, company_id, name, slug, is_main, is_active, status")
       .eq("company_id", companyId)
       .order("created_at", { ascending: true }),
   ]);
@@ -74,6 +76,7 @@ async function getCompanyModuleData(companyId: string) {
         slug: branch.slug,
         isMain: branch.is_main,
         isActive: branch.is_active,
+        status: normalizeSiteStatus(branch.status, branch.is_active),
       })) ?? [],
   };
 }
@@ -88,7 +91,7 @@ export default async function CompanyDashboardPage({
   const moduleData = await getCompanyModuleData(company.id);
   const canManageCompanyUsers = context.profile.globalRole === "owner" || context.profile.globalRole === "super_admin";
   const canManageSites = canManageCompanyUsers;
-  const visibleBranches = canManageSites ? moduleData.branches : moduleData.branches.filter((branch) => branch.isActive);
+  const visibleBranches = canManageSites ? moduleData.branches : moduleData.branches.filter((branch) => branch.status === "active");
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f4efe7_0%,#ebe4d7_100%)] px-5 py-6 sm:px-8 lg:px-10">
@@ -193,7 +196,7 @@ export default async function CompanyDashboardPage({
                             <span className="rounded-full bg-[#12110f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white">
                               Principal
                             </span>
-                          ) : canManageSites ? (
+                          ) : canManageSites && branch.status === "active" ? (
                             <SetMainBranchButton branchId={branch.id} companySlug={company.slug} />
                           ) : null}
                           <CompanyBranchStatusBadge branch={branch} />
@@ -204,6 +207,9 @@ export default async function CompanyDashboardPage({
                               isActive={branch.isActive}
                               disabled={branch.isMain}
                             />
+                          ) : null}
+                          {canManageSites && branch.status === "inactive" ? (
+                            <CompanyBranchDeleteButton branch={branch} companySlug={company.slug} />
                           ) : null}
                         </div>
                       </div>

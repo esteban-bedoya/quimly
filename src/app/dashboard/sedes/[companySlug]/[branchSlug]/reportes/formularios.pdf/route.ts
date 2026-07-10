@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireBranchAccess } from "@/lib/auth/authorization";
+import { getCompanyAccountCapabilities, requireBranchAccess } from "@/lib/auth/authorization";
 import {
   getDateRangeUtcBounds,
   formatDateForDisplay,
@@ -64,6 +64,12 @@ export async function GET(
   try {
     const { companySlug, branchSlug } = await params;
     const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
+    const accountCapabilities = await getCompanyAccountCapabilities(company.id);
+
+    if (!accountCapabilities.canDownloadReports) {
+      return jsonError("Tu cuenta no puede descargar reportes en este momento.", 403);
+    }
+
     companyId = company.id;
     branchId = branch.id;
     const supabase = await getSupabaseRlsClient();

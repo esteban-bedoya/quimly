@@ -1,4 +1,4 @@
-import { requireBranchAccess } from "@/lib/auth/authorization";
+import { getCompanyAccountCapabilities, requireBranchAccess } from "@/lib/auth/authorization";
 import { operationalFormTypes } from "@/lib/operational-forms";
 import {
   getOperationalRecordDateLimits,
@@ -274,6 +274,7 @@ async function ensureBranchQrCodes({
 export async function loadBranchDashboardData(companySlug: string, branchSlug: string) {
   const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
   const supabase = await getSupabaseRlsClient();
+  const accountCapabilities = await getCompanyAccountCapabilities(company.id, supabase ?? undefined);
   let documents: BranchDocumentSummary[] = [];
   let qrCodes: BranchFormQrSummary[] = [];
   let refrigerationEquipment: BranchCatalogItemSummary[] = [];
@@ -384,14 +385,17 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
       }
     }
 
-    const branchQrCodes = await ensureBranchQrCodes({
-      supabase,
-      branchId: branch.id,
-      companyId: branch.companyId,
-      companySlug,
-      branchSlug,
-      existingQrRows: branchQrCodesResult.data,
-    });
+    const branchQrCodes =
+      branch.status === "active" && accountCapabilities.canOperate
+        ? await ensureBranchQrCodes({
+            supabase,
+            branchId: branch.id,
+            companyId: branch.companyId,
+            companySlug,
+            branchSlug,
+            existingQrRows: branchQrCodesResult.data,
+          })
+        : branchQrCodesResult.data ?? [];
     operationalRecordDateStatuses = await loadOperationalRecordDateStatuses({
       supabase,
       branchId: branch.id,
@@ -512,6 +516,7 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   return {
     company,
     branch,
+    accountCapabilities,
     documents,
     qrCodes,
     operationalRecordDateStatuses,

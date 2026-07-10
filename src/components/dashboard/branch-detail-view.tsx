@@ -22,6 +22,7 @@ import { createPublicFormPath, operationalFormLabels, operationalFormTypes } fro
 import type { OperationalRecordDateStatus } from "@/lib/operational-record-dates";
 import { printableQrInstructions } from "@/lib/qr/printable";
 import type { BranchReportPanelData } from "@/lib/branch-reports/types";
+import type { AccountCapabilities } from "@/lib/billing";
 import type {
   BranchCatalogItemSummary,
   BranchChemicalProductSummary,
@@ -32,6 +33,7 @@ import type {
   BranchSanitaryDocumentFileSummary,
   BranchStaffMemberSummary,
   CompanySummary,
+  CompanyBranchSummary,
   OperationalFormType,
 } from "@/types/auth";
 
@@ -44,7 +46,9 @@ type BranchDetailViewProps = {
     slug: string;
     isMain: boolean;
     isActive: boolean;
+    status: CompanyBranchSummary["status"];
   };
+  accountCapabilities: AccountCapabilities;
   documents: BranchDocumentSummary[];
   qrCodes: BranchFormQrSummary[];
   operationalRecordDateStatuses: Partial<Record<OperationalFormType, OperationalRecordDateStatus>>;
@@ -75,11 +79,13 @@ const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType,
 function BranchLayout({
   company,
   branch,
+  accountCapabilities,
   currentSection,
   children,
 }: {
   company: CompanySummary;
   branch: BranchDetailViewProps["branch"];
+  accountCapabilities: AccountCapabilities;
   currentSection: BranchSectionKey;
   children: ReactNode;
 }) {
@@ -91,6 +97,17 @@ function BranchLayout({
     { key: "compliance", href: `${basePath}/cumplimiento`, label: "Documentos" },
   ] as const;
   const headerDescription = branchHeaderDescriptions[currentSection];
+  const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
+  const readOnlyTitle = branch.status !== "active"
+    ? "Sede inactiva"
+    : accountCapabilities.requiresCapacityResolution
+      ? "Resolución de sedes requerida"
+      : "Operación bloqueada";
+  const readOnlyDescription = branch.status !== "active"
+    ? "Esta sede conserva su historial sanitario. Los formularios, documentos y configuraciones están bloqueados para nuevos registros."
+    : accountCapabilities.requiresCapacityResolution
+      ? `Tu plan permite administrar ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"} activa${accountCapabilities.maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${accountCapabilities.activeBranches} sedes activas. Resuelve la capacidad en el panel de administración para continuar operando.`
+      : "Tu cuenta puede consultar y descargar reportes históricos, pero no crear registros ni gestionar operación hasta recuperar el plan.";
 
   useEffect(() => {
     const closeMenu = () => setIsMenuOpen(false);
@@ -215,6 +232,13 @@ function BranchLayout({
           </div>
         </section>
 
+        {isReadOnly ? (
+          <section className="mx-auto w-full max-w-[74rem] rounded-[1.25rem] border border-[#e0d1a0] bg-[#fff8df] px-5 py-4 text-sm leading-6 text-[#7a5a00]">
+            <p className="font-semibold text-[#5f4700]">{readOnlyTitle}</p>
+            <p>{readOnlyDescription}</p>
+          </section>
+        ) : null}
+
         <div className="mx-auto w-full max-w-[74rem]">{children}</div>
       </div>
     </main>
@@ -282,6 +306,7 @@ function InlineCatalogManager({
   inactiveSummarySingular,
   inactiveSummaryPlural,
   showRefrigerationEquipmentType = false,
+  isReadOnly = false,
 }: {
   title: string;
   formLabel: string;
@@ -306,6 +331,7 @@ function InlineCatalogManager({
   inactiveSummarySingular: string;
   inactiveSummaryPlural: string;
   showRefrigerationEquipmentType?: boolean;
+  isReadOnly?: boolean;
 }) {
   const [itemPendingArchive, setItemPendingArchive] = useState<BranchCatalogItemSummary | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -440,18 +466,24 @@ function InlineCatalogManager({
                     </div>
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
-                    <form id={statusFormId} action={toggleFormAction}>
-                      <input type="hidden" name="itemId" value={item.id} />
-                      <input type="hidden" name="branchId" value={branchId} />
-                      <input type="hidden" name="companySlug" value={companySlug} />
-                      <input type="hidden" name="branchSlug" value={branchSlug} />
-                      <input type="hidden" name="nextIsActive" value={item.isActive ? "on" : "off"} />
-                      <CatalogItemStatusSelect
-                        isActive={item.isActive}
-                        formId={statusFormId}
-                        onDelete={() => setItemPendingArchive(item)}
-                      />
-                    </form>
+                    {isReadOnly ? (
+                      <span className="rounded-full border border-[#d9dfe0] bg-[#f7f8f9] px-3 py-1 text-xs font-semibold text-[#5e6770]">
+                        Bloqueado
+                      </span>
+                    ) : (
+                      <form id={statusFormId} action={toggleFormAction}>
+                        <input type="hidden" name="itemId" value={item.id} />
+                        <input type="hidden" name="branchId" value={branchId} />
+                        <input type="hidden" name="companySlug" value={companySlug} />
+                        <input type="hidden" name="branchSlug" value={branchSlug} />
+                        <input type="hidden" name="nextIsActive" value={item.isActive ? "on" : "off"} />
+                        <CatalogItemStatusSelect
+                          isActive={item.isActive}
+                          formId={statusFormId}
+                          onDelete={() => setItemPendingArchive(item)}
+                        />
+                      </form>
+                    )}
                   </div>
                 </div>
               );
@@ -463,6 +495,7 @@ function InlineCatalogManager({
           )}
         </div>
 
+        {!isReadOnly ? (
         <div className="flex justify-center">
           <button
             type="button"
@@ -472,6 +505,7 @@ function InlineCatalogManager({
             {creationButtonLabel}
           </button>
         </div>
+        ) : null}
       </div>
 
       {typeof document !== "undefined" && isCreateModalOpen
@@ -1034,10 +1068,13 @@ function OperationalFlowCard({
 export function BranchLandingView({
   company,
   branch,
+  accountCapabilities,
   reportPanelData,
-}: Pick<BranchDetailViewProps, "company" | "branch"> & { reportPanelData: BranchReportPanelData }) {
+}: Pick<BranchDetailViewProps, "company" | "branch" | "accountCapabilities"> & {
+  reportPanelData: BranchReportPanelData;
+}) {
   return (
-    <BranchLayout company={company} branch={branch} currentSection="home">
+    <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="home">
       <section aria-label="Reportes de la sede" className="min-h-[32rem]">
         <BranchReportsPanel companySlug={company.slug} branchSlug={branch.slug} data={reportPanelData} />
       </section>
@@ -1052,8 +1089,10 @@ export function BranchOperationalView({
   refrigerationEquipment,
   sanitationAreas,
   operationalRecordDateStatuses,
+  accountCapabilities,
 }: BranchDetailViewProps) {
-  const activeOperationalQrCodes = qrCodes.filter((qrCode) => qrCode.isActive);
+  const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
+  const activeOperationalQrCodes = isReadOnly ? [] : qrCodes.filter((qrCode) => qrCode.isActive);
   const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
   const operationalCards = operationalFormTypes.map((formType) => {
     let configuration: ReactNode | undefined;
@@ -1077,6 +1116,7 @@ export function BranchOperationalView({
           inactiveSummarySingular="equipo inactivo"
           inactiveSummaryPlural="equipos inactivos"
           showRefrigerationEquipmentType
+          isReadOnly={isReadOnly}
         />
       );
     }
@@ -1097,6 +1137,7 @@ export function BranchOperationalView({
           activeSummaryPlural="áreas activas"
           inactiveSummarySingular="área inactiva"
           inactiveSummaryPlural="áreas inactivas"
+          isReadOnly={isReadOnly}
         />
       );
     }
@@ -1116,7 +1157,7 @@ export function BranchOperationalView({
   const rightColumnCards = operationalCards.filter((_, index) => index % 2 === 1);
 
   return (
-    <BranchLayout company={company} branch={branch} currentSection="operational">
+    <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="operational">
       <div className="operational-toolbar mt-3 mb-10 flex w-full items-center justify-center gap-3 sm:mt-4 sm:mb-12 sm:gap-4 lg:items-end">
         {activeOperationalQrCodes.length ? (
           <a
@@ -1158,13 +1199,17 @@ export function BranchComplianceView({
   staffMembers,
   sanitaryDocumentFiles,
   sanitaryDocumentCategoryStatuses,
+  accountCapabilities,
 }: BranchDetailViewProps) {
+  const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
+
   return (
-    <BranchLayout company={company} branch={branch} currentSection="compliance">
+    <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="compliance">
       <CompanyAdminDocumentsView
         branchId={branch.id}
         companySlug={company.slug}
         branchSlug={branch.slug}
+        isReadOnly={isReadOnly}
         initialChemicalProducts={chemicalProducts}
         initialStaffMembers={staffMembers}
         initialSanitaryDocumentFiles={sanitaryDocumentFiles}

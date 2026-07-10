@@ -1,4 +1,5 @@
 import type { E164PhoneNumber } from "@/lib/phone";
+import type { SiteStatus } from "@/lib/billing";
 
 export type AppRole = "owner" | "super_admin" | "company_admin";
 
@@ -38,6 +39,7 @@ export type CompanyBranchSummary = {
   slug: string;
   isMain: boolean;
   isActive: boolean;
+  status: SiteStatus;
 };
 
 export type AccessibleBranchSummary = CompanyBranchSummary & {

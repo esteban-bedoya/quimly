@@ -1433,11 +1433,13 @@ function RegisterControl({
   actionLabel,
   onStart,
   onCancel,
+  disabled = false,
 }: {
   isRegistering: boolean;
   actionLabel: string;
   onStart: () => void;
   onCancel: () => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex justify-end">
@@ -1450,8 +1452,13 @@ function RegisterControl({
           - Cancelar registro
         </button>
       ) : (
-        <button type="button" onClick={onStart} className="ui-pill-button-primary min-h-11 px-5">
-          {actionLabel}
+        <button
+          type="button"
+          onClick={onStart}
+          disabled={disabled}
+          className="ui-pill-button-primary min-h-11 px-5 disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          {disabled ? "Bloqueado" : actionLabel}
         </button>
       )}
     </div>
@@ -1500,7 +1507,11 @@ function RecordRow({ children }: { children: ReactNode }) {
   );
 }
 
-function RecordActions({ children }: { children: ReactNode }) {
+function RecordActions({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
+  if (disabled) {
+    return null;
+  }
+
   return (
     <div className="flex shrink-0 flex-col items-end gap-2 text-right">
       <RecordActionsMenu>{children}</RecordActionsMenu>
@@ -1724,6 +1735,7 @@ type CompanyAdminDocumentsViewProps = {
   branchId: string;
   companySlug: string;
   branchSlug: string;
+  isReadOnly?: boolean;
   initialChemicalProducts: BranchChemicalProductSummary[];
   initialStaffMembers: BranchStaffMemberSummary[];
   initialSanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[];
@@ -1734,6 +1746,7 @@ export function CompanyAdminDocumentsView({
   branchId,
   companySlug,
   branchSlug,
+  isReadOnly = false,
   initialChemicalProducts,
   initialStaffMembers,
   initialSanitaryDocumentFiles,
@@ -2338,6 +2351,7 @@ export function CompanyAdminDocumentsView({
         actionLabel={getDocumentRegisterActionLabel("sanitation_plan", Boolean(sanitationPlan))}
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
+        disabled={isReadOnly}
       />
 
       {isRegistering ? (
@@ -2384,7 +2398,7 @@ export function CompanyAdminDocumentsView({
               />
             </div>
           </div>
-          <RecordActions>
+          <RecordActions disabled={isReadOnly}>
             <DeleteRecordButton
               label="Eliminar plan de saneamiento"
               disabled={!sanitationPlan}
@@ -2417,6 +2431,7 @@ export function CompanyAdminDocumentsView({
         actionLabel={getDocumentRegisterActionLabel(sectionId)}
         onStart={() => startRegistration({ validityMonths: suggestedValidityMonths })}
         onCancel={cancelRegistration}
+        disabled={isReadOnly}
       />
 
       {isRegistering ? (
@@ -2491,7 +2506,7 @@ export function CompanyAdminDocumentsView({
                     />
                   </div>
                 </div>
-                <RecordActions>
+                <RecordActions disabled={isReadOnly}>
                   <EditRecordButton
                     label="Editar certificado"
                     onClick={() =>
@@ -2528,6 +2543,7 @@ export function CompanyAdminDocumentsView({
         actionLabel={getDocumentRegisterActionLabel("acu_final_disposal")}
         onStart={() => startRegistration()}
         onCancel={cancelRegistration}
+        disabled={isReadOnly}
       />
 
       {isRegistering ? (
@@ -2588,7 +2604,7 @@ export function CompanyAdminDocumentsView({
                     />
                   </div>
                 </div>
-                <RecordActions>
+                <RecordActions disabled={isReadOnly}>
                   <EditRecordButton
                     label="Editar certificado"
                     onClick={() =>
@@ -2640,6 +2656,7 @@ export function CompanyAdminDocumentsView({
           actionLabel={getDocumentRegisterActionLabel("chemical_products")}
           onStart={() => startRegistration()}
           onCancel={cancelRegistration}
+          disabled={isReadOnly}
         />
 
         {isRegistering ? (
@@ -2703,7 +2720,7 @@ export function CompanyAdminDocumentsView({
                     <DocumentFileLink file={product.safetySheet.file} label="Hoja de seguridad" />
                   </div>
                 </div>
-                <RecordActions>
+                <RecordActions disabled={isReadOnly}>
                   <EditRecordButton
                     label="Editar producto"
                     onClick={() =>
@@ -2783,6 +2800,7 @@ export function CompanyAdminDocumentsView({
             })
           }
           onCancel={cancelRegistration}
+          disabled={isReadOnly}
         />
 
         {isRegistering ? (
@@ -2970,7 +2988,7 @@ export function CompanyAdminDocumentsView({
                       />
                     </div>
                   </div>
-                  <RecordActions>
+                  <RecordActions disabled={isReadOnly}>
                     <EditRecordButton
                       label="Editar empleado"
                       onClick={() =>
@@ -3042,6 +3060,13 @@ export function CompanyAdminDocumentsView({
   return (
     <>
       <section className="grid gap-5 transition-all duration-300 ease-in-out">
+        {isReadOnly ? (
+          <div className="rounded-2xl border border-[#e0d1a0] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#7a5a00]">
+            <p className="font-semibold text-[#5f4700]">Documentos bloqueados</p>
+            <p>La sede está inactiva. Puedes consultar el historial, pero no registrar, editar ni eliminar documentos.</p>
+          </div>
+        ) : null}
+
         {activeSectionConfig ? (
           <DocumentsToolbar activeSectionConfig={activeSectionConfig} />
         ) : null}

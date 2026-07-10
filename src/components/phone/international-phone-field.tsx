@@ -1,7 +1,7 @@
 "use client";
 
 import { AsYouType, getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import { DEFAULT_PHONE_COUNTRY, normalizePhoneCountry } from "@/lib/phone";
@@ -149,8 +149,10 @@ export function InternationalPhoneField({
     }
 
     const nextPhoneState = getInitialPhoneState(value);
-    setSelectedCountry(nextPhoneState.country);
-    setNationalNumber(nextPhoneState.nationalNumber);
+    startTransition(() => {
+      setSelectedCountry(nextPhoneState.country);
+      setNationalNumber(nextPhoneState.nationalNumber);
+    });
   }, [value]);
 
   useEffect(() => {

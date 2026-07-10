@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { requireBranchAccess } from "@/lib/auth/authorization";
+import { requireActiveBranchAccess } from "@/lib/auth/authorization";
 import {
   isOperationalFormType,
   operationalFormTypes,
@@ -29,7 +29,7 @@ export async function GET(
 ) {
   try {
     const { companySlug, branchSlug } = await params;
-    const { company, branch } = await requireBranchAccess(companySlug, branchSlug);
+    const { company, branch } = await requireActiveBranchAccess(companySlug, branchSlug);
     const supabase = await getSupabaseRlsClient();
 
     if (!supabase) {

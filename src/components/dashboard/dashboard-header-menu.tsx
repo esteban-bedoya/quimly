@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -19,6 +19,13 @@ import {
   adminDrawerInputClassName,
 } from "@/components/dashboard/admin-side-drawer";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
+import {
+  calculatePlanMonthlyTotalCop,
+  formatCopAmount,
+  getPlanPaymentsVisualState,
+  paymentProviderLabel,
+  type PlanPaymentsData,
+} from "@/lib/billing";
 import type { AdminActionState, CurrentUserProfileDetailsState } from "@/app/dashboard/actions";
 import type { UserProfile } from "@/types/auth";
 
@@ -27,15 +34,15 @@ const menuItemClass =
 const logoutItemClass =
   "inline-flex min-h-10 w-full cursor-pointer items-center justify-center rounded-full px-5 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-white/5 hover:text-[0.95rem] hover:text-white";
 
-type DashboardMenuPanel = "profile" | "billing" | "subscription";
+type DashboardMenuPanel = "profile" | "planPayments";
+
+const openPlanPaymentsEventName = "quimly:open-plan-payments";
 
 const panelLabels: Record<DashboardMenuPanel, string> = {
   profile: "Mi perfil",
-  billing: "Facturación",
-  subscription: "Suscripción",
+  planPayments: "Plan y pagos",
 };
 
-const currentPlanLabel = "Plan operativo";
 const passwordMinLength = 8;
 const passwordMaxLength = 72;
 
@@ -53,6 +60,7 @@ type PasswordFormData = {
 
 type ProfileFieldKey = keyof ProfileFormData;
 type ProfileEditableFieldKey = ProfileFieldKey | "password";
+type PlanActivationStep = "sites" | "confirm" | "payment";
 
 const emptyPasswordFormData = {
   currentPassword: "",
@@ -171,11 +179,13 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     }
 
     const nextData = getProfileFormData(detailsState.profile, profile);
-    setInitialData(nextData);
-    setFormData(nextData);
-    setPasswordData(emptyPasswordFormData);
-    setPhoneOtpCode("");
-    setActiveProfileField(null);
+    startTransition(() => {
+      setInitialData(nextData);
+      setFormData(nextData);
+      setPasswordData(emptyPasswordFormData);
+      setPhoneOtpCode("");
+      setActiveProfileField(null);
+    });
   }, [detailsState?.profile, profile]);
 
   useEffect(() => {
@@ -184,9 +194,11 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     }
 
     handledProfileSaveState.current = state;
-    setInitialData(formData);
-    setPhoneOtpCode("");
-    setActiveProfileField(null);
+    startTransition(() => {
+      setInitialData(formData);
+      setPhoneOtpCode("");
+      setActiveProfileField(null);
+    });
   }, [formData, state]);
 
   useEffect(() => {
@@ -195,8 +207,10 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     }
 
     handledPasswordSaveState.current = passwordState;
-    setPasswordData(emptyPasswordFormData);
-    setActiveProfileField(null);
+    startTransition(() => {
+      setPasswordData(emptyPasswordFormData);
+      setActiveProfileField(null);
+    });
   }, [passwordState]);
 
   const isFullNameDirty = Boolean(initialData && formData.fullName !== initialData.fullName);
@@ -291,16 +305,19 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
                     Nombre
                   </label>
                   {activeProfileField === "fullName" ? (
-                    <input
-                      id="fullName"
-                      name="fullName"
-                      type="text"
-                      value={formData.fullName}
-                      onChange={(event) => setFormData((currentData) => ({ ...currentData, fullName: event.target.value }))}
-                      placeholder="Nombre completo"
-                      required
-                      className={`mt-2 ${getInputClassName(isFullNameDirty)}`}
-                    />
+                    <label htmlFor="fullName" className="ui-form-field mt-2">
+                      <span className="ui-form-label">Nuevo nombre</span>
+                      <input
+                        id="fullName"
+                        name="fullName"
+                        type="text"
+                        value={formData.fullName}
+                        onChange={(event) => setFormData((currentData) => ({ ...currentData, fullName: event.target.value }))}
+                        placeholder="Nombre completo"
+                        required
+                        className={getInputClassName(isFullNameDirty)}
+                      />
+                    </label>
                   ) : (
                     <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">
                       {formData.fullName || "No registrado"}
@@ -336,15 +353,18 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
                     Correo
                   </label>
                   {activeProfileField === "email" ? (
-                    <input
-                      id="email"
-                      name="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(event) => setFormData((currentData) => ({ ...currentData, email: event.target.value }))}
-                      placeholder="nombre@empresa.com"
-                      className={`mt-2 ${getInputClassName(isEmailDirty)}`}
-                    />
+                    <label htmlFor="email" className="ui-form-field mt-2">
+                      <span className="ui-form-label">Nuevo correo</span>
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(event) => setFormData((currentData) => ({ ...currentData, email: event.target.value }))}
+                        placeholder="nombre@empresa.com"
+                        className={getInputClassName(isEmailDirty)}
+                      />
+                    </label>
                   ) : (
                     <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">
                       {formData.email || "No registrado"}
@@ -561,38 +581,331 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
   );
 }
 
-function BillingDrawerContent() {
-  return (
-    <AdminDrawerSection>
-      <AdminDrawerSummaryRow label="Plan actual" value={currentPlanLabel} />
-      <AdminDrawerSummaryRow label="Estado de la suscripción" value="Activo" />
-      <AdminDrawerSummaryRow label="Próximo cobro" value="No configurado" />
-      <AdminDrawerSummaryRow label="Método de pago" value="Sin método registrado" />
-      <AdminDrawerButton disabled>Actualizar método de pago</AdminDrawerButton>
-    </AdminDrawerSection>
-  );
+function formatDateLabel(value: string | null) {
+  if (!value) {
+    return "No configurado";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "No configurado";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Bogota",
+  }).format(date);
 }
 
-function SubscriptionDrawerContent({ branchCount }: { branchCount: number }) {
+function PlanPaymentsDrawerContent({
+  planPayments,
+  onNavigateToSites,
+}: {
+  planPayments: PlanPaymentsData;
+  onNavigateToSites: () => void;
+}) {
+  const visualState = getPlanPaymentsVisualState({
+    subscriptionViewState: planPayments.subscriptionViewState,
+    planType: planPayments.planType,
+    baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
+  });
+  const minimumActivationSiteCount = Math.max(planPayments.includedActiveSites, 1);
+  const minimumRecoverySiteCount = Math.max(
+    planPayments.activeSites,
+    planPayments.includedActiveSites,
+    planPayments.maxActiveLocations,
+  );
+  const minimumSiteCount = visualState.isTrial ? minimumActivationSiteCount : minimumRecoverySiteCount;
+  const [activationStep, setActivationStep] = useState<PlanActivationStep | null>(null);
+  const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
+  const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
+  const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
+  const contractedAdditionalSites = Math.max(
+    planPayments.accountCapabilities.maxBranches - planPayments.includedActiveSites,
+    0,
+  );
+  const scheduledCapacityChange = planPayments.scheduledCapacityChange;
+  const activationMonthlyTotal = calculatePlanMonthlyTotalCop({
+    planType: planPayments.planType,
+    siteCount: selectedSiteCount,
+    baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
+    additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
+    includedActiveSites: planPayments.includedActiveSites,
+  });
+  const paymentStatusLabel =
+    planPayments.paymentMethodStatus === "configured" ? "Configurado" : "Pendiente de configuración";
+  const isActivationMode = activationStep !== null;
+
+  const handleNavigateToSites = () => {
+    onNavigateToSites();
+    window.requestAnimationFrame(() => {
+      document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  const openActivationFlow = () => {
+    setSelectedSiteCount(minimumSiteCount);
+    setActivationStep("sites");
+  };
+  const openPaymentRecovery = () => {
+    setSelectedSiteCount(minimumSiteCount);
+    setActivationStep("payment");
+  };
+  const increaseSites = () => setSelectedSiteCount((currentValue) => currentValue + 1);
+  const decreaseSites = () => setSelectedSiteCount((currentValue) => Math.max(minimumSiteCount, currentValue - 1));
+
   return (
-    <AdminDrawerSection>
-      <AdminDrawerSummaryRow label="Plan actual" value={currentPlanLabel} />
-      <AdminDrawerSummaryRow label="Cantidad de sedes" value={branchCount} />
-      <AdminDrawerButton disabled>Agregar sede</AdminDrawerButton>
-      <AdminDrawerButton disabled>Cambiar plan</AdminDrawerButton>
-      <AdminDrawerButton variant="danger" disabled>
-        Cancelar suscripción
-      </AdminDrawerButton>
-    </AdminDrawerSection>
+    <>
+      <AdminDrawerSection title="Plan actual">
+        {!isActivationMode ? (
+          <>
+            <div>
+              {visualState.eyebrow ? (
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9298]">
+                  {visualState.eyebrow}
+                </p>
+              ) : null}
+              <p
+                className={
+                  visualState.eyebrow
+                    ? "mt-2 text-lg font-semibold tracking-[-0.04em] text-[#12110f]"
+                    : "text-lg font-semibold tracking-[-0.04em] text-[#12110f]"
+                }
+              >
+                {visualState.title}
+              </p>
+              {visualState.isActivePlan ? (
+                <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">
+                  {formatCopAmount(planPayments.monthlyTotalCop)}/mes
+                </p>
+              ) : null}
+              <p className="mt-2 text-sm leading-6 text-[#5e6770]">{visualState.message}</p>
+            </div>
+
+            {visualState.isActivePlan ? (
+              <div className="grid gap-3 border-t border-[#e6eaed] pt-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Detalle</p>
+                <AdminDrawerSummaryRow label="Sedes utilizadas" value={`${planPayments.activeSites} sedes`} />
+                <AdminDrawerSummaryRow
+                  label="Capacidad contratada"
+                  value={`${planPayments.accountCapabilities.maxBranches} sedes`}
+                />
+                <AdminDrawerSummaryRow
+                  label="Valor mensual"
+                  value={`${formatCopAmount(planPayments.monthlyTotalCop)}/mes`}
+                />
+                <AdminDrawerSummaryRow label="Próximo cobro" value={formatDateLabel(planPayments.nextChargeAt)} />
+                <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
+              </div>
+            ) : null}
+
+            {scheduledCapacityChange ? (
+              <div className="grid gap-2 rounded-2xl border border-[#ead8b6] bg-[#fff8e9] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8f5b15]">
+                  Cambio programado
+                </p>
+                <AdminDrawerSummaryRow
+                  label={scheduledCapacityChange.changeType === "upgrade" ? "Aumento de capacidad" : "Reducción de capacidad"}
+                  value={`${scheduledCapacityChange.requestedMaxActiveLocations} sede${scheduledCapacityChange.requestedMaxActiveLocations === 1 ? "" : "s"}`}
+                />
+                <AdminDrawerSummaryRow label="Fecha efectiva" value={formatDateLabel(scheduledCapacityChange.effectiveAt)} />
+              </div>
+            ) : null}
+
+            <AdminDrawerSummaryRow label="Estado" value={visualState.statusLabel} />
+            {visualState.isTrial ? (
+              <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(planPayments.trialEndsAt)} />
+            ) : null}
+            {visualState.isTrial ? (
+              <div className="grid gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={openActivationFlow}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:-translate-y-0.5 hover:bg-[#dff4e8]"
+                >
+                  Activar plan
+                </button>
+              </div>
+            ) : null}
+            {visualState.hasPaymentIssue ? (
+              <AdminDrawerButton variant="primary" onClick={openPaymentRecovery}>
+                {planPayments.subscriptionViewState === "cancelled" ? "Recuperar suscripción" : "Actualizar pago"}
+              </AdminDrawerButton>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div>
+              <p className="text-lg font-semibold tracking-[-0.04em] text-[#12110f]">
+                {activationStep === "payment" ? "Mercado Pago" : "Configura tu plan"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#5e6770]">
+                {activationStep === "sites"
+                  ? "Elige la capacidad de sedes que quieres contratar. No crearemos sedes automáticamente."
+                  : "Revisa el resumen antes de continuar con Mercado Pago."}
+              </p>
+            </div>
+
+          {activationStep === "sites" ? (
+            <>
+              <div>
+                <p className="text-sm font-semibold leading-6 text-[#12110f]">
+                  ¿Cuántas sedes necesita administrar?
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+                  La primera sede está incluida dentro del plan.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#d9dfe0] bg-white px-4 py-3">
+                <button
+                  type="button"
+                  onClick={decreaseSites}
+                  disabled={selectedSiteCount <= minimumSiteCount}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#12110f]/12 text-lg font-semibold text-[#12110f] transition hover:bg-[#f7f8f9] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  -
+                </button>
+                <div className="text-center">
+                  <p className="text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">{selectedSiteCount}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">sedes</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={increaseSites}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#12110f]/12 text-lg font-semibold text-[#12110f] transition hover:bg-[#f7f8f9]"
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-[#9edfc1]/40 bg-[#f3fbf6] px-4 py-3">
+                <p className="text-sm leading-6 text-[#5e6770]">{activationPlanName}</p>
+                <p className="text-2xl font-semibold tracking-[-0.05em] text-[#21734f]">
+                  {formatCopAmount(activationMonthlyTotal)} COP/mes
+                </p>
+                <div className="mt-3 grid gap-1 text-sm leading-6 text-[#315e43]">
+                  <p>{planPayments.includedActiveSites} sede incluida en tu plan</p>
+                  <p>+ {selectedAdditionalSites} sedes adicionales</p>
+                </div>
+              </div>
+
+              <AdminDrawerButton variant="primary" onClick={() => setActivationStep("confirm")}>
+                Continuar
+              </AdminDrawerButton>
+            </>
+          ) : null}
+
+          {activationStep === "confirm" ? (
+            <>
+              <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
+              <AdminDrawerSummaryRow
+                label="Sedes"
+                value={`${selectedSiteCount} ${selectedSiteCount === 1 ? "sede" : "sedes"}`}
+              />
+              <AdminDrawerSummaryRow
+                label="Capacidad"
+                value="La selección habilita cupos; las sedes se crean después desde Administrar sedes."
+              />
+              <AdminDrawerSummaryRow
+                label="Valor mensual"
+                value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
+              />
+              <AdminDrawerButton variant="primary" onClick={() => setActivationStep("payment")}>
+                Continuar con pago
+              </AdminDrawerButton>
+              <AdminDrawerButton onClick={() => setActivationStep("sites")}>Volver</AdminDrawerButton>
+            </>
+          ) : null}
+
+          {activationStep === "payment" ? (
+            <>
+              <div>
+                <p className="text-sm font-semibold leading-6 text-[#12110f]">
+                  Integración preparada para Mercado Pago
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+                  Aquí se creará la preferencia de pago, se confirmará el pago aprobado y se actualizará la suscripción.
+                </p>
+              </div>
+              <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
+              <AdminDrawerSummaryRow
+                label="Valor mensual"
+                value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
+              />
+              <AdminDrawerButton disabled>Abrir Mercado Pago</AdminDrawerButton>
+              <AdminDrawerButton onClick={() => setActivationStep("confirm")}>Volver</AdminDrawerButton>
+            </>
+          ) : null}
+          </>
+        )}
+      </AdminDrawerSection>
+
+      <AdminDrawerSection title="Sedes">
+        <div>
+          <p className="text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">
+            {planPayments.activeSites} / {planPayments.accountCapabilities.maxBranches}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[#5e6770]">Sedes activas</p>
+        </div>
+        <AdminDrawerSummaryRow
+          label="Incluidas en tu plan"
+          value={`${planPayments.includedActiveSites} ${planPayments.includedActiveSites === 1 ? "sede" : "sedes"}`}
+        />
+        <AdminDrawerSummaryRow label="Sedes adicionales contratadas" value={contractedAdditionalSites} />
+        <AdminDrawerButton variant="primary" onClick={handleNavigateToSites}>
+          Administrar sedes
+        </AdminDrawerButton>
+      </AdminDrawerSection>
+
+      <AdminDrawerSection title="Pago">
+        {visualState.isTrial ? (
+          <>
+            <div>
+              <p className="text-sm font-semibold leading-6 text-[#12110f]">Aún no tienes un método de pago configurado.</p>
+              <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+                Configura {paymentProviderLabel} para activar tu plan.
+              </p>
+            </div>
+            <AdminDrawerButton variant="primary" onClick={openActivationFlow}>
+              Configurar pago
+            </AdminDrawerButton>
+          </>
+        ) : (
+          <>
+            <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
+            <AdminDrawerSummaryRow label="Estado" value={paymentStatusLabel} />
+            <AdminDrawerButton
+              variant={visualState.hasPaymentIssue ? "primary" : "secondary"}
+              onClick={visualState.hasPaymentIssue ? openPaymentRecovery : undefined}
+              disabled={!visualState.hasPaymentIssue}
+            >
+              {visualState.hasPaymentIssue ? "Actualizar pago" : "Actualizar método de pago"}
+            </AdminDrawerButton>
+            {visualState.isActivePlan ? (
+              <button
+                type="button"
+                disabled
+                className="w-fit justify-self-center text-xs font-semibold text-[#8a9298] underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar suscripción
+              </button>
+            ) : null}
+          </>
+        )}
+      </AdminDrawerSection>
+    </>
   );
 }
 
 export function DashboardHeaderMenu({
   profile,
-  branchCount,
+  planPayments,
 }: {
   profile: UserProfile;
-  branchCount: number;
+  planPayments: PlanPaymentsData;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(null);
@@ -613,6 +926,16 @@ export function DashboardHeaderMenu({
     setIsMenuOpen(false);
     setActivePanel(panel);
   }, []);
+
+  useEffect(() => {
+    const openPlanPayments = () => openPanel("planPayments");
+
+    window.addEventListener(openPlanPaymentsEventName, openPlanPayments);
+
+    return () => {
+      window.removeEventListener(openPlanPaymentsEventName, openPlanPayments);
+    };
+  }, [openPanel]);
 
   const closePanel = useCallback(() => {
     setActivePanel(null);
@@ -653,11 +976,8 @@ export function DashboardHeaderMenu({
               <button type="button" onClick={() => openPanel("profile")} className={menuItemClass}>
                 Mi perfil
               </button>
-              <button type="button" onClick={() => openPanel("billing")} className={menuItemClass}>
-                Facturación
-              </button>
-              <button type="button" onClick={() => openPanel("subscription")} className={menuItemClass}>
-                Suscripción
+              <button type="button" onClick={() => openPanel("planPayments")} className={menuItemClass}>
+                Plan y pagos
               </button>
               <div className="my-1 h-px bg-[#48c7d2]/20" />
               <form action={logout} className="flex">
@@ -672,8 +992,9 @@ export function DashboardHeaderMenu({
 
       <AdminSideDrawer isOpen={Boolean(activePanel)} title={panelTitle} onClose={closePanel}>
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
-        {activePanel === "billing" ? <BillingDrawerContent /> : null}
-        {activePanel === "subscription" ? <SubscriptionDrawerContent branchCount={branchCount} /> : null}
+        {activePanel === "planPayments" ? (
+          <PlanPaymentsDrawerContent planPayments={planPayments} onNavigateToSites={closePanel} />
+        ) : null}
       </AdminSideDrawer>
     </>
   );

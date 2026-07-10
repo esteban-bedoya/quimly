@@ -73,9 +73,48 @@ begin
     from pg_type
     where typname = 'company_subscription_status'
   ) then
-    create type public.company_subscription_status as enum ('trialing', 'active', 'past_due', 'expired', 'canceled');
+    create type public.company_subscription_status as enum ('trial', 'active', 'payment_issue', 'cancelled');
   end if;
 end $$;
+
+alter type public.company_subscription_status add value if not exists 'trial';
+alter type public.company_subscription_status add value if not exists 'payment_issue';
+alter type public.company_subscription_status add value if not exists 'cancelled';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'company_plan_type'
+  ) then
+    create type public.company_plan_type as enum ('founder', 'operational');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'payment_method_status'
+  ) then
+    create type public.payment_method_status as enum ('pending', 'configured');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'site_status'
+  ) then
+    create type public.site_status as enum ('active', 'inactive', 'deleted');
+  end if;
+end $$;
+
+alter type public.site_status add value if not exists 'deleted';
 
 do $$
 begin
@@ -99,6 +138,28 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'subscription_capacity_change_type'
+  ) then
+    create type public.subscription_capacity_change_type as enum ('upgrade', 'downgrade');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'subscription_capacity_change_status'
+  ) then
+    create type public.subscription_capacity_change_status as enum ('scheduled', 'applied', 'cancelled');
+  end if;
+end $$;
+
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -114,13 +175,201 @@ create table if not exists public.companies (
 create table if not exists public.company_subscriptions (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null unique references public.companies (id) on delete cascade,
-  status public.company_subscription_status not null default 'trialing',
+  status public.company_subscription_status not null default 'trial',
+  plan_type public.company_plan_type not null default 'operational',
   trial_started_at timestamptz not null default now(),
   trial_ends_at timestamptz not null default (now() + interval '14 days'),
   current_period_ends_at timestamptz,
+  base_monthly_price_cop integer not null default 24900,
+  additional_site_monthly_price_cop integer not null default 19900,
+  included_active_sites integer not null default 1,
+  max_active_locations integer not null default 1,
+  payment_provider text not null default 'mercado_pago',
+  payment_method_status public.payment_method_status not null default 'pending',
+  mercado_pago_customer_id text,
+  mercado_pago_subscription_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint company_subscriptions_trial_period_check check (trial_ends_at > trial_started_at)
+  constraint company_subscriptions_id_company_unique unique (id, company_id),
+  constraint company_subscriptions_trial_period_check check (trial_ends_at > trial_started_at),
+  constraint company_subscriptions_prices_check check (
+    base_monthly_price_cop >= 0
+    and additional_site_monthly_price_cop >= 0
+    and included_active_sites >= 1
+    and max_active_locations >= included_active_sites
+  ),
+  constraint company_subscriptions_payment_provider_check check (payment_provider = 'mercado_pago')
+);
+
+create table if not exists public.subscription_capacity_changes (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  subscription_id uuid not null,
+  current_max_active_locations integer not null,
+  requested_max_active_locations integer not null,
+  change_type public.subscription_capacity_change_type not null,
+  status public.subscription_capacity_change_status not null default 'scheduled',
+  effective_at timestamptz not null,
+  requested_by uuid references auth.users (id) on delete set null,
+  applied_at timestamptz,
+  cancelled_at timestamptz,
+  created_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb,
+  constraint subscription_capacity_changes_capacity_check check (
+    current_max_active_locations >= 1
+    and requested_max_active_locations >= 1
+    and current_max_active_locations <> requested_max_active_locations
+  ),
+  constraint subscription_capacity_changes_type_check check (
+    (change_type = 'upgrade' and requested_max_active_locations > current_max_active_locations)
+    or (change_type = 'downgrade' and requested_max_active_locations < current_max_active_locations)
+  ),
+  constraint subscription_capacity_changes_status_dates_check check (
+    (status = 'applied' and applied_at is not null and cancelled_at is null)
+    or (status = 'cancelled' and cancelled_at is not null and applied_at is null)
+    or (status = 'scheduled' and applied_at is null and cancelled_at is null)
+  ),
+  constraint subscription_capacity_changes_subscription_company_fk
+    foreign key (subscription_id, company_id)
+    references public.company_subscriptions (id, company_id)
+    on delete cascade
+);
+
+create index if not exists subscription_capacity_changes_company_status_idx
+on public.subscription_capacity_changes (company_id, status, effective_at desc);
+
+create unique index if not exists subscription_capacity_changes_one_scheduled_per_company_idx
+on public.subscription_capacity_changes (company_id)
+where status = 'scheduled';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_id_company_unique'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_id_company_unique unique (id, company_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'subscription_capacity_changes_subscription_company_fk'
+      and conrelid = 'public.subscription_capacity_changes'::regclass
+  ) then
+    alter table public.subscription_capacity_changes
+      add constraint subscription_capacity_changes_subscription_company_fk
+      foreign key (subscription_id, company_id)
+      references public.company_subscriptions (id, company_id)
+      on delete cascade;
+  end if;
+end $$;
+
+alter table if exists public.company_subscriptions
+alter column status set default 'trial';
+
+update public.company_subscriptions
+set status = 'trial'
+where status::text = 'trialing';
+
+update public.company_subscriptions
+set status = 'cancelled'
+where status::text = 'canceled';
+
+alter table if exists public.company_subscriptions
+add column if not exists plan_type public.company_plan_type not null default 'operational';
+
+alter table if exists public.company_subscriptions
+add column if not exists base_monthly_price_cop integer not null default 24900;
+
+alter table if exists public.company_subscriptions
+add column if not exists additional_site_monthly_price_cop integer not null default 19900;
+
+alter table if exists public.company_subscriptions
+alter column base_monthly_price_cop set default 24900;
+
+alter table if exists public.company_subscriptions
+alter column additional_site_monthly_price_cop set default 19900;
+
+update public.company_subscriptions
+set base_monthly_price_cop = 24900
+where plan_type = 'operational'
+  and base_monthly_price_cop = 25000;
+
+update public.company_subscriptions
+set base_monthly_price_cop = 19900
+where plan_type = 'founder'
+  and base_monthly_price_cop in (24900, 25000);
+
+update public.company_subscriptions
+set additional_site_monthly_price_cop = 19900
+where additional_site_monthly_price_cop = 15000;
+
+alter table if exists public.company_subscriptions
+add column if not exists included_active_sites integer not null default 1;
+
+alter table if exists public.company_subscriptions
+add column if not exists max_active_locations integer not null default 1;
+
+update public.company_subscriptions
+set max_active_locations = greatest(
+  coalesce(max_active_locations, 1),
+  coalesce(included_active_sites, 1)
+);
+
+alter table if exists public.company_subscriptions
+add column if not exists payment_provider text not null default 'mercado_pago';
+
+alter table if exists public.company_subscriptions
+add column if not exists payment_method_status public.payment_method_status not null default 'pending';
+
+alter table if exists public.company_subscriptions
+add column if not exists mercado_pago_customer_id text;
+
+alter table if exists public.company_subscriptions
+add column if not exists mercado_pago_subscription_id text;
+
+alter table if exists public.company_subscriptions
+drop constraint if exists company_subscriptions_prices_check;
+
+alter table if exists public.company_subscriptions
+add constraint company_subscriptions_prices_check check (
+  base_monthly_price_cop >= 0
+  and additional_site_monthly_price_cop >= 0
+  and included_active_sites >= 1
+  and max_active_locations >= included_active_sites
+);
+
+alter table if exists public.company_subscriptions
+drop constraint if exists company_subscriptions_payment_provider_check;
+
+alter table if exists public.company_subscriptions
+add constraint company_subscriptions_payment_provider_check check (payment_provider = 'mercado_pago');
+
+insert into public.company_subscriptions (
+  company_id,
+  status,
+  plan_type,
+  trial_started_at,
+  trial_ends_at
+)
+select
+  c.id,
+  'trial',
+  'operational',
+  coalesce(c.created_at, now()),
+  coalesce(c.created_at, now()) + interval '14 days'
+from public.companies c
+where not exists (
+  select 1
+  from public.company_subscriptions cs
+  where cs.company_id = c.id
 );
 
 create table if not exists public.user_profiles (
@@ -236,12 +485,75 @@ create table if not exists public.branches (
   name text not null,
   slug text not null,
   is_main boolean not null default false,
+  status public.site_status not null default 'active',
   is_active boolean not null default true,
+  billing_activation_confirmed_at timestamptz,
+  mercado_pago_activation_payment_id text,
   created_by uuid references auth.users (id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (company_id, slug),
-  constraint branches_slug_format check (slug = lower(slug))
+  constraint branches_slug_format check (slug = lower(slug)),
+  constraint branches_status_is_active_consistency check (
+    (status = 'active' and is_active = true)
+    or (status in ('inactive', 'deleted') and is_active = false)
+  ),
+  constraint branches_active_billing_confirmation_check check (
+    status <> 'active'
+    or is_main = true
+    or billing_activation_confirmed_at is not null
+  )
+);
+
+alter table if exists public.branches
+add column if not exists status public.site_status not null default 'active';
+
+alter table if exists public.branches
+add column if not exists billing_activation_confirmed_at timestamptz;
+
+alter table if exists public.branches
+add column if not exists mercado_pago_activation_payment_id text;
+
+update public.branches
+set status = case when is_active then 'active'::public.site_status else 'inactive'::public.site_status end
+where status is null
+  or (status = 'active' and is_active = false)
+  or (status <> 'active' and is_active = true);
+
+update public.branches
+set
+  status = 'inactive',
+  is_active = false
+where status::text = 'pending_payment';
+
+update public.branches
+set billing_activation_confirmed_at = coalesce(billing_activation_confirmed_at, created_at)
+where is_active = true
+  and status = 'active';
+
+update public.company_subscriptions
+set max_active_locations = greatest(
+  coalesce(max_active_locations, 1),
+  coalesce(included_active_sites, 1)
+);
+
+alter table if exists public.branches
+drop constraint if exists branches_status_is_active_consistency;
+
+alter table if exists public.branches
+add constraint branches_status_is_active_consistency check (
+  (status = 'active' and is_active = true)
+  or (status in ('inactive', 'deleted') and is_active = false)
+);
+
+alter table if exists public.branches
+drop constraint if exists branches_active_billing_confirmation_check;
+
+alter table if exists public.branches
+add constraint branches_active_billing_confirmation_check check (
+  status <> 'active'
+  or is_main = true
+  or billing_activation_confirmed_at is not null
 );
 
 do $$
@@ -894,7 +1206,7 @@ for insert
 with check (
   bucket_id = 'branch-documents'
   and auth.role() = 'authenticated'
-  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+  and public.can_operate_branch(((storage.foldername(name))[1])::uuid)
 );
 
 drop policy if exists "branch_documents_storage_update_policy" on storage.objects;
@@ -904,12 +1216,12 @@ for update
 using (
   bucket_id = 'branch-documents'
   and auth.role() = 'authenticated'
-  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+  and public.can_operate_branch(((storage.foldername(name))[1])::uuid)
 )
 with check (
   bucket_id = 'branch-documents'
   and auth.role() = 'authenticated'
-  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+  and public.can_operate_branch(((storage.foldername(name))[1])::uuid)
 );
 
 drop policy if exists "branch_documents_storage_delete_policy" on storage.objects;
@@ -919,7 +1231,7 @@ for delete
 using (
   bucket_id = 'branch-documents'
   and auth.role() = 'authenticated'
-  and public.can_access_branch(((storage.foldername(name))[1])::uuid)
+  and public.can_operate_branch(((storage.foldername(name))[1])::uuid)
 );
 
 create table if not exists public.demo_requests (
@@ -2051,7 +2363,291 @@ as $$
     select 1
     from public.branches b
     where b.id = target_branch_id
+      and b.status <> 'deleted'
+      and public.can_access_company(b.company_id)
+  )
+$$;
+
+create or replace function public.can_company_operate(target_company_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.company_subscriptions cs
+    where cs.company_id = target_company_id
+      and public.can_access_company(cs.company_id)
+      and (
+        cs.status = 'active'
+        or (
+          cs.status = 'trial'
+          and cs.trial_ends_at >= now()
+        )
+      )
+  )
+$$;
+
+create or replace function public.get_company_contracted_capacity(target_company_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (
+      select case
+        when cs.status = 'trial' and cs.trial_ends_at >= now() then 1
+        when cs.status = 'active' then greatest(cs.max_active_locations, 0)
+        else 0
+      end
+      from public.company_subscriptions cs
+      where cs.company_id = target_company_id
+        and public.can_access_company(cs.company_id)
+      limit 1
+    ),
+    0
+  )
+$$;
+
+create or replace function public.get_company_active_branch_count(target_company_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select count(*)::integer
+  from public.branches b
+  where b.company_id = target_company_id
+    and b.status = 'active'
+    and b.is_active = true
+    and public.can_access_company(b.company_id)
+$$;
+
+create or replace function public.company_requires_capacity_resolution(target_company_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    public.can_company_operate(target_company_id)
+    and public.get_company_active_branch_count(target_company_id) > public.get_company_contracted_capacity(target_company_id)
+$$;
+
+create or replace function public.apply_due_subscription_capacity_changes()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  applied_count integer := 0;
+  scheduled_change record;
+  changed_count integer := 0;
+begin
+  for scheduled_change in
+    select
+      scc.id,
+      scc.subscription_id,
+      scc.requested_max_active_locations
+    from public.subscription_capacity_changes scc
+    where scc.status = 'scheduled'
+      and scc.effective_at <= now()
+    order by scc.effective_at asc, scc.created_at asc
+    for update skip locked
+  loop
+    update public.company_subscriptions
+    set max_active_locations = scheduled_change.requested_max_active_locations
+    where id = scheduled_change.subscription_id;
+
+    get diagnostics changed_count = row_count;
+
+    if changed_count <> 1 then
+      continue;
+    end if;
+
+    update public.subscription_capacity_changes
+    set
+      status = 'applied',
+      applied_at = now()
+    where id = scheduled_change.id
+      and status = 'scheduled';
+
+    get diagnostics changed_count = row_count;
+
+    if changed_count = 1 then
+      applied_count := applied_count + 1;
+    end if;
+  end loop;
+
+  return applied_count;
+end;
+$$;
+
+create or replace function public.resolve_company_capacity_excess(
+  target_company_id uuid,
+  keep_branch_ids uuid[]
+)
+returns table (
+  kept_count integer,
+  deactivated_count integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid;
+  contracted_capacity integer;
+  active_count integer;
+  normalized_keep_branch_ids uuid[];
+  valid_keep_count integer;
+begin
+  actor_id := auth.uid();
+
+  if actor_id is null then
+    raise exception 'No tienes permisos para resolver la capacidad de sedes.';
+  end if;
+
+  if not (
+    (
+      public.is_owner()
+      or public.is_super_admin()
+      or public.current_profile_role() = 'company_admin'
+    )
+    and public.can_access_company(target_company_id)
+  ) then
+    raise exception 'No tienes permisos para resolver la capacidad de sedes.';
+  end if;
+
+  if not public.can_company_operate(target_company_id) then
+    raise exception 'Tu cuenta no tiene operación activa. Puedes consultar y descargar reportes históricos.';
+  end if;
+
+  contracted_capacity := public.get_company_contracted_capacity(target_company_id);
+  active_count := public.get_company_active_branch_count(target_company_id);
+
+  if active_count <= contracted_capacity then
+    kept_count := active_count;
+    deactivated_count := 0;
+    return next;
+    return;
+  end if;
+
+  select coalesce(array_agg(distinct branch_id), array[]::uuid[])
+  into normalized_keep_branch_ids
+  from unnest(coalesce(keep_branch_ids, array[]::uuid[])) as branch_id;
+
+  select count(*)::integer
+  into valid_keep_count
+  from public.branches b
+  where b.company_id = target_company_id
+    and b.status = 'active'
+    and b.is_active = true
+    and b.id = any(normalized_keep_branch_ids);
+
+  if valid_keep_count <> contracted_capacity then
+    raise exception 'Selecciona exactamente % sede(s) activa(s) para continuar operando.', contracted_capacity;
+  end if;
+
+  update public.branches b
+  set
+    status = 'inactive',
+    is_active = false,
+    billing_activation_confirmed_at = null
+  where b.company_id = target_company_id
+    and b.status = 'active'
+    and b.is_active = true
+    and not (b.id = any(normalized_keep_branch_ids));
+
+  get diagnostics deactivated_count = row_count;
+  kept_count := valid_keep_count;
+  return next;
+end;
+$$;
+
+create or replace function public.can_create_active_branch(target_company_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    public.can_company_operate(target_company_id)
+    and not public.company_requires_capacity_resolution(target_company_id)
+    and public.get_company_active_branch_count(target_company_id) < public.get_company_contracted_capacity(target_company_id)
+$$;
+
+create or replace function public.can_write_branch_state(
+  target_branch_id uuid,
+  target_company_id uuid,
+  target_status public.site_status,
+  target_is_active boolean
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  current_status public.site_status;
+begin
+  if not public.can_access_company(target_company_id) then
+    return false;
+  end if;
+
+  select b.status
+  into current_status
+  from public.branches b
+  where b.id = target_branch_id
+    and b.company_id = target_company_id;
+
+  if not found or current_status = 'deleted' or target_status = 'deleted' then
+    return false;
+  end if;
+
+  if target_status = 'active' and not target_is_active then
+    return false;
+  end if;
+
+  if target_status <> 'active' then
+    return true;
+  end if;
+
+  if current_status = 'active' then
+    return public.can_company_operate(target_company_id)
+      and not public.company_requires_capacity_resolution(target_company_id);
+  end if;
+
+  return public.can_create_active_branch(target_company_id);
+end;
+$$;
+
+create or replace function public.can_operate_branch(target_branch_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.branches b
+    join public.company_subscriptions cs
+      on cs.company_id = b.company_id
+    where b.id = target_branch_id
+      and b.status = 'active'
       and b.is_active = true
+      and public.can_company_operate(b.company_id)
+      and not public.company_requires_capacity_resolution(b.company_id)
       and public.can_access_company(b.company_id)
   )
 $$;
@@ -2111,10 +2707,20 @@ begin
   from public.branch_form_qr_codes qr
   join public.branches b on b.id = qr.branch_id
   join public.companies c on c.id = qr.company_id
+  join public.company_subscriptions cs on cs.company_id = qr.company_id
   where qr.token = p_token
     and qr.is_active = true
+    and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
+    and not public.company_requires_capacity_resolution(qr.company_id)
+    and (
+      cs.status = 'active'
+      or (
+        cs.status = 'trial'
+        and cs.trial_ends_at >= now()
+      )
+    )
   limit 1;
 
   return form_payload;
@@ -2146,10 +2752,20 @@ begin
   from public.branch_form_qr_codes qr
   join public.branches b on b.id = qr.branch_id
   join public.companies c on c.id = qr.company_id
+  join public.company_subscriptions cs on cs.company_id = qr.company_id
   where qr.token = p_token
     and qr.is_active = true
+    and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
+    and not public.company_requires_capacity_resolution(qr.company_id)
+    and (
+      cs.status = 'active'
+      or (
+        cs.status = 'trial'
+        and cs.trial_ends_at >= now()
+      )
+    )
   limit 1;
 
   if qr_record.branch_id is null then
@@ -2306,10 +2922,20 @@ begin
   from public.branch_form_qr_codes qr
   join public.branches b on b.id = qr.branch_id
   join public.companies c on c.id = qr.company_id
+  join public.company_subscriptions cs on cs.company_id = qr.company_id
   where qr.token = p_token
     and qr.is_active = true
+    and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
+    and not public.company_requires_capacity_resolution(qr.company_id)
+    and (
+      cs.status = 'active'
+      or (
+        cs.status = 'trial'
+        and cs.trial_ends_at >= now()
+      )
+    )
   limit 1;
 
   if qr_record.id is null then
@@ -2631,9 +3257,13 @@ begin
     if old.is_main and not new.is_active then
       raise exception 'La sede principal no puede desactivarse. Asigna otra sede principal primero.';
     end if;
+
+    if old.is_main and new.status <> 'active' then
+      raise exception 'La sede principal debe permanecer activa.';
+    end if;
   end if;
 
-  if new.is_main and not new.is_active then
+  if new.is_main and (not new.is_active or new.status <> 'active') then
     raise exception 'La sede principal debe permanecer activa.';
   end if;
 
@@ -2722,14 +3352,18 @@ begin
     company_id,
     name,
     is_main,
+    status,
     is_active,
+    billing_activation_confirmed_at,
     created_by
   )
   values (
     new_company_id,
     'Sede Principal',
     true,
+    'active',
     true,
+    now(),
     target_user_id
   );
 
@@ -2757,12 +3391,14 @@ begin
   insert into public.company_subscriptions (
     company_id,
     status,
+    plan_type,
     trial_started_at,
     trial_ends_at
   )
   values (
     new_company_id,
-    'trialing',
+    'trial',
+    'operational',
     now(),
     now() + interval '14 days'
   );
@@ -2815,8 +3451,40 @@ begin
   values (trim(company_name), actor_id)
   returning id into new_company_id;
 
-  insert into public.branches (company_id, name, is_main, is_active, created_by)
-  values (new_company_id, coalesce(nullif(trim(main_branch_name), ''), 'Sede Principal'), true, true, actor_id);
+  insert into public.branches (
+    company_id,
+    name,
+    is_main,
+    status,
+    is_active,
+    billing_activation_confirmed_at,
+    created_by
+  )
+  values (
+    new_company_id,
+    coalesce(nullif(trim(main_branch_name), ''), 'Sede Principal'),
+    true,
+    'active',
+    true,
+    now(),
+    actor_id
+  );
+
+  insert into public.company_subscriptions (
+    company_id,
+    status,
+    plan_type,
+    trial_started_at,
+    trial_ends_at
+  )
+  values (
+    new_company_id,
+    'trial',
+    'operational',
+    now(),
+    now() + interval '14 days'
+  )
+  on conflict (company_id) do nothing;
 
   return new_company_id;
 end;
@@ -2832,6 +3500,7 @@ declare
   actor_id uuid;
   actor_role public.app_role;
   target_company_id uuid;
+  target_status public.site_status;
 begin
   actor_id := auth.uid();
 
@@ -2850,13 +3519,21 @@ begin
     raise exception 'No tienes permisos para modificar sedes.';
   end if;
 
-  select b.company_id
-  into target_company_id
+  select
+    b.company_id,
+    b.status
+  into
+    target_company_id,
+    target_status
   from public.branches b
   where b.id = target_branch_id;
 
   if target_company_id is null then
     raise exception 'La sede indicada no existe.';
+  end if;
+
+  if target_status <> 'active' then
+    raise exception 'Activa la sede antes de marcarla como principal.';
   end if;
 
   perform set_config('app.allow_main_branch_switch', 'on', true);
@@ -2870,8 +3547,106 @@ begin
   update public.branches
   set
     is_main = true,
-    is_active = true
+    status = 'active',
+    is_active = true,
+    billing_activation_confirmed_at = coalesce(billing_activation_confirmed_at, now())
   where id = target_branch_id;
+end;
+$$;
+
+drop function if exists public.delete_branch_permanently(uuid);
+drop function if exists public.delete_branch_permanently(uuid, text);
+
+create or replace function public.delete_branch_permanently(target_branch_id uuid, expected_branch_name text)
+returns table (
+  branch_name text,
+  branch_slug text,
+  file_urls text[]
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid;
+  target_branch record;
+  collected_file_urls text[];
+begin
+  actor_id := auth.uid();
+
+  if actor_id is null then
+    raise exception 'No tienes permisos para eliminar sedes.';
+  end if;
+
+  select
+    b.id,
+    b.company_id,
+    b.name,
+    b.slug,
+    b.is_main,
+    b.status
+  into target_branch
+  from public.branches b
+  where b.id = target_branch_id
+  limit 1;
+
+  if not found then
+    raise exception 'No fue posible eliminar la sede solicitada.';
+  end if;
+
+  if not (
+    (
+      public.is_owner()
+      or public.is_super_admin()
+      or public.current_profile_role() = 'company_admin'
+    )
+    and public.can_access_company(target_branch.company_id)
+  ) then
+    raise exception 'No fue posible eliminar la sede solicitada.';
+  end if;
+
+  if target_branch.is_main then
+    raise exception 'La sede principal no se puede eliminar. Primero asigna otra sede principal.';
+  end if;
+
+  if target_branch.status = 'active' then
+    raise exception 'Desactiva la sede antes de eliminarla.';
+  end if;
+
+  if not public.can_company_operate(target_branch.company_id) then
+    raise exception 'Tu cuenta no tiene operación activa. Puedes consultar y descargar reportes históricos.';
+  end if;
+
+  if trim(coalesce(expected_branch_name, '')) <> target_branch.name then
+    raise exception 'Escribe el nombre exacto de la sede para confirmar la eliminación.';
+  end if;
+
+  select coalesce(array_agg(distinct file_url), array[]::text[])
+  into collected_file_urls
+  from (
+    select bd.file_url
+    from public.branch_documents bd
+    where bd.branch_id = target_branch.id
+      and bd.file_url is not null
+    union
+    select bsdf.file_url
+    from public.branch_sanitary_document_files bsdf
+    where bsdf.branch_id = target_branch.id
+      and bsdf.file_url is not null
+  ) files;
+
+  delete from public.thermal_control_records where sede_id = target_branch.id;
+  delete from public.area_sanitation_records where sede_id = target_branch.id;
+  delete from public.supply_reception_records where sede_id = target_branch.id;
+  delete from public.water_quality_records where sede_id = target_branch.id;
+  delete from public.resumen_diario_formularios where sede_id = target_branch.id;
+  delete from public.sedes_categorias_documentos where sede_id = target_branch.id;
+  delete from public.branches where id = target_branch.id;
+
+  branch_name := target_branch.name;
+  branch_slug := target_branch.slug;
+  file_urls := coalesce(collected_file_urls, array[]::text[]);
+  return next;
 end;
 $$;
 
@@ -3126,6 +3901,7 @@ $$;
 
 alter table public.companies enable row level security;
 alter table public.company_subscriptions enable row level security;
+alter table public.subscription_capacity_changes enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.branches enable row level security;
 alter table public.branch_dashboard_items enable row level security;
@@ -3180,6 +3956,12 @@ using (
     )
   )
 );
+
+drop policy if exists "subscription_capacity_changes_select_policy" on public.subscription_capacity_changes;
+create policy "subscription_capacity_changes_select_policy"
+on public.subscription_capacity_changes
+for select
+using (public.can_access_company(company_id));
 
 drop policy if exists "user_profiles_select_policy" on public.user_profiles;
 create policy "user_profiles_select_policy"
@@ -3273,7 +4055,6 @@ using (
   )
   or (
     public.current_profile_role() = 'company_admin'
-    and is_active = true
     and public.can_access_company(company_id)
   )
 );
@@ -3284,10 +4065,31 @@ on public.branches
 for insert
 with check (
   (
-    public.is_owner()
-    or public.is_super_admin()
+    (
+      public.is_owner()
+      or public.is_super_admin()
+    )
+    and public.can_access_company(company_id)
+    and (
+      (
+        status = 'active'
+        and is_active = true
+        and public.can_create_active_branch(company_id)
+      )
+      or (
+        status <> 'active'
+        and is_active = false
+      )
+    )
   )
-  and public.can_access_company(company_id)
+  or (
+    public.current_profile_role() = 'company_admin'
+    and public.can_access_company(company_id)
+    and is_main = false
+    and is_active = true
+    and status = 'active'
+    and public.can_create_active_branch(company_id)
+  )
 );
 
 drop policy if exists "branches_update_policy" on public.branches;
@@ -3298,15 +4100,35 @@ using (
   (
     public.is_owner()
     or public.is_super_admin()
+    or public.current_profile_role() = 'company_admin'
   )
   and public.can_access_company(company_id)
+  and status <> 'deleted'
 )
 with check (
   (
     public.is_owner()
     or public.is_super_admin()
+    or public.current_profile_role() = 'company_admin'
   )
   and public.can_access_company(company_id)
+  and public.can_write_branch_state(id, company_id, status, is_active)
+);
+
+drop policy if exists "branches_delete_policy" on public.branches;
+create policy "branches_delete_policy"
+on public.branches
+for delete
+using (
+  (
+    public.is_owner()
+    or public.is_super_admin()
+    or public.current_profile_role() = 'company_admin'
+  )
+  and public.can_access_company(company_id)
+  and public.can_company_operate(company_id)
+  and is_main = false
+  and status <> 'active'
 );
 
 drop policy if exists "branch_dashboard_items_select_policy" on public.branch_dashboard_items;
@@ -3324,7 +4146,7 @@ with check (
     public.is_owner()
     or public.is_super_admin()
   )
-  and public.can_access_branch(branch_id)
+  and public.can_operate_branch(branch_id)
 );
 
 drop policy if exists "branch_dashboard_items_update_policy" on public.branch_dashboard_items;
@@ -3336,14 +4158,14 @@ using (
     public.is_owner()
     or public.is_super_admin()
   )
-  and public.can_access_branch(branch_id)
+  and public.can_operate_branch(branch_id)
 )
 with check (
   (
     public.is_owner()
     or public.is_super_admin()
   )
-  and public.can_access_branch(branch_id)
+  and public.can_operate_branch(branch_id)
 );
 
 drop policy if exists "branch_dashboard_items_delete_policy" on public.branch_dashboard_items;
@@ -3355,7 +4177,7 @@ using (
     public.is_owner()
     or public.is_super_admin()
   )
-  and public.can_access_branch(branch_id)
+  and public.can_operate_branch(branch_id)
 );
 
 drop policy if exists "branch_documents_select_policy" on public.branch_documents;
@@ -3368,20 +4190,20 @@ drop policy if exists "branch_documents_insert_policy" on public.branch_document
 create policy "branch_documents_insert_policy"
 on public.branch_documents
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_documents_update_policy" on public.branch_documents;
 create policy "branch_documents_update_policy"
 on public.branch_documents
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_documents_delete_policy" on public.branch_documents;
 create policy "branch_documents_delete_policy"
 on public.branch_documents
 for delete
-using (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_chemical_products_select_policy" on public.branch_chemical_products;
 create policy "branch_chemical_products_select_policy"
@@ -3393,20 +4215,20 @@ drop policy if exists "branch_chemical_products_insert_policy" on public.branch_
 create policy "branch_chemical_products_insert_policy"
 on public.branch_chemical_products
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_chemical_products_update_policy" on public.branch_chemical_products;
 create policy "branch_chemical_products_update_policy"
 on public.branch_chemical_products
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_chemical_products_delete_policy" on public.branch_chemical_products;
 create policy "branch_chemical_products_delete_policy"
 on public.branch_chemical_products
 for delete
-using (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_staff_members_select_policy" on public.branch_staff_members;
 create policy "branch_staff_members_select_policy"
@@ -3418,20 +4240,20 @@ drop policy if exists "branch_staff_members_insert_policy" on public.branch_staf
 create policy "branch_staff_members_insert_policy"
 on public.branch_staff_members
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_staff_members_update_policy" on public.branch_staff_members;
 create policy "branch_staff_members_update_policy"
 on public.branch_staff_members
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_staff_members_delete_policy" on public.branch_staff_members;
 create policy "branch_staff_members_delete_policy"
 on public.branch_staff_members
 for delete
-using (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_sanitary_document_files_select_policy" on public.branch_sanitary_document_files;
 create policy "branch_sanitary_document_files_select_policy"
@@ -3443,20 +4265,20 @@ drop policy if exists "branch_sanitary_document_files_insert_policy" on public.b
 create policy "branch_sanitary_document_files_insert_policy"
 on public.branch_sanitary_document_files
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_sanitary_document_files_update_policy" on public.branch_sanitary_document_files;
 create policy "branch_sanitary_document_files_update_policy"
 on public.branch_sanitary_document_files
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_sanitary_document_files_delete_policy" on public.branch_sanitary_document_files;
 create policy "branch_sanitary_document_files_delete_policy"
 on public.branch_sanitary_document_files
 for delete
-using (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_form_qr_codes_select_policy" on public.branch_form_qr_codes;
 create policy "branch_form_qr_codes_select_policy"
@@ -3468,14 +4290,22 @@ drop policy if exists "branch_form_qr_codes_insert_policy" on public.branch_form
 create policy "branch_form_qr_codes_insert_policy"
 on public.branch_form_qr_codes
 for insert
-with check (public.can_access_company(company_id));
+with check (
+  public.can_operate_branch(branch_id)
+  and exists (
+    select 1
+    from public.branches b
+    where b.id = branch_id
+      and b.company_id = company_id
+  )
+);
 
 drop policy if exists "branch_form_qr_codes_update_policy" on public.branch_form_qr_codes;
 create policy "branch_form_qr_codes_update_policy"
 on public.branch_form_qr_codes
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_refrigeration_equipment_select_policy" on public.branch_refrigeration_equipment;
 create policy "branch_refrigeration_equipment_select_policy"
@@ -3487,14 +4317,14 @@ drop policy if exists "branch_refrigeration_equipment_insert_policy" on public.b
 create policy "branch_refrigeration_equipment_insert_policy"
 on public.branch_refrigeration_equipment
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_refrigeration_equipment_update_policy" on public.branch_refrigeration_equipment;
 create policy "branch_refrigeration_equipment_update_policy"
 on public.branch_refrigeration_equipment
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_sanitation_areas_select_policy" on public.branch_sanitation_areas;
 create policy "branch_sanitation_areas_select_policy"
@@ -3506,14 +4336,14 @@ drop policy if exists "branch_sanitation_areas_insert_policy" on public.branch_s
 create policy "branch_sanitation_areas_insert_policy"
 on public.branch_sanitation_areas
 for insert
-with check (public.can_access_branch(branch_id));
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "branch_sanitation_areas_update_policy" on public.branch_sanitation_areas;
 create policy "branch_sanitation_areas_update_policy"
 on public.branch_sanitation_areas
 for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
+using (public.can_operate_branch(branch_id))
+with check (public.can_operate_branch(branch_id));
 
 drop policy if exists "thermal_control_records_select_policy" on public.thermal_control_records;
 create policy "thermal_control_records_select_policy"
@@ -3521,11 +4351,23 @@ on public.thermal_control_records
 for select
 using (public.can_access_branch(sede_id));
 
+drop policy if exists "thermal_control_records_delete_policy" on public.thermal_control_records;
+create policy "thermal_control_records_delete_policy"
+on public.thermal_control_records
+for delete
+using (public.can_operate_branch(sede_id));
+
 drop policy if exists "area_sanitation_records_select_policy" on public.area_sanitation_records;
 create policy "area_sanitation_records_select_policy"
 on public.area_sanitation_records
 for select
 using (public.can_access_branch(sede_id));
+
+drop policy if exists "area_sanitation_records_delete_policy" on public.area_sanitation_records;
+create policy "area_sanitation_records_delete_policy"
+on public.area_sanitation_records
+for delete
+using (public.can_operate_branch(sede_id));
 
 drop policy if exists "supply_reception_records_select_policy" on public.supply_reception_records;
 create policy "supply_reception_records_select_policy"
@@ -3533,11 +4375,23 @@ on public.supply_reception_records
 for select
 using (public.can_access_branch(sede_id));
 
+drop policy if exists "supply_reception_records_delete_policy" on public.supply_reception_records;
+create policy "supply_reception_records_delete_policy"
+on public.supply_reception_records
+for delete
+using (public.can_operate_branch(sede_id));
+
 drop policy if exists "water_quality_records_select_policy" on public.water_quality_records;
 create policy "water_quality_records_select_policy"
 on public.water_quality_records
 for select
 using (public.can_access_branch(sede_id));
+
+drop policy if exists "water_quality_records_delete_policy" on public.water_quality_records;
+create policy "water_quality_records_delete_policy"
+on public.water_quality_records
+for delete
+using (public.can_operate_branch(sede_id));
 
 drop policy if exists "resumen_diario_formularios_select_policy" on public.resumen_diario_formularios;
 create policy "resumen_diario_formularios_select_policy"
@@ -3545,11 +4399,23 @@ on public.resumen_diario_formularios
 for select
 using (public.can_access_branch(sede_id));
 
+drop policy if exists "resumen_diario_formularios_delete_policy" on public.resumen_diario_formularios;
+create policy "resumen_diario_formularios_delete_policy"
+on public.resumen_diario_formularios
+for delete
+using (public.can_operate_branch(sede_id));
+
 drop policy if exists "sedes_categorias_documentos_select_policy" on public.sedes_categorias_documentos;
 create policy "sedes_categorias_documentos_select_policy"
 on public.sedes_categorias_documentos
 for select
 using (public.can_access_branch(sede_id));
+
+drop policy if exists "sedes_categorias_documentos_delete_policy" on public.sedes_categorias_documentos;
+create policy "sedes_categorias_documentos_delete_policy"
+on public.sedes_categorias_documentos
+for delete
+using (public.can_operate_branch(sede_id));
 
 drop policy if exists "demo_requests_select_policy" on public.demo_requests;
 create policy "demo_requests_select_policy"
@@ -3568,6 +4434,18 @@ grant execute on function public.create_company_with_main_branch(text, uuid, tex
 revoke all on function public.set_main_branch(uuid) from public;
 revoke all on function public.set_main_branch(uuid) from anon;
 grant execute on function public.set_main_branch(uuid) to authenticated;
+
+revoke all on function public.delete_branch_permanently(uuid, text) from public;
+revoke all on function public.delete_branch_permanently(uuid, text) from anon;
+grant execute on function public.delete_branch_permanently(uuid, text) to authenticated;
+
+revoke all on function public.apply_due_subscription_capacity_changes() from public;
+revoke all on function public.apply_due_subscription_capacity_changes() from anon;
+grant execute on function public.apply_due_subscription_capacity_changes() to service_role;
+
+revoke all on function public.resolve_company_capacity_excess(uuid, uuid[]) from public;
+revoke all on function public.resolve_company_capacity_excess(uuid, uuid[]) from anon;
+grant execute on function public.resolve_company_capacity_excess(uuid, uuid[]) to authenticated;
 
 revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid, text) from public;
 revoke all on function public.provision_app_user(uuid, text, text, public.app_role, uuid, text) from anon;
