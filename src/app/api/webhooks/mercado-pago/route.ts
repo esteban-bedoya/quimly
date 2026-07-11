@@ -94,7 +94,15 @@ function paymentMatchesEnvironment(liveMode: boolean | null) {
   }
 
   const environment = process.env.MERCADO_PAGO_ENVIRONMENT?.trim().toLowerCase() || "sandbox";
-  return environment === "production" ? liveMode : !liveMode;
+
+  if (environment === "production") {
+    return liveMode;
+  }
+
+  // Mercado Pago can mark payments from Subscription checkouts using TEST accounts as live_mode=true.
+  // In sandbox, the configured TEST access token, webhook secret, and internal intent matching
+  // establish the environment boundary; live_mode alone does not.
+  return true;
 }
 
 export async function POST(request: Request) {

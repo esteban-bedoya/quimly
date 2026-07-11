@@ -229,8 +229,6 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       environment,
       payerEmail: request.payerEmail,
     });
-    const notificationUrl = new URL("/api/webhooks/mercado-pago", request.returnUrl);
-    notificationUrl.searchParams.set("source_news", "webhooks");
     const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>("/preapproval", {
       method: "POST",
       body: JSON.stringify({
@@ -244,7 +242,6 @@ export class MercadoPagoBillingProvider implements BillingProvider {
           currency_id: "COP",
         },
         back_url: request.returnUrl,
-        notification_url: notificationUrl.toString(),
         status: "pending",
       }),
     });
