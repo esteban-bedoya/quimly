@@ -71,6 +71,127 @@ begin
   if not exists (
     select 1
     from pg_type
+    where typname = 'billing_intent_type'
+  ) then
+    create type public.billing_intent_type as enum (
+      'activation',
+      'upgrade',
+      'downgrade',
+      'payment_method_update',
+      'recovery',
+      'cancellation'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_intent_status'
+  ) then
+    create type public.billing_intent_status as enum (
+      'created',
+      'awaiting_customer',
+      'awaiting_payment',
+      'processing',
+      'succeeded',
+      'failed',
+      'cancelled',
+      'expired',
+      'compensation_required'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_invoice_status'
+  ) then
+    create type public.billing_invoice_status as enum (
+      'unknown',
+      'scheduled',
+      'pending',
+      'processing',
+      'paid',
+      'failed',
+      'cancelled'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_payment_status'
+  ) then
+    create type public.billing_payment_status as enum (
+      'unknown',
+      'pending',
+      'approved',
+      'rejected',
+      'cancelled',
+      'refunded',
+      'charged_back'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_webhook_processing_status'
+  ) then
+    create type public.billing_webhook_processing_status as enum (
+      'received',
+      'processing',
+      'processed',
+      'failed',
+      'ignored'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_reconciliation_mode'
+  ) then
+    create type public.billing_reconciliation_mode as enum ('scheduled', 'manual');
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'billing_reconciliation_status'
+  ) then
+    create type public.billing_reconciliation_status as enum (
+      'running',
+      'completed',
+      'failed',
+      'cancelled'
+    );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type
     where typname = 'company_subscription_status'
   ) then
     create type public.company_subscription_status as enum ('trial', 'active', 'payment_issue', 'cancelled');
@@ -179,19 +300,53 @@ create table if not exists public.company_subscriptions (
   plan_type public.company_plan_type not null default 'operational',
   trial_started_at timestamptz not null default now(),
   trial_ends_at timestamptz not null default (now() + interval '14 days'),
+  current_period_started_at timestamptz,
   current_period_ends_at timestamptz,
+  billing_cycle_anchor_at timestamptz,
   base_monthly_price_cop integer not null default 24900,
   additional_site_monthly_price_cop integer not null default 19900,
   included_active_sites integer not null default 1,
   max_active_locations integer not null default 1,
+  currency char(3) not null default 'COP',
   payment_provider text not null default 'mercado_pago',
   payment_method_status public.payment_method_status not null default 'pending',
+  payment_attention_required boolean not null default false,
+  last_payment_issue_at timestamptz,
+  payment_grace_ends_at timestamptz,
+  last_successful_payment_at timestamptz,
+  cancellation_requested_at timestamptz,
+  cancellation_effective_at timestamptz,
+  founder_benefit_forfeited_at timestamptz,
   mercado_pago_customer_id text,
   mercado_pago_subscription_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint company_subscriptions_id_company_unique unique (id, company_id),
   constraint company_subscriptions_trial_period_check check (trial_ends_at > trial_started_at),
+  constraint company_subscriptions_currency_check check (currency = 'COP'),
+  constraint company_subscriptions_period_dates_check check (
+    (current_period_started_at is null and current_period_ends_at is null)
+    or (
+      current_period_started_at is not null
+      and current_period_ends_at is not null
+      and current_period_started_at < current_period_ends_at
+    )
+  ),
+  constraint company_subscriptions_grace_check check (
+    payment_grace_ends_at is null
+    or (
+      current_period_ends_at is not null
+      and payment_grace_ends_at >= current_period_ends_at
+    )
+  ),
+  constraint company_subscriptions_payment_attention_check check (
+    payment_attention_required = false
+    or last_payment_issue_at is not null
+  ),
+  constraint company_subscriptions_founder_forfeiture_check check (
+    founder_benefit_forfeited_at is null
+    or plan_type = 'operational'
+  ),
   constraint company_subscriptions_prices_check check (
     base_monthly_price_cop >= 0
     and additional_site_monthly_price_cop >= 0
@@ -336,6 +491,41 @@ alter table if exists public.company_subscriptions
 add column if not exists mercado_pago_subscription_id text;
 
 alter table if exists public.company_subscriptions
+add column if not exists current_period_started_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists billing_cycle_anchor_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists currency char(3) not null default 'COP';
+
+alter table if exists public.company_subscriptions
+add column if not exists payment_attention_required boolean not null default false;
+
+alter table if exists public.company_subscriptions
+add column if not exists last_payment_issue_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists payment_grace_ends_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists last_successful_payment_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists cancellation_requested_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists cancellation_effective_at timestamptz;
+
+alter table if exists public.company_subscriptions
+add column if not exists founder_benefit_forfeited_at timestamptz;
+
+update public.company_subscriptions
+set current_period_started_at = current_period_ends_at - interval '1 month'
+where current_period_ends_at is not null
+  and current_period_started_at is null;
+
+alter table if exists public.company_subscriptions
 drop constraint if exists company_subscriptions_prices_check;
 
 alter table if exists public.company_subscriptions
@@ -351,6 +541,88 @@ drop constraint if exists company_subscriptions_payment_provider_check;
 
 alter table if exists public.company_subscriptions
 add constraint company_subscriptions_payment_provider_check check (payment_provider = 'mercado_pago');
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_currency_check'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_currency_check check (currency = 'COP');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_period_dates_check'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_period_dates_check check (
+        (current_period_started_at is null and current_period_ends_at is null)
+        or (
+          current_period_started_at is not null
+          and current_period_ends_at is not null
+          and current_period_started_at < current_period_ends_at
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_grace_check'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_grace_check check (
+        payment_grace_ends_at is null
+        or (
+          current_period_ends_at is not null
+          and payment_grace_ends_at >= current_period_ends_at
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_payment_attention_check'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_payment_attention_check check (
+        payment_attention_required = false
+        or last_payment_issue_at is not null
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'company_subscriptions_founder_forfeiture_check'
+      and conrelid = 'public.company_subscriptions'::regclass
+  ) then
+    alter table public.company_subscriptions
+      add constraint company_subscriptions_founder_forfeiture_check check (
+        founder_benefit_forfeited_at is null
+        or plan_type = 'operational'
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'subscription_capacity_changes_id_company_unique'
+      and conrelid = 'public.subscription_capacity_changes'::regclass
+  ) then
+    alter table public.subscription_capacity_changes
+      add constraint subscription_capacity_changes_id_company_unique unique (id, company_id);
+  end if;
+end $$;
 
 insert into public.company_subscriptions (
   company_id,
@@ -478,6 +750,322 @@ add constraint user_profiles_phone_e164 check (public.is_e164_phone(phone));
 create unique index if not exists user_profiles_phone_unique_idx
 on public.user_profiles (phone)
 where phone is not null;
+
+create table if not exists public.billing_intents (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  subscription_id uuid not null,
+  capacity_change_id uuid,
+  intent_type public.billing_intent_type not null,
+  status public.billing_intent_status not null default 'created',
+  plan_type_snapshot public.company_plan_type not null,
+  previous_max_active_locations integer,
+  requested_max_active_locations integer,
+  monthly_amount_before_cop integer,
+  monthly_amount_after_cop integer,
+  expected_immediate_amount_cop integer,
+  currency char(3) not null default 'COP',
+  period_started_at timestamptz,
+  period_ends_at timestamptz,
+  proration_amount_cop integer,
+  proration_calculated_at timestamptz,
+  proration_formula_version smallint,
+  external_reference text not null,
+  provider_checkout_url text,
+  requested_by uuid references public.user_profiles (user_id) on delete set null,
+  expires_at timestamptz,
+  completed_at timestamptz,
+  last_error_code text,
+  last_error_message text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint billing_intents_id_company_unique unique (id, company_id),
+  constraint billing_intents_external_reference_unique unique (external_reference),
+  constraint billing_intents_subscription_company_fk
+    foreign key (subscription_id, company_id)
+    references public.company_subscriptions (id, company_id)
+    on delete cascade,
+  constraint billing_intents_capacity_change_company_fk
+    foreign key (capacity_change_id, company_id)
+    references public.subscription_capacity_changes (id, company_id)
+    on delete set null (capacity_change_id),
+  constraint billing_intents_currency_check check (currency = 'COP'),
+  constraint billing_intents_capacity_check check (
+    requested_max_active_locations is null
+    or requested_max_active_locations >= 1
+  ),
+  constraint billing_intents_amounts_check check (
+    (monthly_amount_before_cop is null or monthly_amount_before_cop >= 0)
+    and (monthly_amount_after_cop is null or monthly_amount_after_cop >= 0)
+    and (expected_immediate_amount_cop is null or expected_immediate_amount_cop >= 0)
+    and (proration_amount_cop is null or proration_amount_cop >= 0)
+  ),
+  constraint billing_intents_upgrade_proration_check check (
+    intent_type <> 'upgrade'
+    or (
+      requested_max_active_locations is not null
+      and monthly_amount_before_cop is not null
+      and monthly_amount_after_cop is not null
+      and monthly_amount_after_cop > monthly_amount_before_cop
+      and period_started_at is not null
+      and period_ends_at is not null
+      and period_started_at < period_ends_at
+      and proration_amount_cop is not null
+      and proration_calculated_at is not null
+      and proration_formula_version is not null
+    )
+  )
+);
+
+create table if not exists public.billing_provider_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  subscription_id uuid not null,
+  billing_intent_id uuid,
+  provider text not null default 'mercado_pago',
+  provider_subscription_id text not null,
+  external_reference text not null,
+  provider_customer_id text,
+  provider_payer_id text,
+  payer_email text,
+  provider_status text not null,
+  provider_version bigint,
+  provider_updated_at timestamptz,
+  recurring_amount_cop integer not null,
+  currency char(3) not null default 'COP',
+  next_payment_at timestamptz,
+  ended_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint billing_provider_subscriptions_id_company_unique unique (id, company_id),
+  constraint billing_provider_subscriptions_provider_id_unique
+    unique (provider, provider_subscription_id),
+  constraint billing_provider_subscriptions_external_reference_unique
+    unique (provider, external_reference),
+  constraint billing_provider_subscriptions_subscription_company_fk
+    foreign key (subscription_id, company_id)
+    references public.company_subscriptions (id, company_id)
+    on delete cascade,
+  constraint billing_provider_subscriptions_intent_company_fk
+    foreign key (billing_intent_id, company_id)
+    references public.billing_intents (id, company_id)
+    on delete set null (billing_intent_id),
+  constraint billing_provider_subscriptions_amount_check check (recurring_amount_cop >= 0),
+  constraint billing_provider_subscriptions_currency_check check (currency = 'COP')
+);
+
+create table if not exists public.billing_invoices (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  provider_subscription_record_id uuid not null,
+  provider text not null default 'mercado_pago',
+  provider_invoice_id text not null,
+  provider_status text not null,
+  normalized_status public.billing_invoice_status not null default 'unknown',
+  amount_cop integer not null,
+  currency char(3) not null default 'COP',
+  debit_at timestamptz,
+  period_started_at timestamptz,
+  period_ends_at timestamptz,
+  retry_attempt integer not null default 0,
+  provider_updated_at timestamptz,
+  settled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint billing_invoices_id_company_unique unique (id, company_id),
+  constraint billing_invoices_provider_id_unique unique (provider, provider_invoice_id),
+  constraint billing_invoices_provider_subscription_company_fk
+    foreign key (provider_subscription_record_id, company_id)
+    references public.billing_provider_subscriptions (id, company_id)
+    on delete cascade,
+  constraint billing_invoices_amount_check check (amount_cop >= 0),
+  constraint billing_invoices_currency_check check (currency = 'COP'),
+  constraint billing_invoices_retry_attempt_check check (retry_attempt >= 0),
+  constraint billing_invoices_period_check check (
+    (period_started_at is null and period_ends_at is null)
+    or (
+      period_started_at is not null
+      and period_ends_at is not null
+      and period_started_at < period_ends_at
+    )
+  )
+);
+
+create table if not exists public.billing_payments (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  provider_subscription_record_id uuid not null,
+  invoice_id uuid,
+  billing_intent_id uuid,
+  provider text not null default 'mercado_pago',
+  provider_payment_id text not null,
+  provider_status text not null,
+  provider_status_detail text,
+  normalized_status public.billing_payment_status not null default 'unknown',
+  amount_cop integer not null,
+  currency char(3) not null default 'COP',
+  payment_method_type text,
+  rejection_reason text,
+  provider_created_at timestamptz,
+  provider_updated_at timestamptz,
+  approved_at timestamptz,
+  refunded_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint billing_payments_id_company_unique unique (id, company_id),
+  constraint billing_payments_provider_id_unique unique (provider, provider_payment_id),
+  constraint billing_payments_provider_subscription_company_fk
+    foreign key (provider_subscription_record_id, company_id)
+    references public.billing_provider_subscriptions (id, company_id)
+    on delete cascade,
+  constraint billing_payments_invoice_company_fk
+    foreign key (invoice_id, company_id)
+    references public.billing_invoices (id, company_id)
+    on delete set null (invoice_id),
+  constraint billing_payments_intent_company_fk
+    foreign key (billing_intent_id, company_id)
+    references public.billing_intents (id, company_id)
+    on delete set null (billing_intent_id),
+  constraint billing_payments_amount_check check (amount_cop >= 0),
+  constraint billing_payments_currency_check check (currency = 'COP')
+);
+
+create table if not exists public.billing_webhook_events (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid references public.companies (id) on delete set null,
+  subscription_id uuid,
+  provider text not null default 'mercado_pago',
+  topic text not null,
+  action text,
+  resource_id text not null,
+  delivery_key text not null,
+  request_id text,
+  signature_timestamp bigint,
+  signature_valid boolean not null default false,
+  verification_error text,
+  live_mode boolean,
+  payload jsonb not null,
+  processing_status public.billing_webhook_processing_status not null default 'received',
+  attempts integer not null default 0,
+  claimed_at timestamptz,
+  processed_at timestamptz,
+  last_error text,
+  provider_created_at timestamptz,
+  canonical_resource_version text,
+  canonical_resource_updated_at timestamptz,
+  received_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint billing_webhook_events_provider_delivery_unique unique (provider, delivery_key),
+  constraint billing_webhook_events_subscription_company_fk
+    foreign key (subscription_id, company_id)
+    references public.company_subscriptions (id, company_id)
+    on delete set null (subscription_id),
+  constraint billing_webhook_events_resolution_check check (
+    subscription_id is null or company_id is not null
+  ),
+  constraint billing_webhook_events_attempts_check check (attempts >= 0)
+);
+
+create table if not exists public.subscription_status_history (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  subscription_id uuid not null,
+  from_status public.company_subscription_status,
+  to_status public.company_subscription_status not null,
+  reason text not null,
+  source text not null,
+  billing_intent_id uuid,
+  billing_payment_id uuid,
+  webhook_event_id uuid references public.billing_webhook_events (id) on delete set null,
+  actor_user_id uuid references public.user_profiles (user_id) on delete set null,
+  deduplication_key text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now(),
+  constraint subscription_status_history_deduplication_unique unique (deduplication_key),
+  constraint subscription_status_history_subscription_company_fk
+    foreign key (subscription_id, company_id)
+    references public.company_subscriptions (id, company_id)
+    on delete cascade,
+  constraint subscription_status_history_intent_company_fk
+    foreign key (billing_intent_id, company_id)
+    references public.billing_intents (id, company_id)
+    on delete set null (billing_intent_id),
+  constraint subscription_status_history_payment_company_fk
+    foreign key (billing_payment_id, company_id)
+    references public.billing_payments (id, company_id)
+    on delete set null (billing_payment_id),
+  constraint subscription_status_history_transition_check
+    check (from_status is distinct from to_status),
+  constraint subscription_status_history_source_check
+    check (source in ('billing', 'webhook', 'reconciliation', 'manual'))
+);
+
+create table if not exists public.billing_reconciliation_runs (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid references public.companies (id) on delete set null,
+  provider text not null default 'mercado_pago',
+  mode public.billing_reconciliation_mode not null,
+  status public.billing_reconciliation_status not null default 'running',
+  scope_key text not null default 'all',
+  cursor_value text,
+  scanned_count integer not null default 0,
+  synchronized_count integer not null default 0,
+  mismatch_count integer not null default 0,
+  result_summary jsonb not null default '{}'::jsonb,
+  error_message text,
+  requested_by uuid references public.user_profiles (user_id) on delete set null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  updated_at timestamptz not null default now(),
+  constraint billing_reconciliation_runs_scope_check check (length(trim(scope_key)) > 0),
+  constraint billing_reconciliation_runs_counts_check check (
+    scanned_count >= 0
+    and synchronized_count >= 0
+    and mismatch_count >= 0
+  ),
+  constraint billing_reconciliation_runs_finished_check check (
+    (status = 'running' and finished_at is null)
+    or (status <> 'running' and finished_at is not null)
+  )
+);
+
+create unique index if not exists billing_intents_one_open_per_company_idx
+on public.billing_intents (company_id)
+where status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing');
+
+create index if not exists billing_intents_company_created_idx
+on public.billing_intents (company_id, created_at desc);
+
+create unique index if not exists billing_provider_subscriptions_one_open_per_subscription_idx
+on public.billing_provider_subscriptions (subscription_id)
+where ended_at is null;
+
+create index if not exists billing_provider_subscriptions_company_status_idx
+on public.billing_provider_subscriptions (company_id, provider_status);
+
+create index if not exists billing_invoices_company_debit_idx
+on public.billing_invoices (company_id, debit_at desc);
+
+create index if not exists billing_invoices_subscription_debit_idx
+on public.billing_invoices (provider_subscription_record_id, debit_at desc);
+
+create index if not exists billing_payments_company_created_idx
+on public.billing_payments (company_id, created_at desc);
+
+create index if not exists billing_payments_invoice_idx
+on public.billing_payments (invoice_id);
+
+create index if not exists billing_webhook_events_pending_idx
+on public.billing_webhook_events (processing_status, received_at)
+where processing_status in ('received', 'failed');
+
+create index if not exists subscription_status_history_company_occurred_idx
+on public.subscription_status_history (company_id, occurred_at desc);
+
+create unique index if not exists billing_reconciliation_one_active_scope_idx
+on public.billing_reconciliation_runs (provider, scope_key)
+where status = 'running';
 
 create table if not exists public.branches (
   id uuid primary key default gen_random_uuid(),
@@ -1838,6 +2426,42 @@ execute function public.set_updated_at();
 drop trigger if exists set_company_subscriptions_updated_at on public.company_subscriptions;
 create trigger set_company_subscriptions_updated_at
 before update on public.company_subscriptions
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_intents_updated_at on public.billing_intents;
+create trigger set_billing_intents_updated_at
+before update on public.billing_intents
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_provider_subscriptions_updated_at on public.billing_provider_subscriptions;
+create trigger set_billing_provider_subscriptions_updated_at
+before update on public.billing_provider_subscriptions
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_invoices_updated_at on public.billing_invoices;
+create trigger set_billing_invoices_updated_at
+before update on public.billing_invoices
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_payments_updated_at on public.billing_payments;
+create trigger set_billing_payments_updated_at
+before update on public.billing_payments
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_webhook_events_updated_at on public.billing_webhook_events;
+create trigger set_billing_webhook_events_updated_at
+before update on public.billing_webhook_events
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_billing_reconciliation_runs_updated_at on public.billing_reconciliation_runs;
+create trigger set_billing_reconciliation_runs_updated_at
+before update on public.billing_reconciliation_runs
 for each row
 execute function public.set_updated_at();
 
@@ -3902,6 +4526,13 @@ $$;
 alter table public.companies enable row level security;
 alter table public.company_subscriptions enable row level security;
 alter table public.subscription_capacity_changes enable row level security;
+alter table public.billing_intents enable row level security;
+alter table public.billing_provider_subscriptions enable row level security;
+alter table public.billing_invoices enable row level security;
+alter table public.billing_payments enable row level security;
+alter table public.billing_webhook_events enable row level security;
+alter table public.subscription_status_history enable row level security;
+alter table public.billing_reconciliation_runs enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.branches enable row level security;
 alter table public.branch_dashboard_items enable row level security;
@@ -4422,6 +5053,22 @@ create policy "demo_requests_select_policy"
 on public.demo_requests
 for select
 using (public.is_owner() or public.is_super_admin());
+
+revoke all on table public.billing_intents from anon, authenticated;
+revoke all on table public.billing_provider_subscriptions from anon, authenticated;
+revoke all on table public.billing_invoices from anon, authenticated;
+revoke all on table public.billing_payments from anon, authenticated;
+revoke all on table public.billing_webhook_events from anon, authenticated;
+revoke all on table public.subscription_status_history from anon, authenticated;
+revoke all on table public.billing_reconciliation_runs from anon, authenticated;
+
+grant select, insert, update, delete on table public.billing_intents to service_role;
+grant select, insert, update, delete on table public.billing_provider_subscriptions to service_role;
+grant select, insert, update, delete on table public.billing_invoices to service_role;
+grant select, insert, update, delete on table public.billing_payments to service_role;
+grant select, insert, update, delete on table public.billing_webhook_events to service_role;
+grant select, insert, update, delete on table public.subscription_status_history to service_role;
+grant select, insert, update, delete on table public.billing_reconciliation_runs to service_role;
 
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from public;
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;

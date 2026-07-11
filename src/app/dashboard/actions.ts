@@ -11,6 +11,8 @@ import {
   normalizePlanType,
   normalizeSubscriptionStatus,
 } from "@/lib/billing";
+import { createBillingService } from "@/lib/billing/billing-service.server";
+import { createMercadoPagoBillingProvider } from "@/lib/billing/providers/mercado-pago.server";
 import { notificationService } from "@/lib/notifications/notification.service";
 import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
@@ -30,6 +32,11 @@ import type {
 export type AdminActionState = {
   error?: string;
   success?: string;
+};
+
+export type StartPlanActivationResult = {
+  checkoutUrl?: string;
+  error?: string;
 };
 
 type PostgrestErrorLike = {
@@ -450,6 +457,20 @@ async function getSupabaseRlsClientOrThrow(context: Record<string, unknown> = {}
   return supabase;
 }
 
+function getApplicationUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim();
+
+  if (!configuredUrl) {
+    throw new Error("Falta configurar NEXT_PUBLIC_APP_URL para iniciar el checkout de Mercado Pago.");
+  }
+
+  try {
+    return new URL(configuredUrl).origin;
+  } catch {
+    throw new Error("NEXT_PUBLIC_APP_URL debe contener una URL válida.");
+  }
+}
+
 type BranchRouteTarget = {
   companySlug: string;
   branchSlug: string;
@@ -586,6 +607,92 @@ async function requireOperatorAccess() {
   }
 
   return context;
+}
+
+export async function startPlanActivation({
+  companySlug,
+  requestedMaxActiveLocations,
+}: {
+  companySlug: string;
+  requestedMaxActiveLocations: number;
+}): Promise<StartPlanActivationResult> {
+  const context = await requireUserContext();
+
+  if (!companySlug || !Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
+    return { error: "La capacidad seleccionada no es válida." };
+  }
+
+  const payerEmail = normalizeOptionalEmail(context.profile.email ?? "");
+
+  if (!payerEmail) {
+    return { error: "Agrega un correo electrónico válido en tu perfil antes de configurar el pago." };
+  }
+
+  try {
+    const supabase = await getSupabaseRlsClientOrThrow({ operation: "startPlanActivation" });
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", companySlug)
+      .eq("is_active", true)
+      .maybeSingle<{ id: string }>();
+
+    if (companyError || !company || !canManageCompanySites(context, company.id)) {
+      return { error: "No tienes permisos para activar el plan de esta empresa." };
+    }
+
+    const billingService = createBillingService();
+    const { intent, requestedQuote } = await billingService.createInitialActivationIntent({
+      companyId: company.id,
+      requestedMaxActiveLocations,
+      requestedBy: context.profile.userId,
+    });
+    const provider = createMercadoPagoBillingProvider();
+
+    try {
+      const checkout = await provider.createSubscriptionCheckout({
+        intentId: intent.id,
+        externalReference: intent.external_reference,
+        companyId: company.id,
+        payerEmail,
+        price: requestedQuote,
+        returnUrl: new URL("/dashboard?billing=processing", getApplicationUrl()).toString(),
+      });
+
+      await billingService.markInitialActivationCheckoutCreated({
+        intent,
+        checkoutUrl: checkout.checkoutUrl,
+        providerSubscriptionId: checkout.providerSubscriptionId,
+        providerStatus: checkout.providerStatus,
+        providerCustomerId: checkout.providerCustomerId,
+        providerPayerId: checkout.providerPayerId,
+        payerEmail: checkout.payerEmail,
+        providerVersion: checkout.providerVersion,
+        providerUpdatedAt: checkout.providerUpdatedAt,
+        nextPaymentAt: checkout.nextPaymentAt,
+      });
+
+      return { checkoutUrl: checkout.checkoutUrl };
+    } catch (error) {
+      try {
+        await billingService.markInitialActivationCheckoutFailed(intent.id, error);
+      } catch (markError) {
+        logAdminActionError("billing.activation_checkout_failure_persistence_failed", markError, {
+          companyId: company.id,
+          intentId: intent.id,
+        });
+      }
+
+      logAdminActionError("billing.activation_checkout_failed", error, {
+        companyId: company.id,
+        intentId: intent.id,
+      });
+      return { error: "No fue posible preparar el pago con Mercado Pago. Inténtalo nuevamente." };
+    }
+  } catch (error) {
+    logAdminActionError("billing.activation_start_failed", error, { companySlug });
+    return { error: "No fue posible iniciar la activación del plan. Inténtalo nuevamente." };
+  }
 }
 
 export async function createCompany(

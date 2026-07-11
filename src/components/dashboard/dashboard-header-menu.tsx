@@ -1,11 +1,12 @@
 "use client";
 
-import { startTransition, useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
   getCurrentUserProfileDetails,
   sendCurrentUserPhoneChangeOTP,
+  startPlanActivation,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
 } from "@/app/dashboard/actions";
@@ -621,6 +622,8 @@ function PlanPaymentsDrawerContent({
   const minimumSiteCount = visualState.isTrial ? minimumActivationSiteCount : minimumRecoverySiteCount;
   const [activationStep, setActivationStep] = useState<PlanActivationStep | null>(null);
   const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const [isActivationPending, startActivationTransition] = useTransition();
   const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
   const contractedAdditionalSites = Math.max(
@@ -647,6 +650,7 @@ function PlanPaymentsDrawerContent({
   };
   const openActivationFlow = () => {
     setSelectedSiteCount(minimumSiteCount);
+    setActivationError(null);
     setActivationStep("sites");
   };
   const openPaymentRecovery = () => {
@@ -655,6 +659,33 @@ function PlanPaymentsDrawerContent({
   };
   const increaseSites = () => setSelectedSiteCount((currentValue) => currentValue + 1);
   const decreaseSites = () => setSelectedSiteCount((currentValue) => Math.max(minimumSiteCount, currentValue - 1));
+  const startMercadoPagoCheckout = () => {
+    if (!visualState.isTrial) {
+      setActivationError("La recuperación de pagos se implementará en una siguiente fase.");
+      return;
+    }
+
+    const companySlug = planPayments.companySlug;
+
+    if (!companySlug) {
+      setActivationError("No fue posible identificar la empresa para configurar el pago.");
+      return;
+    }
+
+    startActivationTransition(async () => {
+      const result = await startPlanActivation({
+        companySlug,
+        requestedMaxActiveLocations: selectedSiteCount,
+      });
+
+      if (result.checkoutUrl) {
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+
+      setActivationError(result.error ?? "No fue posible preparar el pago con Mercado Pago.");
+    });
+  };
 
   return (
     <>
@@ -824,10 +855,10 @@ function PlanPaymentsDrawerContent({
             <>
               <div>
                 <p className="text-sm font-semibold leading-6 text-[#12110f]">
-                  Integración preparada para Mercado Pago
+                  Continúa con Mercado Pago
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-                  Aquí se creará la preferencia de pago, se confirmará el pago aprobado y se actualizará la suscripción.
+                  Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago.
                 </p>
               </div>
               <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
@@ -835,8 +866,13 @@ function PlanPaymentsDrawerContent({
                 label="Valor mensual"
                 value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
               />
-              <AdminDrawerButton disabled>Abrir Mercado Pago</AdminDrawerButton>
-              <AdminDrawerButton onClick={() => setActivationStep("confirm")}>Volver</AdminDrawerButton>
+              {activationError ? <AdminDrawerFeedback state={{ error: activationError }} /> : null}
+              <AdminDrawerButton variant="primary" onClick={startMercadoPagoCheckout} disabled={isActivationPending}>
+                {isActivationPending ? "Preparando pago..." : "Abrir Mercado Pago"}
+              </AdminDrawerButton>
+              <AdminDrawerButton disabled={isActivationPending} onClick={() => setActivationStep("confirm")}>
+                Volver
+              </AdminDrawerButton>
             </>
           ) : null}
           </>

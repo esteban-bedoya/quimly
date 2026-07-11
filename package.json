@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:billing:sandbox": "node --env-file-if-exists=.env.local scripts/mercado-pago-sandbox-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
