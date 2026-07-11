@@ -88,6 +88,15 @@ export type BillingPaymentStatus =
   | "refunded"
   | "charged_back";
 
+export type BillingInvoiceStatus =
+  | "unknown"
+  | "scheduled"
+  | "pending"
+  | "processing"
+  | "paid"
+  | "failed"
+  | "cancelled";
+
 export type BillingWebhookProcessingStatus = "received" | "processing" | "processed" | "failed" | "ignored";
 
 export type BillingProviderSubscriptionRecord = {
@@ -114,6 +123,21 @@ export type BillingPaymentRecord = {
   amount_cop: number;
   currency: "COP";
   approved_at: string | null;
+};
+
+export type BillingInvoiceRecord = {
+  id: string;
+  company_id: string;
+  provider_subscription_record_id: string;
+  provider_invoice_id: string;
+  provider_status: string;
+  normalized_status: BillingInvoiceStatus;
+  amount_cop: number;
+  currency: "COP";
+  debit_at: string | null;
+  retry_attempt: number;
+  provider_updated_at: string | null;
+  settled_at: string | null;
 };
 
 export type BillingWebhookEventRecord = {
@@ -374,6 +398,66 @@ export class BillingRepository {
     return data;
   }
 
+  async findProviderSubscriptionByProviderId(
+    providerSubscriptionId: string,
+  ): Promise<BillingProviderSubscriptionRecord | null> {
+    const { data, error } = await this.supabase
+      .from("billing_provider_subscriptions")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .eq("provider", "mercado_pago")
+      .eq("provider_subscription_id", providerSubscriptionId)
+      .maybeSingle<BillingProviderSubscriptionRecord>();
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible encontrar la suscripción externa.");
+    }
+
+    return data;
+  }
+
+  async updateProviderSubscriptionState({
+    providerSubscription,
+    providerStatus,
+    providerVersion,
+    providerUpdatedAt,
+    recurringAmountCop,
+    nextPaymentAt,
+    endedAt,
+  }: {
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerStatus: string;
+    providerVersion: number | null;
+    providerUpdatedAt: string | null;
+    recurringAmountCop: number;
+    nextPaymentAt: string | null;
+    endedAt: string | null;
+  }): Promise<BillingProviderSubscriptionRecord> {
+    const { data, error } = await this.supabase
+      .from("billing_provider_subscriptions")
+      .update({
+        provider_status: providerStatus,
+        provider_version: providerVersion,
+        provider_updated_at: providerUpdatedAt,
+        recurring_amount_cop: recurringAmountCop,
+        next_payment_at: nextPaymentAt,
+        ended_at: endedAt,
+      })
+      .eq("id", providerSubscription.id)
+      .eq("company_id", providerSubscription.company_id)
+      .eq("provider", "mercado_pago")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .single<BillingProviderSubscriptionRecord>();
+
+    if (error || !data) {
+      throwDatabaseError(
+        error ?? { message: "No fue posible sincronizar la suscripción externa." },
+        "No fue posible sincronizar la suscripción externa.",
+      );
+    }
+
+    return data;
+  }
+
   async getSubscriptionStatus(subscriptionId: string, companyId: string): Promise<SubscriptionStatus> {
     const { data, error } = await this.supabase
       .from("company_subscriptions")
@@ -537,8 +621,82 @@ export class BillingRepository {
     }
   }
 
+  async upsertInvoice({
+    providerSubscription,
+    providerInvoiceId,
+    providerStatus,
+    normalizedStatus,
+    amountCop,
+    debitAt,
+    retryAttempt,
+    providerUpdatedAt,
+    settledAt,
+  }: {
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerInvoiceId: string;
+    providerStatus: string;
+    normalizedStatus: BillingInvoiceStatus;
+    amountCop: number;
+    debitAt: string | null;
+    retryAttempt: number;
+    providerUpdatedAt: string | null;
+    settledAt: string | null;
+  }): Promise<BillingInvoiceRecord> {
+    const { data: existing, error: existingError } = await this.supabase
+      .from("billing_invoices")
+      .select("id, company_id, provider_subscription_record_id")
+      .eq("provider", "mercado_pago")
+      .eq("provider_invoice_id", providerInvoiceId)
+      .maybeSingle<{ id: string; company_id: string; provider_subscription_record_id: string }>();
+
+    if (existingError) {
+      throwDatabaseError(existingError, "No fue posible consultar la factura recurrente.");
+    }
+
+    if (
+      existing &&
+      (existing.company_id !== providerSubscription.company_id ||
+        existing.provider_subscription_record_id !== providerSubscription.id)
+    ) {
+      throw new Error("La factura de Mercado Pago ya pertenece a otra suscripción interna.");
+    }
+
+    const { data, error } = await this.supabase
+      .from("billing_invoices")
+      .upsert(
+        {
+          company_id: providerSubscription.company_id,
+          provider_subscription_record_id: providerSubscription.id,
+          provider: "mercado_pago",
+          provider_invoice_id: providerInvoiceId,
+          provider_status: providerStatus,
+          normalized_status: normalizedStatus,
+          amount_cop: amountCop,
+          currency: "COP",
+          debit_at: debitAt,
+          retry_attempt: retryAttempt,
+          provider_updated_at: providerUpdatedAt,
+          settled_at: settledAt,
+        },
+        { onConflict: "provider,provider_invoice_id" },
+      )
+      .select("id, company_id, provider_subscription_record_id, provider_invoice_id, provider_status, normalized_status, amount_cop, currency, debit_at, retry_attempt, provider_updated_at, settled_at")
+      .single<BillingInvoiceRecord>();
+
+    if (error || !data) {
+      throwDatabaseError(
+        error ?? { message: "No fue posible registrar la factura recurrente." },
+        "No fue posible registrar la factura recurrente.",
+      );
+    }
+
+    return data;
+  }
+
   async upsertPayment({
-    intent,
+    companyId,
+    billingIntentId,
+    invoiceId,
     providerSubscription,
     providerPaymentId,
     providerStatus,
@@ -550,7 +708,9 @@ export class BillingRepository {
     providerUpdatedAt,
     approvedAt,
   }: {
-    intent: BillingIntentRecord;
+    companyId: string;
+    billingIntentId: string | null;
+    invoiceId: string | null;
     providerSubscription: BillingProviderSubscriptionRecord;
     providerPaymentId: string;
     providerStatus: string;
@@ -562,13 +722,38 @@ export class BillingRepository {
     providerUpdatedAt: string | null;
     approvedAt: string | null;
   }): Promise<BillingPaymentRecord> {
+    const { data: existing, error: existingError } = await this.supabase
+      .from("billing_payments")
+      .select("id, company_id, provider_subscription_record_id, billing_intent_id, invoice_id")
+      .eq("provider", "mercado_pago")
+      .eq("provider_payment_id", providerPaymentId)
+      .maybeSingle<{
+        id: string;
+        company_id: string;
+        provider_subscription_record_id: string;
+        billing_intent_id: string | null;
+        invoice_id: string | null;
+      }>();
+
+    if (existingError) {
+      throwDatabaseError(existingError, "No fue posible consultar el pago.");
+    }
+
+    if (
+      existing &&
+      (existing.company_id !== companyId || existing.provider_subscription_record_id !== providerSubscription.id)
+    ) {
+      throw new Error("El pago de Mercado Pago ya pertenece a otra suscripción interna.");
+    }
+
     const { data, error } = await this.supabase
       .from("billing_payments")
       .upsert(
         {
-          company_id: intent.company_id,
+          company_id: companyId,
           provider_subscription_record_id: providerSubscription.id,
-          billing_intent_id: intent.id,
+          billing_intent_id: billingIntentId ?? existing?.billing_intent_id ?? null,
+          invoice_id: invoiceId ?? existing?.invoice_id ?? null,
           provider: "mercado_pago",
           provider_payment_id: providerPaymentId,
           provider_status: providerStatus,
@@ -591,6 +776,208 @@ export class BillingRepository {
     }
 
     return data;
+  }
+
+  async applyRecurringPaymentState({
+    providerSubscription,
+    payment,
+    normalizedStatus,
+    webhookEventId,
+    periodStartedAt,
+    periodEndsAt,
+  }: {
+    providerSubscription: BillingProviderSubscriptionRecord;
+    payment: BillingPaymentRecord;
+    normalizedStatus: BillingPaymentStatus;
+    webhookEventId: string;
+    periodStartedAt: string;
+    periodEndsAt: string;
+  }) {
+    const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
+      .from("company_subscriptions")
+      .select("status")
+      .eq("id", providerSubscription.subscription_id)
+      .eq("company_id", providerSubscription.company_id)
+      .maybeSingle<{ status: SubscriptionStatus }>();
+
+    if (currentSubscriptionError || !currentSubscription) {
+      throwDatabaseError(
+        currentSubscriptionError ?? { message: "No fue posible encontrar la suscripción interna." },
+        "No fue posible encontrar la suscripción interna.",
+      );
+    }
+
+    if (currentSubscription.status === "trial" || currentSubscription.status === "cancelled") {
+      return;
+    }
+
+    const now = payment.approved_at ?? new Date().toISOString();
+    let nextStatus: SubscriptionStatus | null = null;
+    let update: Record<string, unknown> | null = null;
+
+    if (normalizedStatus === "approved") {
+      nextStatus = "active";
+      update = {
+        status: nextStatus,
+        payment_method_status: "configured",
+        payment_attention_required: false,
+        last_payment_issue_at: null,
+        payment_grace_ends_at: null,
+        last_successful_payment_at: now,
+        current_period_started_at: periodStartedAt,
+        current_period_ends_at: periodEndsAt,
+      };
+    } else if (
+      normalizedStatus === "rejected" ||
+      normalizedStatus === "cancelled" ||
+      normalizedStatus === "charged_back"
+    ) {
+      nextStatus = "payment_issue";
+      update = {
+        status: nextStatus,
+        payment_attention_required: true,
+        last_payment_issue_at: new Date().toISOString(),
+      };
+    }
+
+    if (!update || !nextStatus) {
+      return;
+    }
+
+    const { error: subscriptionError } = await this.supabase
+      .from("company_subscriptions")
+      .update(update)
+      .eq("id", providerSubscription.subscription_id)
+      .eq("company_id", providerSubscription.company_id)
+      .eq("status", currentSubscription.status);
+
+    if (subscriptionError) {
+      throwDatabaseError(subscriptionError, "No fue posible actualizar el estado de la renovación.");
+    }
+
+    if (currentSubscription.status === nextStatus) {
+      return;
+    }
+
+    const { error: historyError } = await this.supabase.from("subscription_status_history").upsert(
+      {
+        company_id: providerSubscription.company_id,
+        subscription_id: providerSubscription.subscription_id,
+        from_status: currentSubscription.status,
+        to_status: nextStatus,
+        reason:
+          nextStatus === "active" ? "recurring_subscription_payment_approved" : "recurring_subscription_payment_failed",
+        source: "webhook",
+        billing_payment_id: payment.id,
+        webhook_event_id: webhookEventId,
+        deduplication_key: `mercado_pago_recurring_payment:${payment.provider_payment_id}:${nextStatus}`,
+        metadata: {
+          provider: "mercado_pago",
+          providerPaymentId: payment.provider_payment_id,
+          providerStatus: payment.provider_status,
+        },
+        occurred_at: now,
+      },
+      { onConflict: "deduplication_key", ignoreDuplicates: true },
+    );
+
+    if (historyError) {
+      throwDatabaseError(historyError, "No fue posible registrar el estado de la renovación.");
+    }
+  }
+
+  async applyProviderSubscriptionState({
+    providerSubscription,
+    providerStatus,
+    providerUpdatedAt,
+    webhookEventId,
+  }: {
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerStatus: string;
+    providerUpdatedAt: string | null;
+    webhookEventId: string;
+  }) {
+    const normalizedProviderStatus = providerStatus.trim().toLowerCase();
+    const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
+      .from("company_subscriptions")
+      .select("status, cancellation_requested_at")
+      .eq("id", providerSubscription.subscription_id)
+      .eq("company_id", providerSubscription.company_id)
+      .maybeSingle<{ status: SubscriptionStatus; cancellation_requested_at: string | null }>();
+
+    if (currentSubscriptionError || !currentSubscription) {
+      throwDatabaseError(
+        currentSubscriptionError ?? { message: "No fue posible encontrar la suscripción interna." },
+        "No fue posible encontrar la suscripción interna.",
+      );
+    }
+
+    const baseUpdate: Record<string, unknown> = {
+      mercado_pago_subscription_id: providerSubscription.provider_subscription_id,
+    };
+    let nextStatus: SubscriptionStatus | null = null;
+    let reason: string | null = null;
+
+    if (normalizedProviderStatus === "authorized") {
+      baseUpdate.payment_method_status = "configured";
+    } else if (
+      normalizedProviderStatus === "paused" &&
+      (currentSubscription.status === "active" || currentSubscription.status === "payment_issue")
+    ) {
+      nextStatus = "payment_issue";
+      reason = "provider_subscription_paused";
+      baseUpdate.status = nextStatus;
+      baseUpdate.payment_attention_required = true;
+      baseUpdate.last_payment_issue_at = providerUpdatedAt ?? new Date().toISOString();
+    } else if (
+      (normalizedProviderStatus === "cancelled" || normalizedProviderStatus === "canceled") &&
+      currentSubscription.status !== "trial"
+    ) {
+      const cancellationAt = providerUpdatedAt ?? new Date().toISOString();
+      nextStatus = "cancelled";
+      reason = "provider_subscription_cancelled";
+      baseUpdate.status = nextStatus;
+      baseUpdate.cancellation_requested_at = currentSubscription.cancellation_requested_at ?? cancellationAt;
+      baseUpdate.cancellation_effective_at = cancellationAt;
+    }
+
+    const { error: subscriptionError } = await this.supabase
+      .from("company_subscriptions")
+      .update(baseUpdate)
+      .eq("id", providerSubscription.subscription_id)
+      .eq("company_id", providerSubscription.company_id);
+
+    if (subscriptionError) {
+      throwDatabaseError(subscriptionError, "No fue posible sincronizar el estado externo de la suscripción.");
+    }
+
+    if (!nextStatus || !reason || currentSubscription.status === nextStatus) {
+      return;
+    }
+
+    const { error: historyError } = await this.supabase.from("subscription_status_history").upsert(
+      {
+        company_id: providerSubscription.company_id,
+        subscription_id: providerSubscription.subscription_id,
+        from_status: currentSubscription.status,
+        to_status: nextStatus,
+        reason,
+        source: "webhook",
+        webhook_event_id: webhookEventId,
+        deduplication_key: `mercado_pago_preapproval:${providerSubscription.provider_subscription_id}:${nextStatus}`,
+        metadata: {
+          provider: "mercado_pago",
+          providerSubscriptionId: providerSubscription.provider_subscription_id,
+          providerStatus,
+        },
+        occurred_at: providerUpdatedAt ?? new Date().toISOString(),
+      },
+      { onConflict: "deduplication_key", ignoreDuplicates: true },
+    );
+
+    if (historyError) {
+      throwDatabaseError(historyError, "No fue posible registrar el estado externo de la suscripción.");
+    }
   }
 
   async activateInitialSubscription({

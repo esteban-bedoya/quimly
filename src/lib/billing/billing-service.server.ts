@@ -16,12 +16,14 @@ import {
   type CapacityPriceQuote,
   type UpgradeProrationQuote,
 } from "@/lib/billing/pricing";
-import type { ProviderPayment } from "@/lib/billing/provider";
+import type { ProviderAuthorizedPayment, ProviderPayment, ProviderSubscription } from "@/lib/billing/provider";
 import {
   BillingRepository,
+  type BillingInvoiceStatus,
   type BillingPaymentStatus,
   type BillingIntentRecord,
   type BillingIntentType,
+  type BillingProviderSubscriptionRecord,
   type CompanyBillingContext,
   type CompanySubscriptionBillingRecord,
   type SubscriptionCapacityChangeRecord,
@@ -52,6 +54,15 @@ export type InitialPaymentProcessingResult =
   | {
       handled: true;
       activationApplied: boolean;
+      companyId: string;
+      subscriptionId: string;
+      providerUpdatedAt: string | null;
+    };
+
+export type BillingWebhookProcessingResult =
+  | { handled: false; reason: string }
+  | {
+      handled: true;
       companyId: string;
       subscriptionId: string;
       providerUpdatedAt: string | null;
@@ -108,6 +119,62 @@ function normalizeProviderPaymentStatus(providerStatus: string): BillingPaymentS
     default:
       return "unknown";
   }
+}
+
+function normalizeProviderInvoiceStatus(
+  providerStatus: string,
+  paymentStatus: BillingPaymentStatus | null,
+): BillingInvoiceStatus {
+  if (paymentStatus === "approved") {
+    return "paid";
+  }
+
+  if (paymentStatus === "rejected" || paymentStatus === "charged_back") {
+    return "failed";
+  }
+
+  if (paymentStatus === "cancelled" || paymentStatus === "refunded") {
+    return "cancelled";
+  }
+
+  switch (providerStatus.trim().toLowerCase()) {
+    case "scheduled":
+      return "scheduled";
+    case "pending":
+      return "pending";
+    case "processing":
+    case "processed":
+      return "processing";
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    case "failed":
+    case "rejected":
+      return "failed";
+    default:
+      return "unknown";
+  }
+}
+
+function isOpenBillingIntent(intent: BillingIntentRecord) {
+  return ["created", "awaiting_customer", "awaiting_payment", "processing"].includes(intent.status);
+}
+
+function getPeriodEnd(periodStartedAt: string, nextPaymentAt: string | null) {
+  if (nextPaymentAt) {
+    const nextPaymentDate = new Date(nextPaymentAt);
+    const periodStartDate = new Date(periodStartedAt);
+
+    if (
+      !Number.isNaN(nextPaymentDate.getTime()) &&
+      !Number.isNaN(periodStartDate.getTime()) &&
+      nextPaymentDate.getTime() > periodStartDate.getTime()
+    ) {
+      return nextPaymentDate.toISOString();
+    }
+  }
+
+  return addOneCalendarMonth(periodStartedAt);
 }
 
 function addOneCalendarMonth(value: string) {
@@ -294,9 +361,11 @@ export class BillingService {
   async processInitialActivationPayment({
     payment,
     webhookEventId,
+    invoiceId = null,
   }: {
     payment: ProviderPayment;
     webhookEventId: string;
+    invoiceId?: string | null;
   }): Promise<InitialPaymentProcessingResult> {
     if (!payment.externalReference) {
       return { handled: false, reason: "El pago no contiene una referencia interna." };
@@ -304,7 +373,7 @@ export class BillingService {
 
     const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
 
-    if (!intent || intent.intent_type !== "activation") {
+    if (!intent || intent.intent_type !== "activation" || !isOpenBillingIntent(intent)) {
       return { handled: false, reason: "El pago no corresponde a una activación inicial." };
     }
 
@@ -322,9 +391,23 @@ export class BillingService {
       throw new Error("El pago recibido no está en COP.");
     }
 
+    const subscriptionStatus = await this.repository.getSubscriptionStatus(
+      intent.subscription_id,
+      intent.company_id,
+    );
+
+    if (subscriptionStatus !== "trial") {
+      return {
+        handled: false,
+        reason: "La suscripción interna ya no admite esta activación inicial.",
+      };
+    }
+
     const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
     const storedPayment = await this.repository.upsertPayment({
-      intent,
+      companyId: intent.company_id,
+      billingIntentId: intent.id,
+      invoiceId,
       providerSubscription,
       providerPaymentId: payment.providerPaymentId,
       providerStatus: payment.providerStatus,
@@ -351,18 +434,6 @@ export class BillingService {
       throw new Error("El monto aprobado no coincide con el valor esperado para la activación.");
     }
 
-    const subscriptionStatus = await this.repository.getSubscriptionStatus(
-      intent.subscription_id,
-      intent.company_id,
-    );
-
-    if (subscriptionStatus !== "trial" && subscriptionStatus !== "active") {
-      return {
-        handled: false,
-        reason: "La suscripción interna ya no admite esta activación inicial.",
-      };
-    }
-
     const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? new Date().toISOString();
     await this.repository.activateInitialSubscription({
       intent,
@@ -377,6 +448,258 @@ export class BillingService {
       activationApplied: true,
       companyId: intent.company_id,
       subscriptionId: intent.subscription_id,
+      providerUpdatedAt: payment.providerUpdatedAt,
+    };
+  }
+
+  async processProviderPayment({
+    payment,
+    webhookEventId,
+  }: {
+    payment: ProviderPayment;
+    webhookEventId: string;
+  }): Promise<InitialPaymentProcessingResult> {
+    if (!payment.externalReference) {
+      return { handled: false, reason: "El pago no contiene una referencia interna." };
+    }
+
+    const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
+
+    if (intent?.intent_type === "activation" && isOpenBillingIntent(intent)) {
+      const subscriptionStatus = await this.repository.getSubscriptionStatus(
+        intent.subscription_id,
+        intent.company_id,
+      );
+
+      if (subscriptionStatus === "trial") {
+        return this.processInitialActivationPayment({ payment, webhookEventId });
+      }
+    }
+
+    const providerSubscription = payment.providerSubscriptionId
+      ? await this.repository.findProviderSubscriptionByProviderId(payment.providerSubscriptionId)
+      : intent
+        ? await this.repository.findProviderSubscriptionForIntent(intent.id)
+        : null;
+
+    if (!providerSubscription) {
+      return { handled: false, reason: "El pago no corresponde a una suscripción externa conocida." };
+    }
+
+    const result = await this.processRecurringProviderPayment({
+      payment,
+      providerSubscription,
+      webhookEventId,
+      invoiceId: null,
+      debitAt: payment.approvedAt ?? payment.providerCreatedAt,
+    });
+
+    if (!result.handled) {
+      return result;
+    }
+
+    return {
+      ...result,
+      activationApplied: false,
+    };
+  }
+
+  async processAuthorizedPayment({
+    authorizedPayment,
+    payment,
+    webhookEventId,
+  }: {
+    authorizedPayment: ProviderAuthorizedPayment;
+    payment: ProviderPayment | null;
+    webhookEventId: string;
+  }): Promise<BillingWebhookProcessingResult> {
+    const providerSubscription = await this.repository.findProviderSubscriptionByProviderId(
+      authorizedPayment.providerSubscriptionId,
+    );
+
+    if (!providerSubscription) {
+      return { handled: false, reason: "La factura no corresponde a una suscripción externa conocida." };
+    }
+
+    if (
+      authorizedPayment.externalReference &&
+      authorizedPayment.externalReference !== providerSubscription.external_reference
+    ) {
+      throw new Error("La factura no corresponde a la referencia interna de la suscripción.");
+    }
+
+    if (authorizedPayment.currency !== "COP") {
+      throw new Error("La factura recurrente no está en COP.");
+    }
+
+    const normalizedPaymentStatus = payment ? normalizeProviderPaymentStatus(payment.providerStatus) : null;
+    const invoice = await this.repository.upsertInvoice({
+      providerSubscription,
+      providerInvoiceId: authorizedPayment.providerInvoiceId,
+      providerStatus: authorizedPayment.providerStatus,
+      normalizedStatus: normalizeProviderInvoiceStatus(
+        authorizedPayment.providerStatus,
+        normalizedPaymentStatus,
+      ),
+      amountCop: authorizedPayment.amountCop,
+      debitAt: authorizedPayment.debitAt,
+      retryAttempt: authorizedPayment.retryAttempt,
+      providerUpdatedAt: authorizedPayment.providerUpdatedAt,
+      settledAt:
+        normalizedPaymentStatus === "approved"
+          ? payment?.approvedAt ?? authorizedPayment.providerUpdatedAt
+          : null,
+    });
+
+    if (!payment) {
+      return {
+        handled: true,
+        companyId: providerSubscription.company_id,
+        subscriptionId: providerSubscription.subscription_id,
+        providerUpdatedAt: authorizedPayment.providerUpdatedAt,
+      };
+    }
+
+    if (
+      authorizedPayment.providerPaymentId &&
+      authorizedPayment.providerPaymentId !== payment.providerPaymentId
+    ) {
+      throw new Error("La factura recurrente no corresponde al pago consultado.");
+    }
+
+    const subscriptionStatus = await this.repository.getSubscriptionStatus(
+      providerSubscription.subscription_id,
+      providerSubscription.company_id,
+    );
+
+    if (subscriptionStatus === "trial") {
+      const activationResult = await this.processInitialActivationPayment({
+        payment,
+        webhookEventId,
+        invoiceId: invoice.id,
+      });
+
+      if (activationResult.handled) {
+        return activationResult;
+      }
+    }
+
+    return this.processRecurringProviderPayment({
+      payment,
+      providerSubscription,
+      webhookEventId,
+      invoiceId: invoice.id,
+      debitAt: authorizedPayment.debitAt,
+    });
+  }
+
+  async syncProviderSubscriptionState({
+    providerSubscription: providerState,
+    webhookEventId,
+  }: {
+    providerSubscription: ProviderSubscription;
+    webhookEventId: string;
+  }): Promise<BillingWebhookProcessingResult> {
+    const currentProviderSubscription = await this.repository.findProviderSubscriptionByProviderId(
+      providerState.providerSubscriptionId,
+    );
+
+    if (!currentProviderSubscription) {
+      return { handled: false, reason: "La suscripción externa no está registrada en Quimly." };
+    }
+
+    if (
+      providerState.externalReference &&
+      providerState.externalReference !== currentProviderSubscription.external_reference
+    ) {
+      throw new Error("La suscripción externa no corresponde a la referencia interna esperada.");
+    }
+
+    if (providerState.currency !== "COP") {
+      throw new Error("La suscripción externa no está configurada en COP.");
+    }
+
+    const normalizedStatus = providerState.providerStatus.trim().toLowerCase();
+    const updatedProviderSubscription = await this.repository.updateProviderSubscriptionState({
+      providerSubscription: currentProviderSubscription,
+      providerStatus: providerState.providerStatus,
+      providerVersion: providerState.providerVersion,
+      providerUpdatedAt: providerState.providerUpdatedAt,
+      recurringAmountCop: providerState.recurringAmountCop,
+      nextPaymentAt: providerState.nextPaymentAt,
+      endedAt:
+        normalizedStatus === "cancelled" || normalizedStatus === "canceled"
+          ? providerState.providerUpdatedAt ?? new Date().toISOString()
+          : null,
+    });
+
+    await this.repository.applyProviderSubscriptionState({
+      providerSubscription: updatedProviderSubscription,
+      providerStatus: providerState.providerStatus,
+      providerUpdatedAt: providerState.providerUpdatedAt,
+      webhookEventId,
+    });
+
+    return {
+      handled: true,
+      companyId: updatedProviderSubscription.company_id,
+      subscriptionId: updatedProviderSubscription.subscription_id,
+      providerUpdatedAt: providerState.providerUpdatedAt,
+    };
+  }
+
+  private async processRecurringProviderPayment({
+    payment,
+    providerSubscription,
+    webhookEventId,
+    invoiceId,
+    debitAt,
+  }: {
+    payment: ProviderPayment;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    webhookEventId: string;
+    invoiceId: string | null;
+    debitAt: string | null;
+  }): Promise<BillingWebhookProcessingResult> {
+    if (payment.currency !== "COP") {
+      throw new Error("El pago recurrente no está en COP.");
+    }
+
+    if (payment.amountCop !== providerSubscription.recurring_amount_cop) {
+      throw new Error("El monto del pago recurrente no coincide con el valor de la suscripción.");
+    }
+
+    const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
+    const storedPayment = await this.repository.upsertPayment({
+      companyId: providerSubscription.company_id,
+      billingIntentId: null,
+      invoiceId,
+      providerSubscription,
+      providerPaymentId: payment.providerPaymentId,
+      providerStatus: payment.providerStatus,
+      providerStatusDetail: payment.providerStatusDetail,
+      normalizedStatus,
+      amountCop: payment.amountCop,
+      paymentMethodType: payment.paymentMethodType,
+      providerCreatedAt: payment.providerCreatedAt,
+      providerUpdatedAt: payment.providerUpdatedAt,
+      approvedAt: payment.approvedAt,
+    });
+    const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? debitAt ?? new Date().toISOString();
+
+    await this.repository.applyRecurringPaymentState({
+      providerSubscription,
+      payment: storedPayment,
+      normalizedStatus,
+      webhookEventId,
+      periodStartedAt,
+      periodEndsAt: getPeriodEnd(periodStartedAt, providerSubscription.next_payment_at),
+    });
+
+    return {
+      handled: true,
+      companyId: providerSubscription.company_id,
+      subscriptionId: providerSubscription.subscription_id,
       providerUpdatedAt: payment.providerUpdatedAt,
     };
   }

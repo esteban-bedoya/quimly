@@ -4,7 +4,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type {
   BillingProvider,
+  ProviderAuthorizedPayment,
   ProviderPayment,
+  ProviderSubscription,
   ProviderSubscriptionCheckout,
   ProviderSubscriptionCheckoutRequest,
 } from "@/lib/billing/provider";
@@ -23,6 +25,11 @@ type MercadoPagoPreapprovalResponse = {
   date_last_updated?: string;
   last_modified?: string;
   next_payment_date?: string;
+  external_reference?: string;
+  auto_recurring?: {
+    transaction_amount?: number | string;
+    currency_id?: string;
+  };
 };
 
 type MercadoPagoPaymentResponse = {
@@ -38,6 +45,25 @@ type MercadoPagoPaymentResponse = {
   date_last_updated?: string;
   date_approved?: string;
   live_mode?: boolean;
+};
+
+type MercadoPagoAuthorizedPaymentResponse = {
+  id?: number | string;
+  preapproval_id?: string;
+  external_reference?: string;
+  status?: string;
+  summarized?: string;
+  transaction_amount?: number | string;
+  currency_id?: string;
+  debit_date?: string;
+  retry_attempt?: number;
+  date_created?: string;
+  last_modified?: string;
+  payment?: {
+    id?: number | string;
+    status?: string;
+    status_detail?: string;
+  };
 };
 
 type MercadoPagoApiError = {
@@ -133,6 +159,16 @@ function getRequiredString(value: string | number | undefined, fieldName: string
   }
 
   return normalized;
+}
+
+function getRequiredCopAmount(value: string | number | undefined, fieldName: string) {
+  const amount = typeof value === "string" ? Number(value) : value;
+
+  if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 0) {
+    throw new Error(`Mercado Pago devolvió ${fieldName} inválido.`);
+  }
+
+  return amount;
 }
 
 function toIsoDate(value: string | undefined) {
@@ -266,11 +302,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       `/v1/payments/${encodeURIComponent(providerPaymentId)}`,
       { method: "GET" },
     );
-    const amountCop = response.transaction_amount;
-
-    if (typeof amountCop !== "number" || !Number.isInteger(amountCop) || amountCop < 0) {
-      throw new Error("Mercado Pago devolvió un monto de pago inválido.");
-    }
+    const amountCop = getRequiredCopAmount(response.transaction_amount, "un monto de pago");
 
     return {
       providerPaymentId: getRequiredString(response.id, "el identificador de pago"),
@@ -285,6 +317,55 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       providerUpdatedAt: toIsoDate(response.date_last_updated),
       approvedAt: toIsoDate(response.date_approved),
       liveMode: typeof response.live_mode === "boolean" ? response.live_mode : null,
+    };
+  }
+
+  async getAuthorizedPayment(providerInvoiceId: string): Promise<ProviderAuthorizedPayment> {
+    const response = await requestMercadoPago<MercadoPagoAuthorizedPaymentResponse>(
+      `/authorized_payments/${encodeURIComponent(providerInvoiceId)}`,
+      { method: "GET" },
+    );
+
+    return {
+      providerInvoiceId: getRequiredString(response.id, "el identificador de factura"),
+      providerSubscriptionId: getRequiredString(response.preapproval_id, "la suscripción de la factura"),
+      externalReference: response.external_reference?.trim() || null,
+      providerStatus: response.status?.trim() || "unknown",
+      summarizedStatus: response.summarized?.trim() || null,
+      amountCop: getRequiredCopAmount(response.transaction_amount, "un monto de factura"),
+      currency: response.currency_id?.trim() || "",
+      debitAt: toIsoDate(response.debit_date),
+      retryAttempt:
+        typeof response.retry_attempt === "number" && Number.isInteger(response.retry_attempt) && response.retry_attempt >= 0
+          ? response.retry_attempt
+          : 0,
+      providerCreatedAt: toIsoDate(response.date_created),
+      providerUpdatedAt: toIsoDate(response.last_modified),
+      providerPaymentId:
+        response.payment?.id === undefined ? null : getRequiredString(response.payment.id, "el pago de la factura"),
+      providerPaymentStatus: response.payment?.status?.trim() || null,
+      providerPaymentStatusDetail: response.payment?.status_detail?.trim() || null,
+    };
+  }
+
+  async getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
+    const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>(
+      `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
+      { method: "GET" },
+    );
+
+    return {
+      providerSubscriptionId: getRequiredString(response.id, "el identificador de suscripción"),
+      externalReference: response.external_reference?.trim() || null,
+      providerStatus: response.status?.trim() || "unknown",
+      recurringAmountCop: getRequiredCopAmount(
+        response.auto_recurring?.transaction_amount,
+        "un monto recurrente",
+      ),
+      currency: response.auto_recurring?.currency_id?.trim() || "",
+      providerVersion: typeof response.version === "number" ? response.version : null,
+      providerUpdatedAt: toIsoDate(response.last_modified ?? response.date_last_updated),
+      nextPaymentAt: toIsoDate(response.next_payment_date),
     };
   }
 }

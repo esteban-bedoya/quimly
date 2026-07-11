@@ -88,6 +88,14 @@ function isPaymentNotification(topic: string) {
   return topic === "payment" || topic === "payments";
 }
 
+function isAuthorizedPaymentNotification(topic: string) {
+  return topic === "subscription_authorized_payment";
+}
+
+function isSubscriptionNotification(topic: string) {
+  return topic === "subscription_preapproval";
+}
+
 function paymentMatchesEnvironment(liveMode: boolean | null) {
   if (liveMode === null) {
     return false;
@@ -169,27 +177,75 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    if (!isPaymentNotification(topic)) {
-      await repository.markWebhookEventIgnored(recorded.event.id, "El evento no corresponde a un pago inicial.");
+    if (
+      !isPaymentNotification(topic) &&
+      !isAuthorizedPaymentNotification(topic) &&
+      !isSubscriptionNotification(topic)
+    ) {
+      await repository.markWebhookEventIgnored(recorded.event.id, "El evento no corresponde al billing soportado.");
       return Response.json({ ok: true });
     }
 
     const provider = createMercadoPagoBillingProvider();
-    const payment = await provider.getPayment(resourceId);
-
-    if (!paymentMatchesEnvironment(payment.liveMode)) {
-      await repository.markWebhookEventIgnored(
-        recorded.event.id,
-        "El pago no corresponde al entorno configurado para Mercado Pago.",
-      );
-      return Response.json({ ok: true });
-    }
-
     const billingService = createBillingService(repository);
-    const result = await billingService.processInitialActivationPayment({
-      payment,
-      webhookEventId: recorded.event.id,
-    });
+    let result;
+    let providerStatus: string;
+    let processedResourceId = resourceId;
+
+    if (isPaymentNotification(topic)) {
+      const payment = await provider.getPayment(resourceId);
+
+      if (!paymentMatchesEnvironment(payment.liveMode)) {
+        await repository.markWebhookEventIgnored(
+          recorded.event.id,
+          "El pago no corresponde al entorno configurado para Mercado Pago.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      result = await billingService.processProviderPayment({
+        payment,
+        webhookEventId: recorded.event.id,
+      });
+      providerStatus = payment.providerStatus;
+      processedResourceId = payment.providerPaymentId;
+    } else if (isAuthorizedPaymentNotification(topic)) {
+      const authorizedPayment = await provider.getAuthorizedPayment(resourceId);
+      const providerSubscription = await provider.getSubscription(authorizedPayment.providerSubscriptionId);
+
+      await billingService.syncProviderSubscriptionState({
+        providerSubscription,
+        webhookEventId: recorded.event.id,
+      });
+
+      const payment = authorizedPayment.providerPaymentId
+        ? await provider.getPayment(authorizedPayment.providerPaymentId)
+        : null;
+
+      if (payment && !paymentMatchesEnvironment(payment.liveMode)) {
+        await repository.markWebhookEventIgnored(
+          recorded.event.id,
+          "El pago recurrente no corresponde al entorno configurado para Mercado Pago.",
+        );
+        return Response.json({ ok: true });
+      }
+
+      result = await billingService.processAuthorizedPayment({
+        authorizedPayment,
+        payment,
+        webhookEventId: recorded.event.id,
+      });
+      providerStatus = authorizedPayment.providerStatus;
+      processedResourceId = authorizedPayment.providerInvoiceId;
+    } else {
+      const providerSubscription = await provider.getSubscription(resourceId);
+      result = await billingService.syncProviderSubscriptionState({
+        providerSubscription,
+        webhookEventId: recorded.event.id,
+      });
+      providerStatus = providerSubscription.providerStatus;
+      processedResourceId = providerSubscription.providerSubscriptionId;
+    }
 
     if (!result.handled) {
       await repository.markWebhookEventIgnored(recorded.event.id, result.reason);
@@ -203,12 +259,12 @@ export async function POST(request: Request) {
       canonicalResourceUpdatedAt: result.providerUpdatedAt,
     });
     revalidatePath("/dashboard");
-    logServerInfo("billing.mercado_pago.payment_processed", {
+    logServerInfo("billing.mercado_pago.webhook_processed", {
+      topic,
       companyId: result.companyId,
       subscriptionId: result.subscriptionId,
-      paymentId: payment.providerPaymentId,
-      providerStatus: payment.providerStatus,
-      activationApplied: result.activationApplied,
+      resourceId: processedResourceId,
+      providerStatus,
     });
 
     return Response.json({ ok: true });
