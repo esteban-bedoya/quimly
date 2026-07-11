@@ -72,6 +72,26 @@ function getMercadoPagoEnvironment() {
   return environment;
 }
 
+function getPayerEmailForEnvironment({
+  environment,
+  payerEmail,
+}: {
+  environment: ReturnType<typeof getMercadoPagoEnvironment>;
+  payerEmail: string;
+}) {
+  if (environment === "production") {
+    return payerEmail;
+  }
+
+  const sandboxPayerEmail = process.env.MERCADO_PAGO_SANDBOX_PAYER_EMAIL?.trim();
+
+  if (!sandboxPayerEmail) {
+    throw new Error("Falta configurar MERCADO_PAGO_SANDBOX_PAYER_EMAIL para probar Mercado Pago Sandbox.");
+  }
+
+  return sandboxPayerEmail;
+}
+
 function getJsonErrorMessage(value: unknown) {
   if (!value || typeof value !== "object") {
     return null;
@@ -205,6 +225,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     }
 
     const environment = getMercadoPagoEnvironment();
+    const payerEmail = getPayerEmailForEnvironment({
+      environment,
+      payerEmail: request.payerEmail,
+    });
     const notificationUrl = new URL("/api/webhooks/mercado-pago", request.returnUrl);
     notificationUrl.searchParams.set("source_news", "webhooks");
     const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>("/preapproval", {
@@ -212,7 +236,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       body: JSON.stringify({
         reason: `Quimly ${request.price.maxActiveLocations} sede${request.price.maxActiveLocations === 1 ? "" : "s"}`,
         external_reference: request.externalReference,
-        payer_email: request.payerEmail,
+        payer_email: payerEmail,
         auto_recurring: {
           frequency: 1,
           frequency_type: "months",
@@ -233,7 +257,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       // Mercado Pago devuelve collector_id para la cuenta de Quimly, no para el cliente pagador.
       providerCustomerId: null,
       providerPayerId: response.payer_id === undefined ? null : String(response.payer_id),
-      payerEmail: response.payer_email ?? request.payerEmail,
+      payerEmail: response.payer_email || payerEmail,
       providerVersion: typeof response.version === "number" ? response.version : null,
       providerUpdatedAt: toIsoDate(response.last_modified ?? response.date_last_updated),
       nextPaymentAt: toIsoDate(response.next_payment_date),
