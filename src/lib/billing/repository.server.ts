@@ -496,6 +496,23 @@ export class BillingRepository {
     return data;
   }
 
+  async hasChargeablePaymentForIntent(intentId: string, companyId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from("billing_payments")
+      .select("id")
+      .eq("billing_intent_id", intentId)
+      .eq("company_id", companyId)
+      .or("approved_at.not.is.null,normalized_status.in.(unknown,pending,approved)")
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible verificar los pagos de la activación.");
+    }
+
+    return Boolean(data);
+  }
+
   async findProviderSubscriptionByProviderId(
     providerSubscriptionId: string,
   ): Promise<BillingProviderSubscriptionRecord | null> {

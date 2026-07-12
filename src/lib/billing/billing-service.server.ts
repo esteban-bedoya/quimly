@@ -23,6 +23,7 @@ import {
   assertNoScheduledDowngrade,
   decideLateApprovedResolution,
   getUpgradeReversalCapacity,
+  isAbandonedActivationCheckoutForFounder,
   isCurrentPaymentEntitlement,
   isPaymentReversal,
   isUpgradePaymentHistorical,
@@ -452,6 +453,77 @@ export class BillingService {
       intent,
       requestedQuote: preparation.requestedQuote,
     };
+  }
+
+  async closeAbandonedActivationCheckoutForFounder({
+    companyId,
+    provider,
+    now = new Date(),
+  }: {
+    companyId: string;
+    provider: BillingProvider;
+    now?: Date;
+  }): Promise<boolean> {
+    const intent = await this.repository.findOpenIntent(companyId);
+
+    if (
+      !intent ||
+      intent.intent_type !== "activation" ||
+      intent.status !== "awaiting_customer" ||
+      !intent.expires_at ||
+      new Date(intent.expires_at).getTime() > now.getTime()
+    ) {
+      return false;
+    }
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForIntent(intent.id);
+
+    if (!providerSubscription) {
+      return false;
+    }
+
+    const [hasChargeablePayment, currentProviderState] = await Promise.all([
+      this.repository.hasChargeablePaymentForIntent(intent.id, companyId),
+      provider.getSubscription(providerSubscription.provider_subscription_id),
+    ]);
+
+    if (!isAbandonedActivationCheckoutForFounder({
+      intentType: intent.intent_type,
+      intentStatus: intent.status,
+      expiresAt: intent.expires_at,
+      providerStatus: currentProviderState.providerStatus,
+      hasChargeablePayment,
+      now,
+    })) {
+      return false;
+    }
+
+    const closureClaimed = await this.repository.claimActivationAttemptClosure(
+      intent.id,
+      "founder_assignment_after_abandoned_checkout",
+    );
+
+    if (!closureClaimed) {
+      return false;
+    }
+
+    const terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
+      ? currentProviderState
+      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+
+    if (!isCanceledProviderStatus(terminalProviderState.providerStatus)) {
+      throw new Error("Mercado Pago no confirmó la cancelación del checkout abandonado.");
+    }
+
+    return this.repository.closeActivationAttempt({
+      intent,
+      providerSubscription,
+      providerStatus: terminalProviderState.providerStatus,
+      providerUpdatedAt: terminalProviderState.providerUpdatedAt,
+      intentStatus: "cancelled",
+      errorCode: "founder_assignment_abandoned_checkout_cancelled",
+      errorMessage: "El checkout abandonado fue cancelado antes de asignar Founder.",
+    });
   }
 
   async markInitialActivationCheckoutCreated({

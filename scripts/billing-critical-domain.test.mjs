@@ -5,6 +5,7 @@ import {
   assertNoScheduledDowngrade,
   decideLateApprovedResolution,
   getUpgradeReversalCapacity,
+  isAbandonedActivationCheckoutForFounder,
   isCurrentPaymentEntitlement,
   isPaymentReversal,
   isUpgradePaymentHistorical,
@@ -24,6 +25,24 @@ test("pricing mantiene base por plan y cobra 9.900 por sede adicional", () => {
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 1 }), 24900);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 2 }), 34800);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 3 }), 39700);
+});
+
+test("Founder permite cerrar solo un checkout de activación vencido, pending y sin pago", () => {
+  const now = new Date("2026-07-12T12:00:00.000Z");
+  const baseCase = {
+    intentType: "activation",
+    intentStatus: "awaiting_customer",
+    expiresAt: "2026-07-12T11:59:59.000Z",
+    providerStatus: "pending",
+    hasChargeablePayment: false,
+    now,
+  };
+
+  assert.equal(isAbandonedActivationCheckoutForFounder(baseCase), true);
+  assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, expiresAt: "2026-07-12T12:01:00.000Z" }), false);
+  assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, providerStatus: "authorized" }), false);
+  assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, hasChargeablePayment: true }), false);
+  assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, intentStatus: "awaiting_payment" }), false);
 });
 
 test("C1/C2 aplica una aprobación mientras la activación todavía es resoluble", () => {

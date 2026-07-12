@@ -556,7 +556,7 @@ export default async function DashboardPage() {
                     </h3>
                   </div>
                   <p className="max-w-xl text-sm leading-6 text-[#5b564f]">
-                    Founder solo se asigna durante el trial. Si Billing ya tiene una operación o preapproval de Mercado Pago, la acción se bloquea para revisión manual.
+                    Founder solo se asigna durante el trial. Los checkouts abandonados se cierran de forma segura; un preapproval cobrable o un pago en proceso requiere revisión manual.
                   </p>
                 </div>
 

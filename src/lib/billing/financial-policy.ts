@@ -3,6 +3,40 @@ import type { BillingIntentStatus, BillingIntentType } from "@/lib/billing/repos
 
 export type LateApprovedResolution = "apply" | "already_applied" | "refund";
 
+export function isAbandonedActivationCheckoutForFounder({
+  intentType,
+  intentStatus,
+  expiresAt,
+  providerStatus,
+  hasChargeablePayment,
+  now,
+}: {
+  intentType: BillingIntentType;
+  intentStatus: BillingIntentStatus;
+  expiresAt: string | null;
+  providerStatus: string;
+  hasChargeablePayment: boolean;
+  now: Date;
+}) {
+  if (
+    intentType !== "activation" ||
+    intentStatus !== "awaiting_customer" ||
+    !expiresAt ||
+    hasChargeablePayment
+  ) {
+    return false;
+  }
+
+  const expiresAtTime = new Date(expiresAt).getTime();
+  const normalizedProviderStatus = providerStatus.trim().toLowerCase();
+
+  return (
+    Number.isFinite(expiresAtTime) &&
+    expiresAtTime <= now.getTime() &&
+    ["pending", "canceled", "cancelled"].includes(normalizedProviderStatus)
+  );
+}
+
 const openIntentStatuses: BillingIntentStatus[] = [
   "created",
   "awaiting_customer",

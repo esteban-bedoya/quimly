@@ -950,6 +950,23 @@ export async function assignCompanyFounder(
     return { error: "Debes indicar una empresa válida." };
   }
 
+  try {
+    const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
+    await billingService.closeAbandonedActivationCheckoutForFounder({ companyId, provider });
+  } catch (error) {
+    logAdminActionError("billing.founder_abandoned_checkout_cleanup_failed", error, {
+      actorUserId: context.profile.userId,
+      companyId,
+    });
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "No fue posible verificar el checkout anterior en Mercado Pago.",
+    };
+  }
+
   const { error } = await supabase.rpc("assign_company_founder", {
     target_company_id: companyId,
   });
