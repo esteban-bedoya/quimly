@@ -111,18 +111,31 @@ export type BillingProviderSubscriptionRecord = {
   recurring_amount_cop: number;
   currency: "COP";
   next_payment_at: string | null;
+  ended_at: string | null;
 };
 
 export type BillingPaymentRecord = {
   id: string;
   company_id: string;
   billing_intent_id: string | null;
+  invoice_id: string | null;
   provider_payment_id: string;
   provider_status: string;
   normalized_status: BillingPaymentStatus;
   amount_cop: number;
   currency: "COP";
   approved_at: string | null;
+  refunded_amount_cop: number;
+};
+
+export type BillingPaymentReversalContext = {
+  payment: BillingPaymentRecord;
+  intent: BillingIntentRecord | null;
+  providerSubscription: BillingProviderSubscriptionRecord;
+  subscription: CompanySubscriptionBillingRecord & {
+    last_successful_payment_at: string | null;
+  };
+  scheduledCapacityChange: SubscriptionCapacityChangeRecord | null;
 };
 
 export type BillingInvoiceRecord = {
@@ -135,6 +148,8 @@ export type BillingInvoiceRecord = {
   amount_cop: number;
   currency: "COP";
   debit_at: string | null;
+  period_started_at: string | null;
+  period_ends_at: string | null;
   retry_attempt: number;
   provider_updated_at: string | null;
   settled_at: string | null;
@@ -317,7 +332,7 @@ export class BillingRepository {
         currency: "COP",
         next_payment_at: nextPaymentAt,
       })
-      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
       .single<BillingProviderSubscriptionRecord>();
 
     if (error || !data) {
@@ -469,7 +484,7 @@ export class BillingRepository {
   async findProviderSubscriptionForIntent(intentId: string): Promise<BillingProviderSubscriptionRecord | null> {
     const { data, error } = await this.supabase
       .from("billing_provider_subscriptions")
-      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
       .eq("billing_intent_id", intentId)
       .eq("provider", "mercado_pago")
       .maybeSingle<BillingProviderSubscriptionRecord>();
@@ -486,7 +501,7 @@ export class BillingRepository {
   ): Promise<BillingProviderSubscriptionRecord | null> {
     const { data, error } = await this.supabase
       .from("billing_provider_subscriptions")
-      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
       .eq("provider", "mercado_pago")
       .eq("provider_subscription_id", providerSubscriptionId)
       .maybeSingle<BillingProviderSubscriptionRecord>();
@@ -504,7 +519,7 @@ export class BillingRepository {
   ): Promise<BillingProviderSubscriptionRecord | null> {
     const { data, error } = await this.supabase
       .from("billing_provider_subscriptions")
-      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
       .eq("subscription_id", subscriptionId)
       .eq("company_id", companyId)
       .eq("provider", "mercado_pago")
@@ -548,7 +563,7 @@ export class BillingRepository {
       .eq("id", providerSubscription.id)
       .eq("company_id", providerSubscription.company_id)
       .eq("provider", "mercado_pago")
-      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
       .single<BillingProviderSubscriptionRecord>();
 
     if (error || !data) {
@@ -577,6 +592,151 @@ export class BillingRepository {
     }
 
     return data.status;
+  }
+
+  async closeActivationAttempt({
+    intent,
+    providerSubscription,
+    providerStatus,
+    providerUpdatedAt,
+    intentStatus,
+    errorCode,
+    errorMessage,
+  }: {
+    intent: BillingIntentRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerStatus: string;
+    providerUpdatedAt: string | null;
+    intentStatus: "failed" | "cancelled" | "expired";
+    errorCode: string;
+    errorMessage: string;
+  }): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc("close_billing_activation_attempt", {
+      target_intent_id: intent.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerStatus,
+      target_provider_updated_at: providerUpdatedAt,
+      target_intent_status: intentStatus,
+      target_error_code: errorCode,
+      target_error_message: errorMessage,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible cerrar de forma segura la activación anterior.");
+    }
+
+    return data === true;
+  }
+
+  async claimActivationAttemptClosure(intentId: string, reason: string): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc("claim_billing_activation_attempt_closure", {
+      target_intent_id: intentId,
+      target_reason: reason,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible reservar el cierre seguro de la activación.");
+    }
+
+    return data === true;
+  }
+
+  async getPaymentReversalContext(paymentId: string): Promise<BillingPaymentReversalContext> {
+    const { data: payment, error: paymentError } = await this.supabase
+      .from("billing_payments")
+      .select("id, company_id, billing_intent_id, invoice_id, provider_payment_id, provider_status, normalized_status, amount_cop, currency, approved_at, refunded_amount_cop, provider_subscription_record_id")
+      .eq("id", paymentId)
+      .single<BillingPaymentRecord & { provider_subscription_record_id: string }>();
+
+    if (paymentError || !payment) {
+      throwDatabaseError(paymentError ?? { message: "No fue posible encontrar el pago revertido." }, "No fue posible encontrar el pago revertido.");
+    }
+
+    const [intentResult, providerResult, subscriptionResult, capacityChangeResult] = await Promise.all([
+      payment.billing_intent_id
+        ? this.supabase.from("billing_intents").select("*").eq("id", payment.billing_intent_id).maybeSingle<BillingIntentRecord>()
+        : Promise.resolve({ data: null, error: null }),
+      this.supabase
+        .from("billing_provider_subscriptions")
+        .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
+        .eq("id", payment.provider_subscription_record_id)
+        .single<BillingProviderSubscriptionRecord>(),
+      this.supabase
+        .from("company_subscriptions")
+        .select("id, company_id, status, plan_type, trial_started_at, trial_ends_at, current_period_started_at, current_period_ends_at, billing_cycle_anchor_at, base_monthly_price_cop, additional_site_monthly_price_cop, included_active_sites, max_active_locations, payment_attention_required, payment_grace_ends_at, last_successful_payment_at")
+        .eq("company_id", payment.company_id)
+        .single<CompanySubscriptionBillingRecord & { last_successful_payment_at: string | null }>(),
+      this.supabase
+        .from("subscription_capacity_changes")
+        .select("*")
+        .eq("company_id", payment.company_id)
+        .eq("status", "scheduled")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<SubscriptionCapacityChangeRecord>(),
+    ]);
+
+    if (intentResult.error || providerResult.error || subscriptionResult.error || capacityChangeResult.error) {
+      throwDatabaseError(
+        intentResult.error ?? providerResult.error ?? subscriptionResult.error ?? capacityChangeResult.error ?? { message: "No fue posible reconstruir el pago revertido." },
+        "No fue posible reconstruir el pago revertido.",
+      );
+    }
+
+    if (!providerResult.data || !subscriptionResult.data) {
+      throw new Error("El pago revertido no tiene una suscripción financiera completa.");
+    }
+
+    return {
+      payment,
+      intent: intentResult.data,
+      providerSubscription: providerResult.data,
+      subscription: subscriptionResult.data,
+      scheduledCapacityChange: capacityChangeResult.data,
+    };
+  }
+
+  async applyPaymentReversal({
+    paymentId,
+    webhookEventId,
+    isCurrentEntitlement,
+    nextSubscriptionStatus,
+    targetCapacity,
+    targetRecurringAmountCop,
+    providerState,
+    occurredAt,
+  }: {
+    paymentId: string;
+    webhookEventId: string;
+    isCurrentEntitlement: boolean;
+    nextSubscriptionStatus: SubscriptionStatus | null;
+    targetCapacity: number | null;
+    targetRecurringAmountCop: number | null;
+    providerState: {
+      providerStatus: string;
+      providerVersion: number | null;
+      providerUpdatedAt: string | null;
+      nextPaymentAt: string | null;
+    } | null;
+    occurredAt: string;
+  }) {
+    const { error } = await this.supabase.rpc("apply_billing_payment_reversal", {
+      target_payment_id: paymentId,
+      target_webhook_event_id: webhookEventId,
+      target_is_current_entitlement: isCurrentEntitlement,
+      target_next_subscription_status: nextSubscriptionStatus,
+      target_capacity: targetCapacity,
+      target_recurring_amount_cop: targetRecurringAmountCop,
+      target_provider_status: providerState?.providerStatus ?? null,
+      target_provider_version: providerState?.providerVersion ?? null,
+      target_provider_updated_at: providerState?.providerUpdatedAt ?? null,
+      target_next_payment_at: providerState?.nextPaymentAt ?? null,
+      target_occurred_at: occurredAt,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible revertir el acceso financiado por el pago.");
+    }
   }
 
   async recordWebhookEvent({
@@ -734,6 +894,8 @@ export class BillingRepository {
     retryAttempt,
     providerUpdatedAt,
     settledAt,
+    periodStartedAt,
+    periodEndsAt,
   }: {
     providerSubscription: BillingProviderSubscriptionRecord;
     providerInvoiceId: string;
@@ -744,6 +906,8 @@ export class BillingRepository {
     retryAttempt: number;
     providerUpdatedAt: string | null;
     settledAt: string | null;
+    periodStartedAt: string | null;
+    periodEndsAt: string | null;
   }): Promise<BillingInvoiceRecord> {
     const { data: existing, error: existingError } = await this.supabase
       .from("billing_invoices")
@@ -777,13 +941,15 @@ export class BillingRepository {
           amount_cop: amountCop,
           currency: "COP",
           debit_at: debitAt,
+          period_started_at: periodStartedAt,
+          period_ends_at: periodEndsAt,
           retry_attempt: retryAttempt,
           provider_updated_at: providerUpdatedAt,
           settled_at: settledAt,
         },
         { onConflict: "provider,provider_invoice_id" },
       )
-      .select("id, company_id, provider_subscription_record_id, provider_invoice_id, provider_status, normalized_status, amount_cop, currency, debit_at, retry_attempt, provider_updated_at, settled_at")
+      .select("id, company_id, provider_subscription_record_id, provider_invoice_id, provider_status, normalized_status, amount_cop, currency, debit_at, period_started_at, period_ends_at, retry_attempt, provider_updated_at, settled_at")
       .single<BillingInvoiceRecord>();
 
     if (error || !data) {
@@ -810,6 +976,7 @@ export class BillingRepository {
     providerCreatedAt,
     providerUpdatedAt,
     approvedAt,
+    refundedAmountCop,
   }: {
     companyId: string;
     billingIntentId: string | null;
@@ -824,6 +991,7 @@ export class BillingRepository {
     providerCreatedAt: string | null;
     providerUpdatedAt: string | null;
     approvedAt: string | null;
+    refundedAmountCop: number;
   }): Promise<BillingPaymentRecord> {
     const { data: existing, error: existingError } = await this.supabase
       .from("billing_payments")
@@ -868,10 +1036,11 @@ export class BillingRepository {
           provider_created_at: providerCreatedAt,
           provider_updated_at: providerUpdatedAt,
           approved_at: approvedAt,
+          refunded_amount_cop: refundedAmountCop,
         },
         { onConflict: "provider,provider_payment_id" },
       )
-      .select("id, company_id, billing_intent_id, provider_payment_id, provider_status, normalized_status, amount_cop, currency, approved_at")
+      .select("id, company_id, billing_intent_id, invoice_id, provider_payment_id, provider_status, normalized_status, amount_cop, currency, approved_at, refunded_amount_cop")
       .single<BillingPaymentRecord>();
 
     if (error || !data) {
@@ -1096,99 +1265,16 @@ export class BillingRepository {
     periodStartedAt: string;
     periodEndsAt: string;
   }) {
-    if (intent.requested_max_active_locations === null) {
-      throw new Error("La intención de activación no tiene capacidad solicitada.");
-    }
+    const { error } = await this.supabase.rpc("complete_billing_activation", {
+      target_intent_id: intent.id,
+      target_payment_id: payment.id,
+      target_webhook_event_id: webhookEventId,
+      target_period_started_at: periodStartedAt,
+      target_period_ends_at: periodEndsAt,
+    });
 
-    const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
-      .from("company_subscriptions")
-      .select("status")
-      .eq("id", intent.subscription_id)
-      .eq("company_id", intent.company_id)
-      .maybeSingle<{ status: SubscriptionStatus }>();
-
-    if (currentSubscriptionError || !currentSubscription) {
-      throwDatabaseError(
-        currentSubscriptionError ?? { message: "No fue posible encontrar la suscripción interna." },
-        "No fue posible encontrar la suscripción interna.",
-      );
-    }
-
-    if (currentSubscription.status !== "trial" && currentSubscription.status !== "active") {
-      throw new Error("La suscripción interna ya no admite esta activación inicial.");
-    }
-
-    if (currentSubscription.status === "trial") {
-      const { data: activatedSubscription, error: subscriptionError } = await this.supabase
-        .from("company_subscriptions")
-        .update({
-          status: "active",
-          plan_type: intent.plan_type_snapshot,
-          max_active_locations: intent.requested_max_active_locations,
-          payment_method_status: "configured",
-          current_period_started_at: periodStartedAt,
-          current_period_ends_at: periodEndsAt,
-          billing_cycle_anchor_at: periodStartedAt,
-          payment_attention_required: false,
-          payment_grace_ends_at: null,
-          last_successful_payment_at: payment.approved_at ?? periodStartedAt,
-        })
-        .eq("id", intent.subscription_id)
-        .eq("company_id", intent.company_id)
-        .eq("status", "trial")
-        .select("id")
-        .maybeSingle<{ id: string }>();
-
-      if (subscriptionError) {
-        throwDatabaseError(subscriptionError, "No fue posible activar la suscripción interna.");
-      }
-
-      if (!activatedSubscription) {
-        const latestStatus = await this.getSubscriptionStatus(intent.subscription_id, intent.company_id);
-
-        if (latestStatus !== "active") {
-          throw new Error("La suscripción interna cambió de estado antes de completar la activación.");
-        }
-      }
-    }
-
-    const { error: intentError } = await this.supabase
-      .from("billing_intents")
-      .update({
-        status: "succeeded",
-        completed_at: payment.approved_at ?? new Date().toISOString(),
-        last_error_code: null,
-        last_error_message: null,
-      })
-      .eq("id", intent.id);
-
-    if (intentError) {
-      throwDatabaseError(intentError, "No fue posible completar la intención de pago.");
-    }
-
-    const { error: historyError } = await this.supabase.from("subscription_status_history").upsert(
-      {
-        company_id: intent.company_id,
-        subscription_id: intent.subscription_id,
-        from_status: "trial",
-        to_status: "active",
-        reason: "initial_subscription_payment_approved",
-        source: "webhook",
-        billing_intent_id: intent.id,
-        billing_payment_id: payment.id,
-        webhook_event_id: webhookEventId,
-        deduplication_key: `mercado_pago_payment_approved:${payment.provider_payment_id}`,
-        metadata: {
-          provider: "mercado_pago",
-          providerPaymentId: payment.provider_payment_id,
-        },
-        occurred_at: payment.approved_at ?? new Date().toISOString(),
-      },
-      { onConflict: "deduplication_key", ignoreDuplicates: true },
-    );
-
-    if (historyError) {
-      throwDatabaseError(historyError, "No fue posible registrar el historial de la suscripción.");
+    if (error) {
+      throwDatabaseError(error, "No fue posible activar la suscripción de forma transaccional.");
     }
   }
 
@@ -1285,6 +1371,23 @@ export class BillingRepository {
 
     if (error || !data) {
       throwDatabaseError(error ?? { message: "No fue posible programar la reducción de capacidad." }, "No fue posible programar la reducción de capacidad.");
+    }
+
+    return data;
+  }
+
+  async findScheduledCapacityChange(companyId: string): Promise<SubscriptionCapacityChangeRecord | null> {
+    const { data, error } = await this.supabase
+      .from("subscription_capacity_changes")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("status", "scheduled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<SubscriptionCapacityChangeRecord>();
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible consultar el cambio de capacidad programado.");
     }
 
     return data;

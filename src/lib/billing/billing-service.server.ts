@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import {
   getAccountCapabilities,
   getSubscriptionViewState,
@@ -7,6 +9,7 @@ import {
   normalizeSubscriptionStatus,
   type AccountCapabilities,
   type PlanType,
+  type SubscriptionStatus,
   type SubscriptionViewState,
 } from "@/lib/billing";
 import {
@@ -16,6 +19,14 @@ import {
   type CapacityPriceQuote,
   type UpgradeProrationQuote,
 } from "@/lib/billing/pricing";
+import {
+  assertNoScheduledDowngrade,
+  decideLateApprovedResolution,
+  getUpgradeReversalCapacity,
+  isCurrentPaymentEntitlement,
+  isPaymentReversal,
+  isUpgradePaymentHistorical,
+} from "@/lib/billing/financial-policy";
 import type {
   BillingProvider,
   ProviderAuthorizedPayment,
@@ -140,6 +151,10 @@ function getPendingPaymentExpiry(now = new Date()) {
   return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
 }
 
+function getActivationRetryExpiry(now = new Date()) {
+  return new Date(now.getTime() + 11 * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function getProcessingExpiry(now = new Date()) {
   return new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
 }
@@ -169,6 +184,10 @@ function normalizeProviderPaymentStatus(providerStatus: string): BillingPaymentS
     default:
       return "unknown";
   }
+}
+
+function normalizeProviderPayment(payment: ProviderPayment): BillingPaymentStatus {
+  return payment.refundedAmountCop > 0 ? "refunded" : normalizeProviderPaymentStatus(payment.providerStatus);
 }
 
 function normalizeProviderInvoiceStatus(
@@ -242,6 +261,15 @@ function addOneCalendarMonth(value: string) {
   }
 
   return date.toISOString();
+}
+
+function getRefundIdempotencyKey(providerPaymentId: string, reason: string) {
+  return createHash("sha256").update(`quimly:${providerPaymentId}:${reason}`).digest("hex");
+}
+
+function isCanceledProviderStatus(status: string) {
+  const normalized = status.trim().toLowerCase();
+  return normalized === "canceled" || normalized === "cancelled";
 }
 
 export class BillingService {
@@ -349,17 +377,20 @@ export class BillingService {
     companyId,
     requestedMaxActiveLocations,
     requestedBy,
+    provider,
     now = new Date(),
   }: {
     companyId: string;
     requestedMaxActiveLocations: number;
     requestedBy: string | null;
+    provider: BillingProvider;
     now?: Date;
   }): Promise<BillingIntentRecord> {
     const { intent } = await this.createInitialActivationIntent({
       companyId,
       requestedMaxActiveLocations,
       requestedBy,
+      provider,
       now,
     });
 
@@ -370,13 +401,16 @@ export class BillingService {
     companyId,
     requestedMaxActiveLocations,
     requestedBy,
+    provider,
     now = new Date(),
   }: {
     companyId: string;
     requestedMaxActiveLocations: number;
     requestedBy: string | null;
+    provider: BillingProvider;
     now?: Date;
   }): Promise<InitialActivationIntent> {
+    await this.closeExpiredActivationAttempt(companyId, provider, now);
     await this.ensureNoOpenIntent(companyId);
 
     const preparation = await this.prepareActivation({ companyId, requestedMaxActiveLocations });
@@ -480,10 +514,12 @@ export class BillingService {
   async processInitialActivationPayment({
     payment,
     webhookEventId,
+    provider,
     invoiceId = null,
   }: {
     payment: ProviderPayment;
     webhookEventId: string;
+    provider: BillingProvider;
     invoiceId?: string | null;
   }): Promise<InitialPaymentProcessingResult> {
     if (!payment.externalReference) {
@@ -510,7 +546,7 @@ export class BillingService {
       throw new Error("El pago recibido no está en COP.");
     }
 
-    const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
+    const normalizedStatus = normalizeProviderPayment(payment);
     const storedPayment = await this.repository.upsertPayment({
       companyId: intent.company_id,
       billingIntentId: intent.id,
@@ -525,50 +561,53 @@ export class BillingService {
       providerCreatedAt: payment.providerCreatedAt,
       providerUpdatedAt: payment.providerUpdatedAt,
       approvedAt: payment.approvedAt,
+      refundedAmountCop: payment.refundedAmountCop,
     });
 
     if (normalizedStatus !== "approved") {
       if (normalizedStatus === "pending" || normalizedStatus === "unknown") {
-        await this.repository.markIntentAwaitingPayment(intent.id, getPendingPaymentExpiry());
-      } else if (normalizedStatus === "cancelled" || normalizedStatus === "refunded") {
-        await this.repository.markIntentCancelled(
-          intent.id,
-          "activation_payment_cancelled",
-          "Mercado Pago canceló el pago de activación.",
-        );
+        await this.repository.markIntentAwaitingPayment(intent.id, getActivationRetryExpiry());
       } else {
-        await this.repository.markIntentFailed(
+        const closureClaimed = await this.repository.claimActivationAttemptClosure(
           intent.id,
-          "activation_payment_failed",
-          "Mercado Pago no aprobó el pago de activación.",
+          `payment_${normalizedStatus}`,
         );
+
+        if (!closureClaimed) {
+          return {
+            handled: true,
+            activationApplied: false,
+            companyId: intent.company_id,
+            subscriptionId: intent.subscription_id,
+            providerUpdatedAt: payment.providerUpdatedAt,
+          };
+        }
+
+        const providerState = providerSubscription.ended_at
+          ? await provider.getSubscription(providerSubscription.provider_subscription_id)
+          : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+
+        if (!isCanceledProviderStatus(providerState.providerStatus)) {
+          throw new Error("Mercado Pago no confirmó la cancelación del preapproval rechazado.");
+        }
+
+        await this.repository.closeActivationAttempt({
+          intent,
+          providerSubscription,
+          providerStatus: providerState.providerStatus,
+          providerUpdatedAt: providerState.providerUpdatedAt,
+          intentStatus: normalizedStatus === "cancelled" || normalizedStatus === "refunded" ? "cancelled" : "failed",
+          errorCode:
+            normalizedStatus === "cancelled" || normalizedStatus === "refunded"
+              ? "activation_payment_cancelled"
+              : "activation_payment_failed",
+          errorMessage:
+            normalizedStatus === "cancelled" || normalizedStatus === "refunded"
+              ? "Mercado Pago canceló o revirtió el pago de activación."
+              : "Mercado Pago rechazó el pago de activación y el preapproval fue cancelado.",
+        });
       }
 
-      return {
-        handled: true,
-        activationApplied: false,
-        companyId: intent.company_id,
-        subscriptionId: intent.subscription_id,
-        providerUpdatedAt: payment.providerUpdatedAt,
-      };
-    }
-
-    if (!isOpenBillingIntent(intent)) {
-      if (intent.status === "succeeded") {
-        return {
-          handled: true,
-          activationApplied: false,
-          companyId: intent.company_id,
-          subscriptionId: intent.subscription_id,
-          providerUpdatedAt: payment.providerUpdatedAt,
-        };
-      }
-
-      await this.repository.markIntentCompensationRequired(
-        intent.id,
-        "Mercado Pago aprobó un pago después de que la activación dejó de estar vigente.",
-        "late_approved_activation_payment",
-      );
       return {
         handled: true,
         activationApplied: false,
@@ -582,13 +621,17 @@ export class BillingService {
       intent.subscription_id,
       intent.company_id,
     );
+    const amountMatches = intent.expected_immediate_amount_cop === payment.amountCop;
+    const closureRequested = intent.metadata.activationClosureRequested === true;
+    const lateResolution = decideLateApprovedResolution({
+      intentType: intent.intent_type,
+      intentStatus: intent.status,
+      subscriptionStatus,
+      providerSubscriptionEnded: Boolean(providerSubscription.ended_at),
+      stateStillMatches: subscriptionStatus === "trial" && amountMatches && !closureRequested,
+    });
 
-    if (subscriptionStatus !== "trial") {
-      await this.repository.markIntentCompensationRequired(
-        intent.id,
-        "La cuenta cambió de estado antes de aplicar el pago de activación.",
-        "activation_subscription_state_changed",
-      );
+    if (lateResolution === "already_applied") {
       return {
         handled: true,
         activationApplied: false,
@@ -598,7 +641,38 @@ export class BillingService {
       };
     }
 
-    if (intent.expected_immediate_amount_cop !== payment.amountCop) {
+    if (lateResolution === "refund") {
+      await provider.refundPayment(
+        payment.providerPaymentId,
+        getRefundIdempotencyKey(payment.providerPaymentId, "late-activation"),
+      );
+
+      if (!providerSubscription.ended_at) {
+        const providerState = await provider.updateSubscriptionStatus(
+          providerSubscription.provider_subscription_id,
+          "canceled",
+        );
+        await this.repository.closeActivationAttempt({
+          intent,
+          providerSubscription,
+          providerStatus: providerState.providerStatus,
+          providerUpdatedAt: providerState.providerUpdatedAt,
+          intentStatus: "cancelled",
+          errorCode: "late_approved_activation_refunded",
+          errorMessage: "El pago tardío no podía aplicarse y fue devuelto al pagador.",
+        });
+      }
+
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    if (!amountMatches) {
       await this.repository.markIntentCompensationRequired(
         intent.id,
         "El monto aprobado no coincide con el valor esperado para la activación.",
@@ -613,7 +687,9 @@ export class BillingService {
       };
     }
 
-    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry());
+    if (isOpenBillingIntent(intent)) {
+      await this.repository.markIntentProcessing(intent.id, getProcessingExpiry());
+    }
     const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? new Date().toISOString();
     await this.repository.activateInitialSubscription({
       intent,
@@ -641,11 +717,25 @@ export class BillingService {
     webhookEventId: string;
     provider: BillingProvider;
   }): Promise<InitialPaymentProcessingResult> {
+    const intent = payment.externalReference
+      ? await this.repository.findIntentByExternalReference(payment.externalReference)
+      : null;
+
+    if (isPaymentReversal(payment.providerStatus, payment.refundedAmountCop)) {
+      const result = await this.processPaymentReversal({
+        intent,
+        payment,
+        provider,
+        webhookEventId,
+        invoiceId: null,
+      });
+
+      return result.handled ? { ...result, activationApplied: false } : result;
+    }
+
     if (!payment.externalReference) {
       return { handled: false, reason: "El pago no contiene una referencia interna." };
     }
-
-    const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
 
     if (intent?.intent_type === "activation") {
       const subscriptionStatus = await this.repository.getSubscriptionStatus(
@@ -654,7 +744,7 @@ export class BillingService {
       );
 
       if (subscriptionStatus === "trial" || intent.status !== "succeeded") {
-        return this.processInitialActivationPayment({ payment, webhookEventId });
+        return this.processInitialActivationPayment({ payment, webhookEventId, provider });
       }
     }
 
@@ -678,6 +768,7 @@ export class BillingService {
       webhookEventId,
       invoiceId: null,
       debitAt: payment.approvedAt ?? payment.providerCreatedAt,
+      expectedAmountCop: null,
     });
 
     if (!result.handled) {
@@ -719,7 +810,7 @@ export class BillingService {
       throw new Error("El pago del upgrade no está en COP.");
     }
 
-    const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
+    const normalizedStatus = normalizeProviderPayment(payment);
     const storedPayment = await this.repository.upsertPayment({
       companyId: intent.company_id,
       billingIntentId: intent.id,
@@ -734,6 +825,7 @@ export class BillingService {
       providerCreatedAt: payment.providerCreatedAt,
       providerUpdatedAt: payment.providerUpdatedAt,
       approvedAt: payment.approvedAt,
+      refundedAmountCop: payment.refundedAmountCop,
     });
 
     if (normalizedStatus !== "approved") {
@@ -764,10 +856,14 @@ export class BillingService {
 
     if (!isOpenBillingIntent(intent)) {
       if (intent.status !== "succeeded") {
-        await this.repository.markIntentCompensationRequired(
+        await provider.refundPayment(
+          payment.providerPaymentId,
+          getRefundIdempotencyKey(payment.providerPaymentId, "late-upgrade"),
+        );
+        await this.repository.markIntentCancelled(
           intent.id,
-          "Mercado Pago aprobó un upgrade después de que la operación dejó de estar vigente.",
-          "late_approved_upgrade_payment",
+          "late_approved_upgrade_refunded",
+          "El upgrade fue aprobado fuera de vigencia y el pago fue devuelto.",
         );
       }
 
@@ -853,10 +949,12 @@ export class BillingService {
     authorizedPayment,
     payment,
     webhookEventId,
+    provider,
   }: {
     authorizedPayment: ProviderAuthorizedPayment;
     payment: ProviderPayment | null;
     webhookEventId: string;
+    provider: BillingProvider;
   }): Promise<BillingWebhookProcessingResult> {
     const providerSubscription = await this.repository.findProviderSubscriptionByProviderId(
       authorizedPayment.providerSubscriptionId,
@@ -877,7 +975,8 @@ export class BillingService {
       throw new Error("La factura recurrente no está en COP.");
     }
 
-    const normalizedPaymentStatus = payment ? normalizeProviderPaymentStatus(payment.providerStatus) : null;
+    const normalizedPaymentStatus = payment ? normalizeProviderPayment(payment) : null;
+    const invoicePeriodStartedAt = payment?.approvedAt ?? authorizedPayment.debitAt;
     const invoice = await this.repository.upsertInvoice({
       providerSubscription,
       providerInvoiceId: authorizedPayment.providerInvoiceId,
@@ -894,6 +993,10 @@ export class BillingService {
         normalizedPaymentStatus === "approved"
           ? payment?.approvedAt ?? authorizedPayment.providerUpdatedAt
           : null,
+      periodStartedAt: invoicePeriodStartedAt,
+      periodEndsAt: invoicePeriodStartedAt
+        ? getPeriodEnd(invoicePeriodStartedAt, providerSubscription.next_payment_at)
+        : null,
     });
 
     if (!payment) {
@@ -912,6 +1015,18 @@ export class BillingService {
       throw new Error("La factura recurrente no corresponde al pago consultado.");
     }
 
+    if (isPaymentReversal(payment.providerStatus, payment.refundedAmountCop)) {
+      return this.processPaymentReversal({
+        intent: payment.externalReference
+          ? await this.repository.findIntentByExternalReference(payment.externalReference)
+          : null,
+        payment,
+        provider,
+        webhookEventId,
+        invoiceId: invoice.id,
+      });
+    }
+
     const subscriptionStatus = await this.repository.getSubscriptionStatus(
       providerSubscription.subscription_id,
       providerSubscription.company_id,
@@ -921,6 +1036,7 @@ export class BillingService {
       const activationResult = await this.processInitialActivationPayment({
         payment,
         webhookEventId,
+        provider,
         invoiceId: invoice.id,
       });
 
@@ -935,6 +1051,7 @@ export class BillingService {
       webhookEventId,
       invoiceId: invoice.id,
       debitAt: authorizedPayment.debitAt,
+      expectedAmountCop: authorizedPayment.amountCop,
     });
   }
 
@@ -993,28 +1110,265 @@ export class BillingService {
     };
   }
 
+  private async processPaymentReversal({
+    intent,
+    payment,
+    provider,
+    webhookEventId,
+    invoiceId,
+  }: {
+    intent: BillingIntentRecord | null;
+    payment: ProviderPayment;
+    provider: BillingProvider;
+    webhookEventId: string;
+    invoiceId: string | null;
+  }): Promise<BillingWebhookProcessingResult> {
+    const providerSubscription = payment.providerSubscriptionId
+      ? await this.repository.findProviderSubscriptionByProviderId(payment.providerSubscriptionId)
+      : intent
+        ? await this.repository.findProviderSubscriptionForIntent(intent.id)
+        : null;
+
+    if (!providerSubscription) {
+      return { handled: false, reason: "El pago revertido no corresponde a una suscripción externa conocida." };
+    }
+
+    const billingIntentId =
+      intent?.intent_type === "upgrade" || (intent?.intent_type === "activation" && intent.status !== "succeeded")
+        ? intent.id
+        : null;
+    const normalizedStatus: BillingPaymentStatus =
+      payment.providerStatus === "charged_back" ? "charged_back" : "refunded";
+    const storedPayment = await this.repository.upsertPayment({
+      companyId: providerSubscription.company_id,
+      billingIntentId,
+      invoiceId,
+      providerSubscription,
+      providerPaymentId: payment.providerPaymentId,
+      providerStatus: payment.providerStatus,
+      providerStatusDetail: payment.providerStatusDetail,
+      normalizedStatus,
+      amountCop: payment.amountCop,
+      paymentMethodType: payment.paymentMethodType,
+      providerCreatedAt: payment.providerCreatedAt,
+      providerUpdatedAt: payment.providerUpdatedAt,
+      approvedAt: payment.approvedAt,
+      refundedAmountCop:
+        normalizedStatus === "refunded" && payment.refundedAmountCop === 0
+          ? payment.amountCop
+          : payment.refundedAmountCop,
+    });
+    const context = await this.repository.getPaymentReversalContext(storedPayment.id);
+    const reversalPaymentId = context.intent?.metadata.reversalPaymentId;
+
+    if (
+      context.intent?.intent_type === "upgrade" &&
+      typeof reversalPaymentId === "string" &&
+      reversalPaymentId === payment.providerPaymentId
+    ) {
+      return {
+        handled: true,
+        companyId: providerSubscription.company_id,
+        subscriptionId: providerSubscription.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    const isPartialRefund =
+      normalizedStatus === "refunded" &&
+      context.payment.refunded_amount_cop > 0 &&
+      context.payment.refunded_amount_cop < context.payment.amount_cop;
+
+    if (context.intent?.intent_type === "upgrade" && context.intent.status !== "succeeded") {
+      await this.repository.applyPaymentReversal({
+        paymentId: storedPayment.id,
+        webhookEventId,
+        isCurrentEntitlement: false,
+        nextSubscriptionStatus: null,
+        targetCapacity: null,
+        targetRecurringAmountCop: null,
+        providerState: null,
+        occurredAt: payment.providerUpdatedAt ?? new Date().toISOString(),
+      });
+
+      return {
+        handled: true,
+        companyId: providerSubscription.company_id,
+        subscriptionId: providerSubscription.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    if (context.intent?.intent_type === "activation" && context.intent.status !== "succeeded") {
+      const closureClaimed = await this.repository.claimActivationAttemptClosure(
+        context.intent.id,
+        "payment_reversed",
+      );
+
+      if (!closureClaimed) {
+        return {
+          handled: true,
+          companyId: providerSubscription.company_id,
+          subscriptionId: providerSubscription.subscription_id,
+          providerUpdatedAt: payment.providerUpdatedAt,
+        };
+      }
+
+      const providerState = providerSubscription.ended_at
+        ? await provider.getSubscription(providerSubscription.provider_subscription_id)
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+
+      await this.repository.closeActivationAttempt({
+        intent: context.intent,
+        providerSubscription,
+        providerStatus: providerState.providerStatus,
+        providerUpdatedAt: providerState.providerUpdatedAt,
+        intentStatus: "cancelled",
+        errorCode: "activation_payment_reversed",
+        errorMessage: "El pago de activación fue revertido antes de aplicar el acceso.",
+      });
+
+      return {
+        handled: true,
+        companyId: providerSubscription.company_id,
+        subscriptionId: providerSubscription.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    const occurredAt = payment.providerUpdatedAt ?? new Date().toISOString();
+
+    if (context.intent?.intent_type === "upgrade") {
+      const historical = isUpgradePaymentHistorical({
+        currentPeriodStartedAt: context.subscription.current_period_started_at,
+        upgradePeriodEndsAt: context.intent.period_ends_at,
+      });
+
+      if (historical && !isPartialRefund) {
+        await this.repository.applyPaymentReversal({
+          paymentId: storedPayment.id,
+          webhookEventId,
+          isCurrentEntitlement: false,
+          nextSubscriptionStatus: null,
+          targetCapacity: null,
+          targetRecurringAmountCop: null,
+          providerState: null,
+          occurredAt,
+        });
+      } else if (isPartialRefund) {
+        await this.repository.applyPaymentReversal({
+          paymentId: storedPayment.id,
+          webhookEventId,
+          isCurrentEntitlement: true,
+          nextSubscriptionStatus: "payment_issue",
+          targetCapacity: null,
+          targetRecurringAmountCop: null,
+          providerState: null,
+          occurredAt,
+        });
+      } else {
+        if (
+          context.intent.previous_max_active_locations === null ||
+          context.intent.requested_max_active_locations === null
+        ) {
+          throw new Error("El upgrade revertido no contiene el cambio de capacidad original.");
+        }
+
+        const targetCapacity = getUpgradeReversalCapacity({
+          currentCapacity: context.subscription.max_active_locations,
+          previousCapacity: context.intent.previous_max_active_locations,
+          requestedCapacity: context.intent.requested_max_active_locations,
+          includedCapacity: context.subscription.included_active_sites,
+        });
+        const targetQuote = this.quoteCapacity(context.subscription, targetCapacity);
+        const providerState = await provider.updateSubscriptionAmount(
+          providerSubscription.provider_subscription_id,
+          targetQuote.monthlyTotalCop,
+        );
+
+        if (providerState.recurringAmountCop !== targetQuote.monthlyTotalCop || providerState.currency !== "COP") {
+          throw new Error("Mercado Pago no confirmó el monto recurrente después de revertir el upgrade.");
+        }
+
+        await this.repository.applyPaymentReversal({
+          paymentId: storedPayment.id,
+          webhookEventId,
+          isCurrentEntitlement: true,
+          nextSubscriptionStatus: null,
+          targetCapacity,
+          targetRecurringAmountCop: targetQuote.monthlyTotalCop,
+          providerState,
+          occurredAt,
+        });
+      }
+    } else {
+      const currentEntitlement = isCurrentPaymentEntitlement({
+        paymentApprovedAt: context.payment.approved_at,
+        currentPeriodStartedAt: context.subscription.current_period_started_at,
+        lastSuccessfulPaymentAt: context.subscription.last_successful_payment_at,
+      });
+      let providerState: ProviderSubscription | null = null;
+      let nextSubscriptionStatus: SubscriptionStatus | null = null;
+
+      if (currentEntitlement) {
+        const isInitialActivation = context.intent?.intent_type === "activation";
+        const targetProviderStatus = normalizedStatus === "refunded" && isInitialActivation ? "canceled" : "paused";
+
+        providerState = providerSubscription.ended_at
+          ? await provider.getSubscription(providerSubscription.provider_subscription_id)
+          : await provider.updateSubscriptionStatus(
+              providerSubscription.provider_subscription_id,
+              targetProviderStatus,
+            );
+        nextSubscriptionStatus = normalizedStatus === "refunded" && isInitialActivation ? "cancelled" : "payment_issue";
+      }
+
+      await this.repository.applyPaymentReversal({
+        paymentId: storedPayment.id,
+        webhookEventId,
+        isCurrentEntitlement: currentEntitlement,
+        nextSubscriptionStatus,
+        targetCapacity: null,
+        targetRecurringAmountCop: null,
+        providerState,
+        occurredAt,
+      });
+    }
+
+    return {
+      handled: true,
+      companyId: providerSubscription.company_id,
+      subscriptionId: providerSubscription.subscription_id,
+      providerUpdatedAt: payment.providerUpdatedAt,
+    };
+  }
+
   private async processRecurringProviderPayment({
     payment,
     providerSubscription,
     webhookEventId,
     invoiceId,
     debitAt,
+    expectedAmountCop,
   }: {
     payment: ProviderPayment;
     providerSubscription: BillingProviderSubscriptionRecord;
     webhookEventId: string;
     invoiceId: string | null;
     debitAt: string | null;
+    expectedAmountCop: number | null;
   }): Promise<BillingWebhookProcessingResult> {
     if (payment.currency !== "COP") {
       throw new Error("El pago recurrente no está en COP.");
     }
 
-    if (payment.amountCop !== providerSubscription.recurring_amount_cop) {
+    const expectedRecurringAmount = expectedAmountCop ?? providerSubscription.recurring_amount_cop;
+
+    if (payment.amountCop !== expectedRecurringAmount) {
       throw new Error("El monto del pago recurrente no coincide con el valor de la suscripción.");
     }
 
-    const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
+    const normalizedStatus = normalizeProviderPayment(payment);
     const storedPayment = await this.repository.upsertPayment({
       companyId: providerSubscription.company_id,
       billingIntentId: null,
@@ -1029,6 +1383,7 @@ export class BillingService {
       providerCreatedAt: payment.providerCreatedAt,
       providerUpdatedAt: payment.providerUpdatedAt,
       approvedAt: payment.approvedAt,
+      refundedAmountCop: payment.refundedAmountCop,
     });
     const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? debitAt ?? new Date().toISOString();
 
@@ -1059,6 +1414,9 @@ export class BillingService {
     now?: Date;
   }): Promise<UpgradePreparation> {
     ensureRequestedCapacity(requestedMaxActiveLocations);
+
+    const scheduledDowngrade = await this.repository.findScheduledCapacityChange(companyId);
+    assertNoScheduledDowngrade(Boolean(scheduledDowngrade));
 
     const account = await this.getAccountSnapshot(companyId);
 
@@ -1161,19 +1519,25 @@ export class BillingService {
     };
   }
 
+  getUpgradeCheckoutExpiresAt(now = new Date()) {
+    return getAwaitingCustomerExpiry(now);
+  }
+
   async markUpgradeCheckoutCreated({
     intent,
     checkoutUrl,
     providerCheckoutId,
+    expiresAt,
   }: {
     intent: BillingIntentRecord;
     checkoutUrl: string;
     providerCheckoutId: string;
+    expiresAt: string;
   }) {
     await this.repository.markIntentAwaitingCustomer(
       intent.id,
       checkoutUrl,
-      getAwaitingCustomerExpiry(),
+      expiresAt,
       {
         ...intent.metadata,
         providerCheckoutId,
@@ -1352,6 +1716,59 @@ export class BillingService {
     }
 
     return { intent, capacityChange };
+  }
+
+  private async closeExpiredActivationAttempt(
+    companyId: string,
+    provider: BillingProvider,
+    now: Date,
+  ) {
+    const openIntent = await this.repository.findOpenIntent(companyId);
+
+    if (
+      !openIntent ||
+      openIntent.intent_type !== "activation" ||
+      !openIntent.expires_at ||
+      new Date(openIntent.expires_at).getTime() > now.getTime()
+    ) {
+      return;
+    }
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForIntent(openIntent.id);
+
+    if (!providerSubscription) {
+      return;
+    }
+
+    const closureClaimed = await this.repository.claimActivationAttemptClosure(
+      openIntent.id,
+      "checkout_expired",
+    );
+
+    if (!closureClaimed) {
+      return;
+    }
+
+    const currentProviderState = await provider.getSubscription(
+      providerSubscription.provider_subscription_id,
+    );
+    const terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
+      ? currentProviderState
+      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+
+    if (!isCanceledProviderStatus(terminalProviderState.providerStatus)) {
+      throw new Error("Mercado Pago no confirmó la cancelación del checkout de activación vencido.");
+    }
+
+    await this.repository.closeActivationAttempt({
+      intent: openIntent,
+      providerSubscription,
+      providerStatus: terminalProviderState.providerStatus,
+      providerUpdatedAt: terminalProviderState.providerUpdatedAt,
+      intentStatus: "expired",
+      errorCode: "activation_checkout_expired_and_cancelled",
+      errorMessage: "El checkout venció y el preapproval fue cancelado en Mercado Pago.",
+    });
   }
 
   private async ensureNoOpenIntent(companyId: string) {

@@ -34,6 +34,7 @@ export type ProviderOneTimeCheckoutRequest = {
   description: string;
   amountCop: number;
   returnUrl: string;
+  expiresAt: string;
 };
 
 export type ProviderOneTimeCheckout = {
@@ -48,12 +49,20 @@ export type ProviderPayment = {
   externalReference: string | null;
   providerSubscriptionId: string | null;
   amountCop: number;
+  refundedAmountCop: number;
   currency: string;
   paymentMethodType: string | null;
   providerCreatedAt: string | null;
   providerUpdatedAt: string | null;
   approvedAt: string | null;
   liveMode: boolean | null;
+};
+
+export type ProviderRefund = {
+  providerRefundId: string;
+  providerPaymentId: string;
+  amountCop: number;
+  providerStatus: string;
 };
 
 export type ProviderAuthorizedPayment = {
@@ -89,6 +98,11 @@ export type BillingProvider = {
   createSubscriptionCheckout(request: ProviderSubscriptionCheckoutRequest): Promise<ProviderSubscriptionCheckout>;
   createOneTimeCheckout(request: ProviderOneTimeCheckoutRequest): Promise<ProviderOneTimeCheckout>;
   updateSubscriptionAmount(providerSubscriptionId: string, recurringAmountCop: number): Promise<ProviderSubscription>;
+  updateSubscriptionStatus(
+    providerSubscriptionId: string,
+    status: "paused" | "canceled",
+  ): Promise<ProviderSubscription>;
+  refundPayment(providerPaymentId: string, idempotencyKey: string): Promise<ProviderRefund>;
   getPayment(providerPaymentId: string): Promise<ProviderPayment>;
   getAuthorizedPayment(providerInvoiceId: string): Promise<ProviderAuthorizedPayment>;
   getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;

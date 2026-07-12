@@ -662,12 +662,13 @@ export async function startPlanActivation({
     }
 
     const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
     const { intent, requestedQuote } = await billingService.createInitialActivationIntent({
       companyId: company.id,
       requestedMaxActiveLocations,
       requestedBy: context.profile.userId,
+      provider,
     });
-    const provider = createMercadoPagoBillingProvider();
 
     try {
       const checkout = await provider.createSubscriptionCheckout({
@@ -811,6 +812,7 @@ export async function startPlanUpgrade({
       requestedBy: context.profile.userId,
     });
     const provider = createMercadoPagoBillingProvider();
+    const checkoutExpiresAt = billingService.getUpgradeCheckoutExpiresAt();
 
     try {
       const checkout = await provider.createOneTimeCheckout({
@@ -821,12 +823,14 @@ export async function startPlanUpgrade({
         description: `Ampliación de Quimly a ${requestedQuote.maxActiveLocations} sedes`,
         amountCop: proration.proratedAmountCop,
         returnUrl: new URL("/dashboard?billing=upgrade-processing", getApplicationUrl()).toString(),
+        expiresAt: checkoutExpiresAt,
       });
 
       await billingService.markUpgradeCheckoutCreated({
         intent,
         checkoutUrl: checkout.checkoutUrl,
         providerCheckoutId: checkout.providerCheckoutId,
+        expiresAt: checkoutExpiresAt,
       });
 
       return { checkoutUrl: checkout.checkoutUrl };

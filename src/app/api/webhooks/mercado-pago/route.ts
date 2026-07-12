@@ -235,6 +235,7 @@ export async function POST(request: Request) {
         authorizedPayment,
         payment,
         webhookEventId: recorded.event.id,
+        provider,
       });
       providerStatus = authorizedPayment.providerStatus;
       processedResourceId = authorizedPayment.providerInvoiceId;

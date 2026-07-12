@@ -8,6 +8,7 @@ import type {
   ProviderOneTimeCheckout,
   ProviderOneTimeCheckoutRequest,
   ProviderPayment,
+  ProviderRefund,
   ProviderSubscription,
   ProviderSubscriptionCheckout,
   ProviderSubscriptionCheckoutRequest,
@@ -41,12 +42,20 @@ type MercadoPagoPaymentResponse = {
   external_reference?: string;
   preapproval_id?: string;
   transaction_amount?: number;
+  transaction_amount_refunded?: number;
   currency_id?: string;
   payment_type_id?: string;
   date_created?: string;
   date_last_updated?: string;
   date_approved?: string;
   live_mode?: boolean;
+};
+
+type MercadoPagoRefundResponse = {
+  id?: number | string;
+  payment_id?: number | string;
+  amount?: number | string;
+  status?: string;
 };
 
 type MercadoPagoPreferenceResponse = {
@@ -321,6 +330,16 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       environment,
       payerEmail: request.payerEmail,
     });
+    const expirationDateFrom = new Date();
+    const expirationDateTo = new Date(request.expiresAt);
+
+    if (
+      Number.isNaN(expirationDateTo.getTime()) ||
+      expirationDateTo.getTime() <= expirationDateFrom.getTime()
+    ) {
+      throw new Error("La vigencia del checkout de upgrade no es válida.");
+    }
+
     const response = await requestMercadoPago<MercadoPagoPreferenceResponse>("/checkout/preferences", {
       method: "POST",
       headers: {
@@ -346,6 +365,9 @@ export class MercadoPagoBillingProvider implements BillingProvider {
           failure: request.returnUrl,
         },
         auto_return: "approved",
+        expires: true,
+        expiration_date_from: expirationDateFrom.toISOString(),
+        expiration_date_to: expirationDateTo.toISOString(),
         metadata: {
           billing_intent_id: request.intentId,
           company_id: request.companyId,
@@ -384,6 +406,42 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     return this.mapSubscription(response);
   }
 
+  async updateSubscriptionStatus(
+    providerSubscriptionId: string,
+    status: "paused" | "canceled",
+  ): Promise<ProviderSubscription> {
+    const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>(
+      `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ status }),
+      },
+    );
+
+    return this.mapSubscription(response);
+  }
+
+  async refundPayment(providerPaymentId: string, idempotencyKey: string): Promise<ProviderRefund> {
+    const response = await requestMercadoPago<MercadoPagoRefundResponse>(
+      `/v1/payments/${encodeURIComponent(providerPaymentId)}/refunds`,
+      {
+        method: "POST",
+        headers: {
+          "X-Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({}),
+      },
+    );
+
+    return {
+      providerRefundId: getRequiredString(response.id, "el identificador del reembolso"),
+      providerPaymentId:
+        response.payment_id === undefined ? providerPaymentId : getRequiredString(response.payment_id, "el pago reembolsado"),
+      amountCop: getRequiredCopAmount(response.amount, "un monto de reembolso"),
+      providerStatus: response.status?.trim() || "unknown",
+    };
+  }
+
   async getPayment(providerPaymentId: string): Promise<ProviderPayment> {
     const response = await requestMercadoPago<MercadoPagoPaymentResponse>(
       `/v1/payments/${encodeURIComponent(providerPaymentId)}`,
@@ -398,6 +456,12 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       externalReference: response.external_reference ?? null,
       providerSubscriptionId: response.preapproval_id ?? null,
       amountCop,
+      refundedAmountCop:
+        typeof response.transaction_amount_refunded === "number" &&
+        Number.isInteger(response.transaction_amount_refunded) &&
+        response.transaction_amount_refunded >= 0
+          ? response.transaction_amount_refunded
+          : 0,
       currency: response.currency_id?.trim() || "",
       paymentMethodType: response.payment_type_id ?? null,
       providerCreatedAt: toIsoDate(response.date_created),
