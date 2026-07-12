@@ -11,7 +11,12 @@ import {
   normalizePlanType,
   normalizeSubscriptionStatus,
 } from "@/lib/billing";
-import { createBillingService } from "@/lib/billing/billing-service.server";
+import {
+  BillingOperationPendingError,
+  createBillingService,
+  type CapacityChangeQuotePreview,
+  type PendingBillingOperation,
+} from "@/lib/billing/billing-service.server";
 import { createMercadoPagoBillingProvider } from "@/lib/billing/providers/mercado-pago.server";
 import { notificationService } from "@/lib/notifications/notification.service";
 import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
@@ -36,6 +41,7 @@ export type AdminActionState = {
 
 export type StartPlanActivationResult = {
   checkoutUrl?: string;
+  pendingOperation?: PendingBillingOperation;
   error?: string;
 };
 
@@ -43,6 +49,13 @@ export type StartCapacityChangeResult = {
   checkoutUrl?: string;
   effectiveAt?: string;
   success?: string;
+  pendingOperation?: PendingBillingOperation;
+  error?: string;
+};
+
+export type PlanCapacityChangeQuoteResult = {
+  quote?: CapacityChangeQuotePreview;
+  pendingOperation?: PendingBillingOperation;
   error?: string;
 };
 
@@ -697,8 +710,65 @@ export async function startPlanActivation({
       return { error: "No fue posible preparar el pago con Mercado Pago. Inténtalo nuevamente." };
     }
   } catch (error) {
+    if (error instanceof BillingOperationPendingError) {
+      return { pendingOperation: error.pendingOperation };
+    }
+
     logAdminActionError("billing.activation_start_failed", error, { companySlug });
     return { error: "No fue posible iniciar la activación del plan. Inténtalo nuevamente." };
+  }
+}
+
+export async function getPlanCapacityChangeQuote({
+  companySlug,
+  requestedMaxActiveLocations,
+}: {
+  companySlug: string;
+  requestedMaxActiveLocations: number;
+}): Promise<PlanCapacityChangeQuoteResult> {
+  const context = await requireUserContext();
+
+  if (!companySlug || !Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
+    return { error: "La capacidad seleccionada no es válida." };
+  }
+
+  try {
+    const supabase = await getSupabaseRlsClientOrThrow({ operation: "getPlanCapacityChangeQuote" });
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", companySlug)
+      .eq("is_active", true)
+      .maybeSingle<{ id: string }>();
+
+    if (companyError || !company || !canManageCompanySites(context, company.id)) {
+      return { error: "No tienes permisos para consultar el plan de esta empresa." };
+    }
+
+    const billingService = createBillingService();
+    const pendingOperation = await billingService.getPendingOperation(company.id);
+
+    if (pendingOperation) {
+      return { pendingOperation };
+    }
+
+    const account = await billingService.getAccountSnapshot(company.id);
+
+    if (requestedMaxActiveLocations === account.subscription.max_active_locations) {
+      return {};
+    }
+
+    return {
+      quote: await billingService.quoteCapacityChange({
+        companyId: company.id,
+        requestedMaxActiveLocations,
+      }),
+    };
+  } catch (error) {
+    logAdminActionError("billing.capacity_quote_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible calcular el cambio de capacidad.",
+    };
   }
 }
 
@@ -774,6 +844,10 @@ export async function startPlanUpgrade({
       return { error: "No fue posible preparar el pago del aumento. Inténtalo nuevamente." };
     }
   } catch (error) {
+    if (error instanceof BillingOperationPendingError) {
+      return { pendingOperation: error.pendingOperation };
+    }
+
     logAdminActionError("billing.upgrade_start_failed", error, { companySlug });
     return {
       error: error instanceof Error ? error.message : "No fue posible iniciar el aumento de capacidad.",
@@ -822,6 +896,10 @@ export async function schedulePlanDowngrade({
       success: "La reducción quedó programada para tu próxima renovación.",
     };
   } catch (error) {
+    if (error instanceof BillingOperationPendingError) {
+      return { pendingOperation: error.pendingOperation };
+    }
+
     logAdminActionError("billing.downgrade_schedule_failed", error, { companySlug });
     return {
       error: error instanceof Error ? error.message : "No fue posible programar la reducción de capacidad.",

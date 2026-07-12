@@ -91,6 +91,33 @@ export type DowngradePreparation = {
   effectiveAt: string;
 };
 
+export type PendingBillingOperation = {
+  intentType: BillingIntentType;
+  status: "created" | "awaiting_customer" | "awaiting_payment" | "processing";
+  expiresAt: string | null;
+  remainingSeconds: number | null;
+};
+
+export type CapacityChangeQuotePreview = {
+  changeType: "upgrade" | "downgrade";
+  currentMaxActiveLocations: number;
+  requestedMaxActiveLocations: number;
+  currentMonthlyTotalCop: number;
+  requestedMonthlyTotalCop: number;
+  immediateChargeCop: number | null;
+  effectiveAt: string | null;
+};
+
+export class BillingOperationPendingError extends Error {
+  readonly pendingOperation: PendingBillingOperation;
+
+  constructor(pendingOperation: PendingBillingOperation) {
+    super("Ya existe una operación de billing pendiente para esta empresa.");
+    this.name = "BillingOperationPendingError";
+    this.pendingOperation = pendingOperation;
+  }
+}
+
 function ensureRequestedCapacity(requestedMaxActiveLocations: number) {
   if (!Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
     throw new Error("La capacidad solicitada debe ser un número entero mayor o igual a 1.");
@@ -227,6 +254,71 @@ export class BillingService {
   async getAccountSnapshot(companyId: string): Promise<BillingAccountSnapshot> {
     const context = await this.repository.getCompanyBillingContext(companyId);
     return this.buildAccountSnapshot(context);
+  }
+
+  async getPendingOperation(companyId: string, now = new Date()): Promise<PendingBillingOperation | null> {
+    await this.repository.expireStaleOpenIntents(companyId);
+    const openIntent = await this.repository.findOpenIntent(companyId);
+
+    if (!openIntent) {
+      return null;
+    }
+
+    const remainingSeconds = openIntent.expires_at
+      ? Math.max(0, Math.ceil((new Date(openIntent.expires_at).getTime() - now.getTime()) / 1000))
+      : null;
+
+    return {
+      intentType: openIntent.intent_type,
+      status: openIntent.status as PendingBillingOperation["status"],
+      expiresAt: openIntent.expires_at,
+      remainingSeconds,
+    };
+  }
+
+  async quoteCapacityChange({
+    companyId,
+    requestedMaxActiveLocations,
+    now = new Date(),
+  }: {
+    companyId: string;
+    requestedMaxActiveLocations: number;
+    now?: Date;
+  }): Promise<CapacityChangeQuotePreview> {
+    ensureRequestedCapacity(requestedMaxActiveLocations);
+
+    const account = await this.getAccountSnapshot(companyId);
+    const currentMaxActiveLocations = account.subscription.max_active_locations;
+
+    if (requestedMaxActiveLocations === currentMaxActiveLocations) {
+      throw new Error("Selecciona una capacidad diferente a la actual.");
+    }
+
+    if (requestedMaxActiveLocations > currentMaxActiveLocations) {
+      const preparation = await this.prepareUpgrade({ companyId, requestedMaxActiveLocations, now });
+
+      return {
+        changeType: "upgrade",
+        currentMaxActiveLocations,
+        requestedMaxActiveLocations: preparation.requestedQuote.maxActiveLocations,
+        currentMonthlyTotalCop: preparation.proration.previousMonthlyTotalCop,
+        requestedMonthlyTotalCop: preparation.proration.nextMonthlyTotalCop,
+        immediateChargeCop: preparation.proration.proratedAmountCop,
+        effectiveAt: null,
+      };
+    }
+
+    const preparation = await this.prepareDowngrade({ companyId, requestedMaxActiveLocations });
+
+    return {
+      changeType: "downgrade",
+      currentMaxActiveLocations,
+      requestedMaxActiveLocations: preparation.requestedQuote.maxActiveLocations,
+      currentMonthlyTotalCop: preparation.account.currentQuote.monthlyTotalCop,
+      requestedMonthlyTotalCop: preparation.requestedQuote.monthlyTotalCop,
+      immediateChargeCop: null,
+      effectiveAt: preparation.effectiveAt,
+    };
   }
 
   async prepareActivation({
@@ -1263,11 +1355,10 @@ export class BillingService {
   }
 
   private async ensureNoOpenIntent(companyId: string) {
-    await this.repository.expireStaleOpenIntents(companyId);
-    const openIntent = await this.repository.findOpenIntent(companyId);
+    const openIntent = await this.getPendingOperation(companyId);
 
     if (openIntent) {
-      throw new Error("Ya existe una operación de billing pendiente para esta empresa.");
+      throw new BillingOperationPendingError(openIntent);
     }
   }
 

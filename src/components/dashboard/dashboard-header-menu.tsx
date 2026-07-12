@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 
 import {
   getCurrentUserProfileDetails,
+  getPlanCapacityChangeQuote,
   schedulePlanDowngrade,
   sendCurrentUserPhoneChangeOTP,
   startPlanActivation,
@@ -29,7 +30,11 @@ import {
   paymentProviderLabel,
   type PlanPaymentsData,
 } from "@/lib/billing";
-import type { AdminActionState, CurrentUserProfileDetailsState } from "@/app/dashboard/actions";
+import type {
+  AdminActionState,
+  CurrentUserProfileDetailsState,
+  PlanCapacityChangeQuoteResult,
+} from "@/app/dashboard/actions";
 import type { UserProfile } from "@/types/auth";
 
 const menuItemClass =
@@ -604,6 +609,36 @@ function formatDateLabel(value: string | null) {
   }).format(date);
 }
 
+type CapacityChangeQuote = NonNullable<PlanCapacityChangeQuoteResult["quote"]>;
+type PendingPlanOperation = NonNullable<PlanCapacityChangeQuoteResult["pendingOperation"]>;
+
+function formatRemainingTime(remainingSeconds: number | null) {
+  if (remainingSeconds === null) {
+    return "unos minutos";
+  }
+
+  const minutes = Math.max(1, Math.ceil(remainingSeconds / 60));
+  return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
+}
+
+function getPendingOperationMessage(operation: PendingPlanOperation) {
+  const remainingTime = formatRemainingTime(operation.remainingSeconds);
+
+  if (operation.status === "awaiting_payment") {
+    return `Tu pago está pendiente de confirmación. Podrás iniciar un proceso nuevo en ${remainingTime}.`;
+  }
+
+  if (operation.status === "processing") {
+    return `Estamos confirmando tu pago. Podrás iniciar un proceso nuevo en ${remainingTime}.`;
+  }
+
+  if (operation.status === "awaiting_customer") {
+    return `Ya tienes un proceso de pago abierto. Podrás iniciar uno nuevo en ${remainingTime}.`;
+  }
+
+  return `Estamos preparando tu proceso de pago. Podrás iniciar uno nuevo en ${remainingTime}.`;
+}
+
 function PlanPaymentsDrawerContent({
   planPayments,
   onNavigateToSites,
@@ -628,7 +663,11 @@ function PlanPaymentsDrawerContent({
   const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [planChangeSuccess, setPlanChangeSuccess] = useState<string | null>(null);
+  const [capacityQuote, setCapacityQuote] = useState<CapacityChangeQuote | null>(null);
+  const [pendingOperation, setPendingOperation] = useState<PendingPlanOperation | null>(null);
   const [isActivationPending, startActivationTransition] = useTransition();
+  const [isQuotePending, startQuoteTransition] = useTransition();
+  const capacityQuoteRequestRef = useRef(0);
   const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
   const contractedAdditionalSites = Math.max(
@@ -636,13 +675,15 @@ function PlanPaymentsDrawerContent({
     0,
   );
   const scheduledCapacityChange = planPayments.scheduledCapacityChange;
-  const activationMonthlyTotal = calculatePlanMonthlyTotalCop({
-    planType: planPayments.planType,
-    siteCount: selectedSiteCount,
-    baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
-    additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
-    includedActiveSites: planPayments.includedActiveSites,
-  });
+  const activationMonthlyTotal = planChangeMode === "capacity"
+    ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
+    : calculatePlanMonthlyTotalCop({
+        planType: planPayments.planType,
+        siteCount: selectedSiteCount,
+        baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
+        additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
+        includedActiveSites: planPayments.includedActiveSites,
+      });
   const paymentStatusLabel =
     planPayments.paymentMethodStatus === "configured" ? "Configurado" : "Pendiente de configuración";
   const isActivationMode = activationStep !== null;
@@ -653,6 +694,9 @@ function PlanPaymentsDrawerContent({
       : selectedSiteCount < planPayments.maxActiveLocations
         ? "downgrade"
         : "unchanged";
+  const hasCurrentCapacityQuote =
+    capacityQuote?.requestedMaxActiveLocations === selectedSiteCount &&
+    capacityQuote.changeType === capacityChangeDirection;
   const minimumSelectableSiteCount = isCapacityChangeMode
     ? Math.max(planPayments.includedActiveSites, 1)
     : minimumSiteCount;
@@ -663,11 +707,53 @@ function PlanPaymentsDrawerContent({
       document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
+  const requestCapacityQuote = (requestedMaxActiveLocations: number) => {
+    const requestId = capacityQuoteRequestRef.current + 1;
+    capacityQuoteRequestRef.current = requestId;
+    setCapacityQuote(null);
+    setPendingOperation(null);
+    setActivationError(null);
+
+    const companySlug = planPayments.companySlug;
+
+    if (!companySlug) {
+      setActivationError("No fue posible identificar la empresa para consultar el cambio de capacidad.");
+      return;
+    }
+
+    startQuoteTransition(async () => {
+      const result = await getPlanCapacityChangeQuote({
+        companySlug,
+        requestedMaxActiveLocations,
+      });
+
+      if (capacityQuoteRequestRef.current !== requestId) {
+        return;
+      }
+
+      if (result.pendingOperation) {
+        setPendingOperation(result.pendingOperation);
+        return;
+      }
+
+      if (result.quote) {
+        setCapacityQuote(result.quote);
+        return;
+      }
+
+      if (requestedMaxActiveLocations !== planPayments.maxActiveLocations) {
+        setActivationError(result.error ?? "No fue posible calcular el cambio de capacidad.");
+      }
+    });
+  };
   const openActivationFlow = () => {
+    capacityQuoteRequestRef.current += 1;
     setPlanChangeMode("activation");
     setSelectedSiteCount(minimumSiteCount);
     setActivationError(null);
     setPlanChangeSuccess(null);
+    setCapacityQuote(null);
+    setPendingOperation(null);
     setActivationStep("sites");
   };
   const openCapacityChangeFlow = () => {
@@ -675,16 +761,26 @@ function PlanPaymentsDrawerContent({
     setSelectedSiteCount(planPayments.maxActiveLocations);
     setActivationError(null);
     setPlanChangeSuccess(null);
+    setCapacityQuote(null);
+    setPendingOperation(null);
     setActivationStep("sites");
+    requestCapacityQuote(planPayments.maxActiveLocations);
   };
   const openPaymentRecovery = () => {
     setPlanChangeMode("activation");
     setSelectedSiteCount(minimumSiteCount);
     setActivationStep("payment");
   };
-  const increaseSites = () => setSelectedSiteCount((currentValue) => currentValue + 1);
+  const updateSelectedSiteCount = (nextValue: number) => {
+    setSelectedSiteCount(nextValue);
+
+    if (isCapacityChangeMode) {
+      requestCapacityQuote(nextValue);
+    }
+  };
+  const increaseSites = () => updateSelectedSiteCount(selectedSiteCount + 1);
   const decreaseSites = () =>
-    setSelectedSiteCount((currentValue) => Math.max(minimumSelectableSiteCount, currentValue - 1));
+    updateSelectedSiteCount(Math.max(minimumSelectableSiteCount, selectedSiteCount - 1));
   const startMercadoPagoCheckout = () => {
     if (!visualState.isTrial && !isCapacityChangeMode) {
       setActivationError("La recuperación de pagos se implementará en una siguiente fase.");
@@ -698,8 +794,18 @@ function PlanPaymentsDrawerContent({
       return;
     }
 
+    if (isCapacityChangeMode && (!hasCurrentCapacityQuote || pendingOperation)) {
+      setActivationError("Espera a que confirmemos el cambio de capacidad antes de continuar.");
+      return;
+    }
+
     startActivationTransition(async () => {
-      const result: { checkoutUrl?: string; success?: string; error?: string } = visualState.isTrial
+      const result: {
+        checkoutUrl?: string;
+        success?: string;
+        pendingOperation?: PendingPlanOperation;
+        error?: string;
+      } = visualState.isTrial
         ? await startPlanActivation({
             companySlug,
             requestedMaxActiveLocations: selectedSiteCount,
@@ -724,6 +830,12 @@ function PlanPaymentsDrawerContent({
       if (result.success) {
         setActivationError(null);
         setPlanChangeSuccess(result.success);
+        return;
+      }
+
+      if (result.pendingOperation) {
+        setPendingOperation(result.pendingOperation);
+        setActivationError(null);
         return;
       }
 
@@ -834,6 +946,13 @@ function PlanPaymentsDrawerContent({
               </p>
             </div>
 
+            {pendingOperation ? (
+              <div className="grid gap-1 border-l-2 border-[#e3b341] bg-[#fff8e9] px-4 py-3 text-sm leading-6 text-[#6d5218]">
+                <p className="font-semibold text-[#49360b]">Proceso de pago en curso</p>
+                <p>{getPendingOperationMessage(pendingOperation)}</p>
+              </div>
+            ) : null}
+
           {activationStep === "sites" ? (
             <>
               <div>
@@ -867,32 +986,73 @@ function PlanPaymentsDrawerContent({
                 </button>
               </div>
 
-              <div className="rounded-2xl border border-[#9edfc1]/40 bg-[#f3fbf6] px-4 py-3">
-                <p className="text-sm leading-6 text-[#5e6770]">{activationPlanName}</p>
-                <p className="text-2xl font-semibold tracking-[-0.05em] text-[#21734f]">
-                  {formatCopAmount(activationMonthlyTotal)} COP/mes
-                </p>
-                <div className="mt-3 grid gap-1 text-sm leading-6 text-[#315e43]">
-                  <p>{planPayments.includedActiveSites} sede incluida en tu plan</p>
-                  <p>+ {selectedAdditionalSites} sedes adicionales</p>
+              {isCapacityChangeMode ? (
+                hasCurrentCapacityQuote ? (
+                  <div className="grid gap-3 rounded-2xl border border-[#9edfc1]/40 bg-[#f3fbf6] px-4 py-3">
+                    <div className="grid gap-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5e8f70]">Actualmente</p>
+                      <AdminDrawerSummaryRow
+                        label="Sedes"
+                        value={`${capacityQuote.currentMaxActiveLocations} ${capacityQuote.currentMaxActiveLocations === 1 ? "sede" : "sedes"}`}
+                      />
+                      <AdminDrawerSummaryRow
+                        label="Valor mensual"
+                        value={`${formatCopAmount(capacityQuote.currentMonthlyTotalCop)} COP/mes`}
+                      />
+                    </div>
+                    <div className="grid gap-1 border-t border-[#cfe8d8] pt-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#21734f]">Nuevo plan</p>
+                      <AdminDrawerSummaryRow
+                        label="Sedes"
+                        value={`${capacityQuote.requestedMaxActiveLocations} ${capacityQuote.requestedMaxActiveLocations === 1 ? "sede" : "sedes"}`}
+                      />
+                      <AdminDrawerSummaryRow
+                        label="Valor mensual"
+                        value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                      />
+                    </div>
+                    {capacityQuote.changeType === "upgrade" ? (
+                      <div className="grid gap-1 border-t border-[#cfe8d8] pt-3">
+                        <AdminDrawerSummaryRow
+                          label="Cobro inmediato"
+                          value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
+                        />
+                        <AdminDrawerSummaryRow
+                          label="Próximo cobro mensual"
+                          value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-sm leading-6 text-[#315e43]">
+                        El nuevo valor se aplicará el {formatDateLabel(capacityQuote.effectiveAt)}.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[#d9dfe0] bg-[#f7f8f9] px-4 py-3 text-sm leading-6 text-[#5e6770]">
+                    {isQuotePending ? "Calculando el cambio de capacidad..." : "Elige una cantidad diferente para ver el cambio."}
+                  </div>
+                )
+              ) : (
+                <div className="rounded-2xl border border-[#9edfc1]/40 bg-[#f3fbf6] px-4 py-3">
+                  <p className="text-sm leading-6 text-[#5e6770]">{activationPlanName}</p>
+                  <p className="text-2xl font-semibold tracking-[-0.05em] text-[#21734f]">
+                    {formatCopAmount(activationMonthlyTotal)} COP/mes
+                  </p>
+                  <div className="mt-3 grid gap-1 text-sm leading-6 text-[#315e43]">
+                    <p>{planPayments.includedActiveSites} sede incluida en tu plan</p>
+                    <p>+ {selectedAdditionalSites} sedes adicionales</p>
+                  </div>
                 </div>
-              </div>
-
-              {isCapacityChangeMode && capacityChangeDirection === "downgrade" ? (
-                <p className="text-sm leading-6 text-[#5e6770]">
-                  Mantendrás tus {planPayments.maxActiveLocations} cupos hasta el {formatDateLabel(planPayments.nextChargeAt)}.
-                </p>
-              ) : null}
-              {isCapacityChangeMode && capacityChangeDirection === "upgrade" ? (
-                <p className="text-sm leading-6 text-[#5e6770]">
-                  Cobraremos ahora únicamente la diferencia proporcional del periodo actual.
-                </p>
-              ) : null}
+              )}
 
               <AdminDrawerButton
                 variant="primary"
                 onClick={() => setActivationStep("confirm")}
-                disabled={isCapacityChangeMode && capacityChangeDirection === "unchanged"}
+                disabled={
+                  isCapacityChangeMode &&
+                  (capacityChangeDirection === "unchanged" || !hasCurrentCapacityQuote || Boolean(pendingOperation) || isQuotePending)
+                }
               >
                 Continuar
               </AdminDrawerButton>
@@ -900,6 +1060,49 @@ function PlanPaymentsDrawerContent({
           ) : null}
 
           {activationStep === "confirm" ? (
+            isCapacityChangeMode && hasCurrentCapacityQuote ? (
+              <>
+                <AdminDrawerSummaryRow
+                  label="Sedes actuales"
+                  value={`${capacityQuote.currentMaxActiveLocations} ${capacityQuote.currentMaxActiveLocations === 1 ? "sede" : "sedes"}`}
+                />
+                <AdminDrawerSummaryRow
+                  label="Valor mensual actual"
+                  value={`${formatCopAmount(capacityQuote.currentMonthlyTotalCop)} COP/mes`}
+                />
+                <AdminDrawerSummaryRow
+                  label="Nuevas sedes"
+                  value={`${capacityQuote.requestedMaxActiveLocations} ${capacityQuote.requestedMaxActiveLocations === 1 ? "sede" : "sedes"}`}
+                />
+                {capacityQuote.changeType === "upgrade" ? (
+                  <AdminDrawerSummaryRow
+                    label="Cobro inmediato"
+                    value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
+                  />
+                ) : (
+                  <AdminDrawerSummaryRow
+                    label="Fecha efectiva"
+                    value={formatDateLabel(capacityQuote.effectiveAt)}
+                  />
+                )}
+                <AdminDrawerSummaryRow
+                  label="Próximo cobro mensual"
+                  value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                />
+                <AdminDrawerSummaryRow
+                  label="Capacidad"
+                  value={
+                    capacityQuote.changeType === "upgrade"
+                      ? "Se habilita cuando Mercado Pago confirme el pago."
+                      : "Se actualiza en la próxima renovación."
+                  }
+                />
+                <AdminDrawerButton variant="primary" onClick={() => setActivationStep("payment")}>
+                  {capacityQuote.changeType === "downgrade" ? "Programar reducción" : "Continuar con pago"}
+                </AdminDrawerButton>
+                <AdminDrawerButton onClick={() => setActivationStep("sites")}>Volver</AdminDrawerButton>
+              </>
+            ) : (
             <>
               <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
               <AdminDrawerSummaryRow
@@ -929,6 +1132,7 @@ function PlanPaymentsDrawerContent({
               </AdminDrawerButton>
               <AdminDrawerButton onClick={() => setActivationStep("sites")}>Volver</AdminDrawerButton>
             </>
+            )
           ) : null}
 
           {activationStep === "payment" ? (
@@ -945,11 +1149,28 @@ function PlanPaymentsDrawerContent({
                       : "Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago."}
                 </p>
               </div>
-              <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
-              <AdminDrawerSummaryRow
-                label="Valor mensual"
-                value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
-              />
+              {isCapacityChangeMode && hasCurrentCapacityQuote ? (
+                <>
+                  {capacityQuote.changeType === "upgrade" ? (
+                    <AdminDrawerSummaryRow
+                      label="Cobro inmediato"
+                      value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
+                    />
+                  ) : null}
+                  <AdminDrawerSummaryRow
+                    label="Próximo cobro mensual"
+                    value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                  />
+                </>
+              ) : (
+                <>
+                  <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
+                  <AdminDrawerSummaryRow
+                    label="Valor mensual"
+                    value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
+                  />
+                </>
+              )}
               {activationError ? <AdminDrawerFeedback state={{ error: activationError }} /> : null}
               {planChangeSuccess ? <AdminDrawerFeedback state={{ success: planChangeSuccess }} /> : null}
               <AdminDrawerButton
