@@ -102,7 +102,11 @@ function getIntentReference(intentType: BillingIntentType) {
 }
 
 function getIntentExpiry(now: Date) {
-  return new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+  return new Date(now.getTime() + 5 * 60 * 1000).toISOString();
+}
+
+function getAwaitingCustomerExpiry(now = new Date()) {
+  return new Date(now.getTime() + 10 * 60 * 1000).toISOString();
 }
 
 function getPendingPaymentExpiry(now = new Date()) {
@@ -359,7 +363,11 @@ export class BillingService {
         providerUpdatedAt,
         nextPaymentAt,
       });
-      await this.repository.markIntentAwaitingCustomer(intent.id, checkoutUrl);
+      await this.repository.markIntentAwaitingCustomer(
+        intent.id,
+        checkoutUrl,
+        getAwaitingCustomerExpiry(),
+      );
     } catch (error) {
       await this.repository.markIntentCompensationRequired(
         intent.id,
@@ -1070,10 +1078,15 @@ export class BillingService {
     checkoutUrl: string;
     providerCheckoutId: string;
   }) {
-    await this.repository.markIntentAwaitingCustomer(intent.id, checkoutUrl, {
-      ...intent.metadata,
-      providerCheckoutId,
-    });
+    await this.repository.markIntentAwaitingCustomer(
+      intent.id,
+      checkoutUrl,
+      getAwaitingCustomerExpiry(),
+      {
+        ...intent.metadata,
+        providerCheckoutId,
+      },
+    );
   }
 
   async markUpgradeCheckoutFailed(intentId: string, error: unknown) {

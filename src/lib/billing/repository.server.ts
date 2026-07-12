@@ -333,11 +333,13 @@ export class BillingRepository {
   async markIntentAwaitingCustomer(
     intentId: string,
     checkoutUrl: string,
+    expiresAt: string,
     metadata?: Record<string, unknown>,
   ) {
     const update: Record<string, unknown> = {
       status: "awaiting_customer",
       provider_checkout_url: checkoutUrl,
+      expires_at: expiresAt,
       last_error_code: null,
       last_error_message: null,
     };
