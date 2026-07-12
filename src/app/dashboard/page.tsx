@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { CompanyAdminDashboard } from "@/components/dashboard/company-admin-dashboard";
 import {
+  AssignFounderForm,
   CompanyStatusToggle,
   CompanyBranchDeleteButton,
   CompanyBranchStatusBadge,
@@ -28,6 +29,7 @@ import {
   getAccountCapabilities,
   getDefaultBaseMonthlyPriceCop,
   getSubscriptionViewState,
+  getSubscriptionViewStateLabel,
   includedSitesInBasePlan,
   normalizePaymentMethodStatus,
   normalizePlanType,
@@ -62,6 +64,14 @@ type ManagedBranchSummary = CompanyBranchSummary & {
   companySlug: string;
 };
 
+type FounderCompanySummary = {
+  id: string;
+  name: string;
+  planType: "founder" | "operational" | null;
+  subscriptionStatus: string | null;
+  subscriptionViewState: ReturnType<typeof getSubscriptionViewState> | null;
+};
+
 type ManagedUserRow = {
   user_id: string;
   email: string | null;
@@ -81,6 +91,13 @@ type ManagedBranchRow = {
   is_active: boolean;
   status: string | null;
   company: { name: string; slug: string } | { name: string; slug: string }[] | null;
+};
+
+type ManagedCompanySubscriptionRow = {
+  company_id: string;
+  status: string | null;
+  plan_type: string | null;
+  trial_ends_at: string | null;
 };
 
 type CompanySubscriptionRow = {
@@ -112,10 +129,16 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       companies: [] as CompanySummary[],
       companyBranches: [] as ManagedBranchSummary[],
       managedUsers: [] as ManagedUserSummary[],
+      founderCompanies: [] as FounderCompanySummary[],
     };
   }
 
-  const [{ data: companies }, { data: companyBranches }, { data: managedUsers }] = await Promise.all([
+  const [
+    { data: companies },
+    { data: companyBranches },
+    { data: managedUsers },
+    { data: companySubscriptions },
+  ] = await Promise.all([
     supabase
       .from("companies")
       .select("id, name, slug, is_active, company_admin_user_id")
@@ -131,7 +154,15 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       .in("global_role", role === "owner" ? ["super_admin", "company_admin"] : ["company_admin"])
       .order("created_at", { ascending: false })
       .returns<ManagedUserRow[]>(),
+    supabase
+      .from("company_subscriptions")
+      .select("company_id, status, plan_type, trial_ends_at")
+      .returns<ManagedCompanySubscriptionRow[]>(),
   ]);
+
+  const subscriptionByCompanyId = new Map(
+    companySubscriptions?.map((subscription) => [subscription.company_id, subscription]) ?? [],
+  );
 
   return {
     companies:
@@ -176,6 +207,26 @@ async function getManagementData(role: UserProfile["globalRole"]) {
           ? user.default_company[0]?.name ?? null
           : user.default_company?.name ?? null,
       })) ?? [],
+    founderCompanies:
+      companies?.map((company) => {
+        const subscription = subscriptionByCompanyId.get(company.id) ?? null;
+        const subscriptionStatus = subscription?.status ?? null;
+        const planType = subscription ? normalizePlanType(subscription.plan_type) : null;
+
+        return {
+          id: company.id,
+          name: company.name,
+          planType,
+          subscriptionStatus,
+          subscriptionViewState: subscription
+            ? getSubscriptionViewState({
+                status: normalizeSubscriptionStatus(subscription.status),
+                planType: planType ?? "operational",
+                trialEndsAt: subscription.trial_ends_at,
+              })
+            : null,
+        } satisfies FounderCompanySummary;
+      }) ?? [],
   };
 }
 
@@ -494,6 +545,83 @@ export default async function DashboardPage() {
                 </div>
               </article>
             </div>
+
+            {profile.globalRole === "owner" ? (
+              <section className="border-t border-[#12110f]/8 px-6 py-8 sm:px-8">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Clientes Founder</p>
+                    <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">
+                      Asignación antes del primer pago
+                    </h3>
+                  </div>
+                  <p className="max-w-xl text-sm leading-6 text-[#5b564f]">
+                    Founder solo se asigna durante el trial. Si Billing ya tiene una operación o preapproval de Mercado Pago, la acción se bloquea para revisión manual.
+                  </p>
+                </div>
+
+                <div className="mt-6 overflow-x-auto rounded-[1.5rem] border border-[#12110f]/10">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-[#f4efe7] text-xs uppercase tracking-[0.14em] text-[#655f57]">
+                      <tr>
+                        <th className="px-5 py-3">Empresa</th>
+                        <th className="px-5 py-3">Suscripción</th>
+                        <th className="px-5 py-3">Plan actual</th>
+                        <th className="px-5 py-3">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#12110f]/8 bg-white">
+                      {(managementData?.founderCompanies ?? []).length ? (
+                        managementData?.founderCompanies.map((company) => (
+                          <tr key={company.id}>
+                            <td className="px-5 py-4 font-semibold text-[#12110f]">{company.name}</td>
+                            <td className="px-5 py-4 text-[#5d574f]">
+                              {company.subscriptionViewState
+                                ? getSubscriptionViewStateLabel(company.subscriptionViewState)
+                                : "Sin suscripción"}
+                            </td>
+                            <td className="px-5 py-4">
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                                  company.planType === "founder"
+                                    ? "bg-[#dff3e6] text-[#265b38]"
+                                    : "bg-[#f2ebe0] text-[#6b655d]"
+                                }`}
+                              >
+                                {company.planType === "founder"
+                                  ? "Founder"
+                                  : company.planType === "operational"
+                                    ? "Operativo"
+                                    : "Sin plan"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              {company.planType === "founder" ? (
+                                <span className="text-sm font-semibold text-[#21734f]">Founder asignado</span>
+                              ) : company.subscriptionStatus === "trial" ? (
+                                <AssignFounderForm companyId={company.id} />
+                              ) : company.subscriptionStatus ? (
+                                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a5d1f]">
+                                  Requiere revisión manual
+                                </span>
+                              ) : (
+                                <span className="text-sm text-[#7d766d]">Sin acción disponible</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="px-5 py-8 text-center text-[#6b655d]">
+                            Aún no hay empresas disponibles.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
 
             <div className="grid gap-6 border-t border-[#12110f]/8 p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr]">
               <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#12110f] p-6 text-white">

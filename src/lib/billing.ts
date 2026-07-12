@@ -1,6 +1,6 @@
 export const founderPlanBasePriceCop = 19900;
 export const operationalPlanBasePriceCop = 24900;
-export const additionalSitePriceCop = 19900;
+export const additionalSitePriceCop = 9900;
 export const includedSitesInBasePlan = 1;
 export const paymentProviderLabel = "Mercado Pago";
 

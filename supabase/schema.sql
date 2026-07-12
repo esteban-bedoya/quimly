@@ -304,7 +304,7 @@ create table if not exists public.company_subscriptions (
   current_period_ends_at timestamptz,
   billing_cycle_anchor_at timestamptz,
   base_monthly_price_cop integer not null default 24900,
-  additional_site_monthly_price_cop integer not null default 19900,
+  additional_site_monthly_price_cop integer not null default 9900,
   included_active_sites integer not null default 1,
   max_active_locations integer not null default 1,
   currency char(3) not null default 'COP',
@@ -444,13 +444,13 @@ alter table if exists public.company_subscriptions
 add column if not exists base_monthly_price_cop integer not null default 24900;
 
 alter table if exists public.company_subscriptions
-add column if not exists additional_site_monthly_price_cop integer not null default 19900;
+add column if not exists additional_site_monthly_price_cop integer not null default 9900;
 
 alter table if exists public.company_subscriptions
 alter column base_monthly_price_cop set default 24900;
 
 alter table if exists public.company_subscriptions
-alter column additional_site_monthly_price_cop set default 19900;
+alter column additional_site_monthly_price_cop set default 9900;
 
 update public.company_subscriptions
 set base_monthly_price_cop = 24900
@@ -463,8 +463,8 @@ where plan_type = 'founder'
   and base_monthly_price_cop in (24900, 25000);
 
 update public.company_subscriptions
-set additional_site_monthly_price_cop = 19900
-where additional_site_monthly_price_cop = 15000;
+set additional_site_monthly_price_cop = 9900
+where additional_site_monthly_price_cop in (15000, 19900);
 
 alter table if exists public.company_subscriptions
 add column if not exists included_active_sites integer not null default 1;
@@ -1014,9 +1014,33 @@ create table if not exists public.subscription_status_history (
     references public.billing_payments (id, company_id)
     on delete set null (billing_payment_id),
   constraint subscription_status_history_transition_check
-    check (from_status is distinct from to_status),
+    check (
+      from_status is distinct from to_status
+      or (
+        source = 'manual'
+        and reason = 'founder_assigned'
+        and from_status is not distinct from to_status
+        and metadata ->> 'fromPlanType' = 'operational'
+        and metadata ->> 'toPlanType' = 'founder'
+      )
+    ),
   constraint subscription_status_history_source_check
     check (source in ('billing', 'webhook', 'reconciliation', 'manual'))
+);
+
+alter table if exists public.subscription_status_history
+drop constraint if exists subscription_status_history_transition_check;
+
+alter table if exists public.subscription_status_history
+add constraint subscription_status_history_transition_check check (
+  from_status is distinct from to_status
+  or (
+    source = 'manual'
+    and reason = 'founder_assigned'
+    and from_status is not distinct from to_status
+    and metadata ->> 'fromPlanType' = 'operational'
+    and metadata ->> 'toPlanType' = 'founder'
+  )
 );
 
 create table if not exists public.billing_reconciliation_runs (
@@ -4937,6 +4961,117 @@ begin
 end;
 $$;
 
+create or replace function public.assign_company_founder(target_company_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid;
+  subscription_row public.company_subscriptions%rowtype;
+begin
+  actor_id := auth.uid();
+
+  if actor_id is null or not exists (
+    select 1
+    from public.user_profiles up
+    where up.user_id = actor_id
+      and up.global_role = 'owner'
+      and up.is_active = true
+  ) then
+    raise exception 'Solo el owner puede asignar Founder.';
+  end if;
+
+  if target_company_id is null then
+    raise exception 'La empresa indicada no es válida.';
+  end if;
+
+  perform 1
+  from public.companies c
+  where c.id = target_company_id
+  for update;
+
+  if not found then
+    raise exception 'La empresa no existe.';
+  end if;
+
+  select *
+  into subscription_row
+  from public.company_subscriptions cs
+  where cs.company_id = target_company_id
+  for update;
+
+  if not found then
+    raise exception 'La empresa no tiene una suscripción interna.';
+  end if;
+
+  if subscription_row.plan_type = 'founder' then
+    return;
+  end if;
+
+  if subscription_row.status <> 'trial' or subscription_row.plan_type <> 'operational' then
+    raise exception 'Founder solo puede asignarse durante el trial, antes de activar el pago.';
+  end if;
+
+  if exists (
+    select 1
+    from public.billing_provider_subscriptions bps
+    where bps.company_id = target_company_id
+      and bps.subscription_id = subscription_row.id
+      and bps.provider = 'mercado_pago'
+      and bps.ended_at is null
+  ) then
+    raise exception 'Esta empresa tiene una suscripción activa o pendiente en Mercado Pago y requiere revisión manual antes de asignar Founder.';
+  end if;
+
+  if exists (
+    select 1
+    from public.billing_intents bi
+    where bi.company_id = target_company_id
+      and bi.subscription_id = subscription_row.id
+      and bi.status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing')
+  ) then
+    raise exception 'Esta empresa tiene una operación de Billing pendiente y requiere revisión manual antes de asignar Founder.';
+  end if;
+
+  update public.company_subscriptions
+  set
+    plan_type = 'founder',
+    base_monthly_price_cop = 19900
+  where id = subscription_row.id;
+
+  insert into public.subscription_status_history (
+    company_id,
+    subscription_id,
+    from_status,
+    to_status,
+    reason,
+    source,
+    actor_user_id,
+    deduplication_key,
+    metadata,
+    occurred_at
+  ) values (
+    target_company_id,
+    subscription_row.id,
+    subscription_row.status,
+    subscription_row.status,
+    'founder_assigned',
+    'manual',
+    actor_id,
+    'founder_assigned:' || subscription_row.id,
+    jsonb_build_object(
+      'fromPlanType', subscription_row.plan_type,
+      'toPlanType', 'founder',
+      'fromBaseMonthlyPriceCop', subscription_row.base_monthly_price_cop,
+      'toBaseMonthlyPriceCop', 19900
+    ),
+    now()
+  );
+end;
+$$;
+
 create or replace function public.set_main_branch(target_branch_id uuid)
 returns void
 language plpgsql
@@ -5900,6 +6035,10 @@ grant execute on function public.onboard_company_trial(uuid, text, text, text) t
 revoke all on function public.create_company_with_main_branch(text, uuid, text) from public;
 revoke all on function public.create_company_with_main_branch(text, uuid, text) from anon;
 grant execute on function public.create_company_with_main_branch(text, uuid, text) to authenticated;
+
+revoke all on function public.assign_company_founder(uuid) from public;
+revoke all on function public.assign_company_founder(uuid) from anon;
+grant execute on function public.assign_company_founder(uuid) to authenticated;
 
 revoke all on function public.set_main_branch(uuid) from public;
 revoke all on function public.set_main_branch(uuid) from anon;

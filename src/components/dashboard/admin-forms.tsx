@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
 import {
+  assignCompanyFounder,
   createCompany,
   createCompanyAdmin,
   createCompanyBranch,
@@ -79,6 +80,20 @@ function ActionFeedback({ state }: { state: AdminActionState | undefined }) {
   );
 }
 
+function AssignFounderSubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-[#2a2824] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {pending ? "Asignando..." : "Asignar Founder"}
+    </button>
+  );
+}
+
 function Field({
   id,
   label,
@@ -121,6 +136,20 @@ export function CreateCompanyForm() {
       <ActionFeedback state={state} />
       <SubmitButton idleLabel="Crear empresa" pendingLabel="Creando empresa..." />
     </form>
+  );
+}
+
+export function AssignFounderForm({ companyId }: { companyId: string }) {
+  const [state, formAction] = useActionState(assignCompanyFounder, undefined);
+
+  return (
+    <div className="grid gap-2">
+      <form action={formAction}>
+        <input type="hidden" name="companyId" value={companyId} />
+        <AssignFounderSubmitButton />
+      </form>
+      <ActionFeedback state={state} />
+    </div>
   );
 }
 

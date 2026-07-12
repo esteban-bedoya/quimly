@@ -938,6 +938,38 @@ export async function createCompany(
   return { success: `Empresa "${name}" creada correctamente con su sede principal.` };
 }
 
+export async function assignCompanyFounder(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const context = await requireOwnerAccess();
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "assignCompanyFounder" });
+  const companyId = readString(formData, "companyId");
+
+  if (!companyId) {
+    return { error: "Debes indicar una empresa válida." };
+  }
+
+  const { error } = await supabase.rpc("assign_company_founder", {
+    target_company_id: companyId,
+  });
+
+  if (error) {
+    logAdminActionError("billing.founder_assignment_failed", error, {
+      actorUserId: context.profile.userId,
+      companyId,
+    });
+    return { error: formatDatabaseError(error, "No fue posible asignar Founder.") };
+  }
+
+  logServerInfo("billing.founder_assigned", {
+    actorUserId: context.profile.userId,
+    companyId,
+  });
+  revalidatePath("/dashboard");
+  return { success: "Founder asignado correctamente." };
+}
+
 export async function updateCurrentUserProfile(
   _: AdminActionState | undefined,
   formData: FormData,

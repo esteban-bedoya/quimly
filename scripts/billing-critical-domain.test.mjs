@@ -9,6 +9,22 @@ import {
   isPaymentReversal,
   isUpgradePaymentHistorical,
 } from "../src/lib/billing/financial-policy.ts";
+import {
+  additionalSitePriceCop,
+  calculatePlanMonthlyTotalCop,
+  founderPlanBasePriceCop,
+  operationalPlanBasePriceCop,
+} from "../src/lib/billing.ts";
+
+test("pricing mantiene base por plan y cobra 9.900 por sede adicional", () => {
+  assert.equal(founderPlanBasePriceCop, 19900);
+  assert.equal(operationalPlanBasePriceCop, 24900);
+  assert.equal(additionalSitePriceCop, 9900);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 1 }), 19900);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 1 }), 24900);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 2 }), 34800);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 3 }), 39700);
+});
 
 test("C1/C2 aplica una aprobación mientras la activación todavía es resoluble", () => {
   assert.equal(decideLateApprovedResolution({
