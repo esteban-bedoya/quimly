@@ -456,6 +456,22 @@ export default async function DashboardPage() {
                 </article>
               ) : null}
 
+              {profile.globalRole === "owner" ? (
+                <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#12110f] p-5 text-white shadow-[0_12px_32px_rgba(18,17,15,0.08)]">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#7ad9dd]">Billing</p>
+                  <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Salud de pagos</h3>
+                  <p className="mt-3 text-sm leading-7 text-white/74">
+                    Revisa transacciones, renovaciones, webhooks y desajustes sin ejecutar acciones sobre clientes.
+                  </p>
+                  <Link
+                    href="/dashboard/billing"
+                    className="mt-6 inline-flex rounded-full bg-[#7ad9dd] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#12110f] transition hover:bg-white"
+                  >
+                    Abrir conciliación
+                  </Link>
+                </article>
+              ) : null}
+
               <article className="rounded-[1.75rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 shadow-[0_12px_32px_rgba(18,17,15,0.05)]">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Cliente</p>
                 <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">Crear company admin</h3>
