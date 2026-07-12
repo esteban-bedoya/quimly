@@ -16,7 +16,12 @@ import {
   type CapacityPriceQuote,
   type UpgradeProrationQuote,
 } from "@/lib/billing/pricing";
-import type { ProviderAuthorizedPayment, ProviderPayment, ProviderSubscription } from "@/lib/billing/provider";
+import type {
+  BillingProvider,
+  ProviderAuthorizedPayment,
+  ProviderPayment,
+  ProviderSubscription,
+} from "@/lib/billing/provider";
 import {
   BillingRepository,
   type BillingInvoiceStatus,
@@ -74,6 +79,12 @@ export type UpgradePreparation = {
   proration: UpgradeProrationQuote;
 };
 
+export type UpgradeIntentPreparation = {
+  intent: BillingIntentRecord;
+  requestedQuote: CapacityPriceQuote;
+  proration: UpgradeProrationQuote;
+};
+
 export type DowngradePreparation = {
   account: BillingAccountSnapshot;
   requestedQuote: CapacityPriceQuote;
@@ -91,7 +102,15 @@ function getIntentReference(intentType: BillingIntentType) {
 }
 
 function getIntentExpiry(now: Date) {
+  return new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+}
+
+function getPendingPaymentExpiry(now = new Date()) {
   return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+}
+
+function getProcessingExpiry(now = new Date()) {
+  return new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
 }
 
 function getEffectivePlanType(subscription: CompanySubscriptionBillingRecord): PlanType {
@@ -373,7 +392,7 @@ export class BillingService {
 
     const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
 
-    if (!intent || intent.intent_type !== "activation" || !isOpenBillingIntent(intent)) {
+    if (!intent || intent.intent_type !== "activation") {
       return { handled: false, reason: "El pago no corresponde a una activación inicial." };
     }
 
@@ -389,18 +408,6 @@ export class BillingService {
 
     if (payment.currency !== "COP") {
       throw new Error("El pago recibido no está en COP.");
-    }
-
-    const subscriptionStatus = await this.repository.getSubscriptionStatus(
-      intent.subscription_id,
-      intent.company_id,
-    );
-
-    if (subscriptionStatus !== "trial") {
-      return {
-        handled: false,
-        reason: "La suscripción interna ya no admite esta activación inicial.",
-      };
     }
 
     const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
@@ -421,6 +428,67 @@ export class BillingService {
     });
 
     if (normalizedStatus !== "approved") {
+      if (normalizedStatus === "pending" || normalizedStatus === "unknown") {
+        await this.repository.markIntentAwaitingPayment(intent.id, getPendingPaymentExpiry());
+      } else if (normalizedStatus === "cancelled" || normalizedStatus === "refunded") {
+        await this.repository.markIntentCancelled(
+          intent.id,
+          "activation_payment_cancelled",
+          "Mercado Pago canceló el pago de activación.",
+        );
+      } else {
+        await this.repository.markIntentFailed(
+          intent.id,
+          "activation_payment_failed",
+          "Mercado Pago no aprobó el pago de activación.",
+        );
+      }
+
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    if (!isOpenBillingIntent(intent)) {
+      if (intent.status === "succeeded") {
+        return {
+          handled: true,
+          activationApplied: false,
+          companyId: intent.company_id,
+          subscriptionId: intent.subscription_id,
+          providerUpdatedAt: payment.providerUpdatedAt,
+        };
+      }
+
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago aprobó un pago después de que la activación dejó de estar vigente.",
+        "late_approved_activation_payment",
+      );
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    const subscriptionStatus = await this.repository.getSubscriptionStatus(
+      intent.subscription_id,
+      intent.company_id,
+    );
+
+    if (subscriptionStatus !== "trial") {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "La cuenta cambió de estado antes de aplicar el pago de activación.",
+        "activation_subscription_state_changed",
+      );
       return {
         handled: true,
         activationApplied: false,
@@ -431,9 +499,21 @@ export class BillingService {
     }
 
     if (intent.expected_immediate_amount_cop !== payment.amountCop) {
-      throw new Error("El monto aprobado no coincide con el valor esperado para la activación.");
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "El monto aprobado no coincide con el valor esperado para la activación.",
+        "activation_amount_mismatch",
+      );
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
     }
 
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry());
     const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? new Date().toISOString();
     await this.repository.activateInitialSubscription({
       intent,
@@ -455,9 +535,11 @@ export class BillingService {
   async processProviderPayment({
     payment,
     webhookEventId,
+    provider,
   }: {
     payment: ProviderPayment;
     webhookEventId: string;
+    provider: BillingProvider;
   }): Promise<InitialPaymentProcessingResult> {
     if (!payment.externalReference) {
       return { handled: false, reason: "El pago no contiene una referencia interna." };
@@ -465,15 +547,19 @@ export class BillingService {
 
     const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
 
-    if (intent?.intent_type === "activation" && isOpenBillingIntent(intent)) {
+    if (intent?.intent_type === "activation") {
       const subscriptionStatus = await this.repository.getSubscriptionStatus(
         intent.subscription_id,
         intent.company_id,
       );
 
-      if (subscriptionStatus === "trial") {
+      if (subscriptionStatus === "trial" || intent.status !== "succeeded") {
         return this.processInitialActivationPayment({ payment, webhookEventId });
       }
+    }
+
+    if (intent?.intent_type === "upgrade") {
+      return this.processUpgradePayment({ intent, payment, provider });
     }
 
     const providerSubscription = payment.providerSubscriptionId
@@ -501,6 +587,165 @@ export class BillingService {
     return {
       ...result,
       activationApplied: false,
+    };
+  }
+
+  async processUpgradePayment({
+    intent,
+    payment,
+    provider,
+  }: {
+    intent: BillingIntentRecord;
+    payment: ProviderPayment;
+    provider: BillingProvider;
+  }): Promise<InitialPaymentProcessingResult> {
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      intent.subscription_id,
+      intent.company_id,
+    );
+
+    if (!providerSubscription) {
+      return { handled: false, reason: "El upgrade no tiene una suscripción externa activa." };
+    }
+
+    if (
+      payment.providerSubscriptionId &&
+      payment.providerSubscriptionId !== providerSubscription.provider_subscription_id
+    ) {
+      throw new Error("El pago del upgrade no corresponde a la suscripción externa esperada.");
+    }
+
+    if (payment.currency !== "COP") {
+      throw new Error("El pago del upgrade no está en COP.");
+    }
+
+    const normalizedStatus = normalizeProviderPaymentStatus(payment.providerStatus);
+    const storedPayment = await this.repository.upsertPayment({
+      companyId: intent.company_id,
+      billingIntentId: intent.id,
+      invoiceId: null,
+      providerSubscription,
+      providerPaymentId: payment.providerPaymentId,
+      providerStatus: payment.providerStatus,
+      providerStatusDetail: payment.providerStatusDetail,
+      normalizedStatus,
+      amountCop: payment.amountCop,
+      paymentMethodType: payment.paymentMethodType,
+      providerCreatedAt: payment.providerCreatedAt,
+      providerUpdatedAt: payment.providerUpdatedAt,
+      approvedAt: payment.approvedAt,
+    });
+
+    if (normalizedStatus !== "approved") {
+      if (normalizedStatus === "pending" || normalizedStatus === "unknown") {
+        await this.repository.markIntentAwaitingPayment(intent.id, getPendingPaymentExpiry());
+      } else if (normalizedStatus === "cancelled" || normalizedStatus === "refunded") {
+        await this.repository.markIntentCancelled(
+          intent.id,
+          "upgrade_payment_cancelled",
+          "Mercado Pago canceló el pago del aumento de capacidad.",
+        );
+      } else {
+        await this.repository.markIntentFailed(
+          intent.id,
+          "upgrade_payment_failed",
+          "Mercado Pago no aprobó el pago del aumento de capacidad.",
+        );
+      }
+
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    if (!isOpenBillingIntent(intent)) {
+      if (intent.status !== "succeeded") {
+        await this.repository.markIntentCompensationRequired(
+          intent.id,
+          "Mercado Pago aprobó un upgrade después de que la operación dejó de estar vigente.",
+          "late_approved_upgrade_payment",
+        );
+      }
+
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    if (
+      intent.expected_immediate_amount_cop === null ||
+      intent.monthly_amount_after_cop === null ||
+      payment.amountCop !== intent.expected_immediate_amount_cop
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "El monto aprobado no coincide con el valor proporcional esperado para el upgrade.",
+        "upgrade_amount_mismatch",
+      );
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    const subscriptionStatus = await this.repository.getSubscriptionStatus(
+      intent.subscription_id,
+      intent.company_id,
+    );
+
+    if (subscriptionStatus !== "active") {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "La cuenta dejó de estar activa antes de aplicar el upgrade aprobado.",
+        "upgrade_subscription_state_changed",
+      );
+      return {
+        handled: true,
+        activationApplied: false,
+        companyId: intent.company_id,
+        subscriptionId: intent.subscription_id,
+        providerUpdatedAt: payment.providerUpdatedAt,
+      };
+    }
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry());
+    const providerState = await provider.updateSubscriptionAmount(
+      providerSubscription.provider_subscription_id,
+      intent.monthly_amount_after_cop,
+    );
+
+    if (
+      providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      providerState.currency !== "COP" ||
+      providerState.recurringAmountCop !== intent.monthly_amount_after_cop
+    ) {
+      throw new Error("Mercado Pago no confirmó el nuevo valor mensual del upgrade.");
+    }
+
+    await this.repository.completeApprovedUpgrade({
+      intent,
+      payment: storedPayment,
+      providerSubscription,
+      providerState,
+    });
+
+    return {
+      handled: true,
+      activationApplied: false,
+      companyId: intent.company_id,
+      subscriptionId: intent.subscription_id,
+      providerUpdatedAt: payment.providerUpdatedAt,
     };
   }
 
@@ -737,16 +982,22 @@ export class BillingService {
 
     const requestedQuote = this.quoteCapacity(account.subscription, requestedMaxActiveLocations);
 
+    const proration = quoteUpgradeProration({
+      currentQuote: account.currentQuote,
+      requestedQuote,
+      periodStartedAt,
+      periodEndsAt,
+      now,
+    });
+
+    if (proration.proratedAmountCop <= 0) {
+      throw new Error("El periodo actual ya terminó. Actualiza la vista e intenta nuevamente.");
+    }
+
     return {
       account,
       requestedQuote,
-      proration: quoteUpgradeProration({
-        currentQuote: account.currentQuote,
-        requestedQuote,
-        periodStartedAt,
-        periodEndsAt,
-        now,
-      }),
+      proration,
     };
   }
 
@@ -760,13 +1011,22 @@ export class BillingService {
     requestedMaxActiveLocations: number;
     requestedBy: string | null;
     now?: Date;
-  }): Promise<BillingIntentRecord> {
+  }): Promise<UpgradeIntentPreparation> {
     await this.ensureNoOpenIntent(companyId);
 
     const preparation = await this.prepareUpgrade({ companyId, requestedMaxActiveLocations, now });
     const { subscription } = preparation.account;
 
-    return this.repository.createIntent({
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      subscription.id,
+      companyId,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("La empresa no tiene una suscripción de Mercado Pago activa para ampliar.");
+    }
+
+    const intent = await this.repository.createIntent({
       company_id: companyId,
       subscription_id: subscription.id,
       capacity_change_id: null,
@@ -793,6 +1053,35 @@ export class BillingService {
         monthlyDeltaCop: preparation.proration.monthlyDeltaCop,
       },
     });
+
+    return {
+      intent,
+      requestedQuote: preparation.requestedQuote,
+      proration: preparation.proration,
+    };
+  }
+
+  async markUpgradeCheckoutCreated({
+    intent,
+    checkoutUrl,
+    providerCheckoutId,
+  }: {
+    intent: BillingIntentRecord;
+    checkoutUrl: string;
+    providerCheckoutId: string;
+  }) {
+    await this.repository.markIntentAwaitingCustomer(intent.id, checkoutUrl, {
+      ...intent.metadata,
+      providerCheckoutId,
+    });
+  }
+
+  async markUpgradeCheckoutFailed(intentId: string, error: unknown) {
+    await this.repository.markIntentFailed(
+      intentId,
+      "provider_checkout_creation_failed",
+      error instanceof Error ? error.message : "Mercado Pago no pudo crear el pago del upgrade.",
+    );
   }
 
   async prepareDowngrade({
@@ -832,11 +1121,13 @@ export class BillingService {
     companyId,
     requestedMaxActiveLocations,
     requestedBy,
+    provider,
     now = new Date(),
   }: {
     companyId: string;
     requestedMaxActiveLocations: number;
     requestedBy: string | null;
+    provider: BillingProvider;
     now?: Date;
   }): Promise<{
     intent: BillingIntentRecord;
@@ -846,6 +1137,15 @@ export class BillingService {
 
     const preparation = await this.prepareDowngrade({ companyId, requestedMaxActiveLocations });
     const { subscription } = preparation.account;
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      subscription.id,
+      companyId,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("La empresa no tiene una suscripción de Mercado Pago activa para reducir.");
+    }
+
     const capacityChange = await this.repository.createScheduledCapacityChange({
       companyId,
       subscriptionId: subscription.id,
@@ -855,8 +1155,10 @@ export class BillingService {
       requestedBy,
     });
 
+    let intent: BillingIntentRecord;
+
     try {
-      const intent = await this.repository.createIntent({
+      intent = await this.repository.createIntent({
         company_id: companyId,
         subscription_id: subscription.id,
         capacity_change_id: capacityChange.id,
@@ -884,10 +1186,9 @@ export class BillingService {
         },
       });
 
-      return { intent, capacityChange };
     } catch (error) {
       try {
-        await this.repository.deleteScheduledCapacityChange(capacityChange.id, companyId);
+        await this.repository.cancelScheduledCapacityChange(capacityChange.id, companyId);
       } catch (compensationError) {
         logServerError("billing.downgrade_capacity_change_compensation_failed", compensationError, {
           companyId,
@@ -897,9 +1198,59 @@ export class BillingService {
 
       throw error;
     }
+
+    let providerState: ProviderSubscription;
+
+    try {
+      providerState = await provider.updateSubscriptionAmount(
+        providerSubscription.provider_subscription_id,
+        preparation.requestedQuote.monthlyTotalCop,
+      );
+    } catch (error) {
+      await Promise.allSettled([
+        this.repository.cancelScheduledCapacityChange(capacityChange.id, companyId),
+        this.repository.markIntentFailed(
+          intent.id,
+          "provider_subscription_update_failed",
+          error instanceof Error ? error.message : "Mercado Pago no pudo programar el nuevo valor mensual.",
+        ),
+      ]);
+      throw error;
+    }
+
+    if (
+      providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      providerState.currency !== "COP" ||
+      providerState.recurringAmountCop !== preparation.requestedQuote.monthlyTotalCop
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago respondió sin confirmar el valor mensual esperado para el downgrade.",
+        "downgrade_provider_state_mismatch",
+      );
+      throw new Error("Mercado Pago no confirmó el valor mensual del downgrade.");
+    }
+
+    try {
+      await this.repository.completeScheduledDowngrade({
+        intent,
+        providerSubscription,
+        providerState,
+      });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "El proveedor fue actualizado, pero Quimly no pudo completar el downgrade.",
+        "downgrade_internal_persistence_failed",
+      );
+      throw error;
+    }
+
+    return { intent, capacityChange };
   }
 
   private async ensureNoOpenIntent(companyId: string) {
+    await this.repository.expireStaleOpenIntents(companyId);
     const openIntent = await this.repository.findOpenIntent(companyId);
 
     if (openIntent) {

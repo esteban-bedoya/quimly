@@ -39,6 +39,13 @@ export type StartPlanActivationResult = {
   error?: string;
 };
 
+export type StartCapacityChangeResult = {
+  checkoutUrl?: string;
+  effectiveAt?: string;
+  success?: string;
+  error?: string;
+};
+
 type PostgrestErrorLike = {
   code?: string;
   message: string;
@@ -692,6 +699,133 @@ export async function startPlanActivation({
   } catch (error) {
     logAdminActionError("billing.activation_start_failed", error, { companySlug });
     return { error: "No fue posible iniciar la activación del plan. Inténtalo nuevamente." };
+  }
+}
+
+export async function startPlanUpgrade({
+  companySlug,
+  requestedMaxActiveLocations,
+}: {
+  companySlug: string;
+  requestedMaxActiveLocations: number;
+}): Promise<StartCapacityChangeResult> {
+  const context = await requireUserContext();
+
+  if (!companySlug || !Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
+    return { error: "La capacidad seleccionada no es válida." };
+  }
+
+  const payerEmail = normalizeOptionalEmail(context.profile.email ?? "");
+
+  if (!payerEmail) {
+    return { error: "Agrega un correo electrónico válido en tu perfil antes de ampliar el plan." };
+  }
+
+  try {
+    const supabase = await getSupabaseRlsClientOrThrow({ operation: "startPlanUpgrade" });
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", companySlug)
+      .eq("is_active", true)
+      .maybeSingle<{ id: string }>();
+
+    if (companyError || !company || !canManageCompanySites(context, company.id)) {
+      return { error: "No tienes permisos para ampliar el plan de esta empresa." };
+    }
+
+    const billingService = createBillingService();
+    const { intent, requestedQuote, proration } = await billingService.createUpgradeIntent({
+      companyId: company.id,
+      requestedMaxActiveLocations,
+      requestedBy: context.profile.userId,
+    });
+    const provider = createMercadoPagoBillingProvider();
+
+    try {
+      const checkout = await provider.createOneTimeCheckout({
+        intentId: intent.id,
+        externalReference: intent.external_reference,
+        companyId: company.id,
+        payerEmail,
+        description: `Ampliación de Quimly a ${requestedQuote.maxActiveLocations} sedes`,
+        amountCop: proration.proratedAmountCop,
+        returnUrl: new URL("/dashboard?billing=upgrade-processing", getApplicationUrl()).toString(),
+      });
+
+      await billingService.markUpgradeCheckoutCreated({
+        intent,
+        checkoutUrl: checkout.checkoutUrl,
+        providerCheckoutId: checkout.providerCheckoutId,
+      });
+
+      return { checkoutUrl: checkout.checkoutUrl };
+    } catch (error) {
+      await billingService.markUpgradeCheckoutFailed(intent.id, error).catch((markError) => {
+        logAdminActionError("billing.upgrade_checkout_failure_persistence_failed", markError, {
+          companyId: company.id,
+          intentId: intent.id,
+        });
+      });
+      logAdminActionError("billing.upgrade_checkout_failed", error, {
+        companyId: company.id,
+        intentId: intent.id,
+      });
+      return { error: "No fue posible preparar el pago del aumento. Inténtalo nuevamente." };
+    }
+  } catch (error) {
+    logAdminActionError("billing.upgrade_start_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible iniciar el aumento de capacidad.",
+    };
+  }
+}
+
+export async function schedulePlanDowngrade({
+  companySlug,
+  requestedMaxActiveLocations,
+}: {
+  companySlug: string;
+  requestedMaxActiveLocations: number;
+}): Promise<StartCapacityChangeResult> {
+  const context = await requireUserContext();
+
+  if (!companySlug || !Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
+    return { error: "La capacidad seleccionada no es válida." };
+  }
+
+  try {
+    const supabase = await getSupabaseRlsClientOrThrow({ operation: "schedulePlanDowngrade" });
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", companySlug)
+      .eq("is_active", true)
+      .maybeSingle<{ id: string }>();
+
+    if (companyError || !company || !canManageCompanySites(context, company.id)) {
+      return { error: "No tienes permisos para reducir el plan de esta empresa." };
+    }
+
+    const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
+    const { capacityChange } = await billingService.scheduleDowngrade({
+      companyId: company.id,
+      requestedMaxActiveLocations,
+      requestedBy: context.profile.userId,
+      provider,
+    });
+
+    revalidatePath("/dashboard");
+    return {
+      effectiveAt: capacityChange.effective_at,
+      success: "La reducción quedó programada para tu próxima renovación.",
+    };
+  } catch (error) {
+    logAdminActionError("billing.downgrade_schedule_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible programar la reducción de capacidad.",
+    };
   }
 }
 

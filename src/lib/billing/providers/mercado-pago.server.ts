@@ -5,6 +5,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type {
   BillingProvider,
   ProviderAuthorizedPayment,
+  ProviderOneTimeCheckout,
+  ProviderOneTimeCheckoutRequest,
   ProviderPayment,
   ProviderSubscription,
   ProviderSubscriptionCheckout,
@@ -45,6 +47,12 @@ type MercadoPagoPaymentResponse = {
   date_last_updated?: string;
   date_approved?: string;
   live_mode?: boolean;
+};
+
+type MercadoPagoPreferenceResponse = {
+  id?: string;
+  init_point?: string;
+  sandbox_init_point?: string;
 };
 
 type MercadoPagoAuthorizedPaymentResponse = {
@@ -297,6 +305,85 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     };
   }
 
+  async createOneTimeCheckout(
+    request: ProviderOneTimeCheckoutRequest,
+  ): Promise<ProviderOneTimeCheckout> {
+    if (!request.payerEmail) {
+      throw new Error("Debes configurar un correo electrónico antes de ampliar tu plan.");
+    }
+
+    if (!Number.isInteger(request.amountCop) || request.amountCop <= 0) {
+      throw new Error("El valor del upgrade debe ser mayor que cero.");
+    }
+
+    const environment = getMercadoPagoEnvironment();
+    const payerEmail = getPayerEmailForEnvironment({
+      environment,
+      payerEmail: request.payerEmail,
+    });
+    const response = await requestMercadoPago<MercadoPagoPreferenceResponse>("/checkout/preferences", {
+      method: "POST",
+      headers: {
+        "X-Idempotency-Key": request.intentId,
+      },
+      body: JSON.stringify({
+        external_reference: request.externalReference,
+        items: [
+          {
+            id: request.intentId,
+            title: request.description,
+            quantity: 1,
+            currency_id: "COP",
+            unit_price: request.amountCop,
+          },
+        ],
+        payer: {
+          email: payerEmail,
+        },
+        back_urls: {
+          success: request.returnUrl,
+          pending: request.returnUrl,
+          failure: request.returnUrl,
+        },
+        auto_return: "approved",
+        metadata: {
+          billing_intent_id: request.intentId,
+          company_id: request.companyId,
+        },
+      }),
+    });
+    const checkoutUrl = environment === "sandbox" ? response.sandbox_init_point ?? response.init_point : response.init_point;
+
+    return {
+      providerCheckoutId: getRequiredString(response.id, "el identificador del checkout"),
+      checkoutUrl: getRequiredString(checkoutUrl, "la URL de checkout"),
+    };
+  }
+
+  async updateSubscriptionAmount(
+    providerSubscriptionId: string,
+    recurringAmountCop: number,
+  ): Promise<ProviderSubscription> {
+    if (!Number.isInteger(recurringAmountCop) || recurringAmountCop <= 0) {
+      throw new Error("El valor mensual de la suscripción debe ser mayor que cero.");
+    }
+
+    const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>(
+      `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          auto_recurring: {
+            transaction_amount: recurringAmountCop,
+            currency_id: "COP",
+          },
+        }),
+      },
+    );
+
+    return this.mapSubscription(response);
+  }
+
   async getPayment(providerPaymentId: string): Promise<ProviderPayment> {
     const response = await requestMercadoPago<MercadoPagoPaymentResponse>(
       `/v1/payments/${encodeURIComponent(providerPaymentId)}`,
@@ -354,6 +441,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       { method: "GET" },
     );
 
+    return this.mapSubscription(response);
+  }
+
+  private mapSubscription(response: MercadoPagoPreapprovalResponse): ProviderSubscription {
     return {
       providerSubscriptionId: getRequiredString(response.id, "el identificador de suscripción"),
       externalReference: response.external_reference?.trim() || null,

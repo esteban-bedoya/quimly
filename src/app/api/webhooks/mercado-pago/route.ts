@@ -206,6 +206,7 @@ export async function POST(request: Request) {
       result = await billingService.processProviderPayment({
         payment,
         webhookEventId: recorded.event.id,
+        provider,
       });
       providerStatus = payment.providerStatus;
       processedResourceId = payment.providerPaymentId;

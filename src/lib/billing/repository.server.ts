@@ -246,6 +246,16 @@ export class BillingRepository {
     return data;
   }
 
+  async expireStaleOpenIntents(companyId: string) {
+    const { error } = await this.supabase.rpc("expire_stale_billing_intents", {
+      target_company_id: companyId,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible cerrar las operaciones de billing vencidas.");
+    }
+  }
+
   async createIntent(input: CreateBillingIntentInput): Promise<BillingIntentRecord> {
     const { data, error } = await this.supabase
       .from("billing_intents")
@@ -320,15 +330,25 @@ export class BillingRepository {
     return data;
   }
 
-  async markIntentAwaitingCustomer(intentId: string, checkoutUrl: string) {
+  async markIntentAwaitingCustomer(
+    intentId: string,
+    checkoutUrl: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    const update: Record<string, unknown> = {
+      status: "awaiting_customer",
+      provider_checkout_url: checkoutUrl,
+      last_error_code: null,
+      last_error_message: null,
+    };
+
+    if (metadata) {
+      update.metadata = metadata;
+    }
+
     const { error } = await this.supabase
       .from("billing_intents")
-      .update({
-        status: "awaiting_customer",
-        provider_checkout_url: checkoutUrl,
-        last_error_code: null,
-        last_error_message: null,
-      })
+      .update(update)
       .eq("id", intentId)
       .eq("status", "created");
 
@@ -337,11 +357,68 @@ export class BillingRepository {
     }
   }
 
+  async markIntentAwaitingPayment(intentId: string, expiresAt: string) {
+    const { error } = await this.supabase
+      .from("billing_intents")
+      .update({
+        status: "awaiting_payment",
+        expires_at: expiresAt,
+        last_error_code: null,
+        last_error_message: null,
+      })
+      .eq("id", intentId)
+      .in("status", ["created", "awaiting_customer", "awaiting_payment"]);
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible registrar el pago pendiente.");
+    }
+  }
+
+  async markIntentProcessing(intentId: string, expiresAt: string) {
+    const { data, error } = await this.supabase
+      .from("billing_intents")
+      .update({
+        status: "processing",
+        expires_at: expiresAt,
+        last_error_code: null,
+        last_error_message: null,
+      })
+      .eq("id", intentId)
+      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing"])
+      .select("id")
+      .maybeSingle<{ id: string }>();
+
+    if (error || !data) {
+      throwDatabaseError(
+        error ?? { message: "La operación de billing venció antes de poder procesarse." },
+        "No fue posible procesar la operación de billing.",
+      );
+    }
+  }
+
+  async markIntentCancelled(intentId: string, errorCode: string, errorMessage: string) {
+    const { error } = await this.supabase
+      .from("billing_intents")
+      .update({
+        status: "cancelled",
+        completed_at: new Date().toISOString(),
+        last_error_code: errorCode,
+        last_error_message: errorMessage,
+      })
+      .eq("id", intentId)
+      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing"]);
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible cancelar la operación de billing.");
+    }
+  }
+
   async markIntentFailed(intentId: string, errorCode: string, errorMessage: string) {
     const { error } = await this.supabase
       .from("billing_intents")
       .update({
         status: "failed",
+        completed_at: new Date().toISOString(),
         last_error_code: errorCode,
         last_error_message: errorMessage,
       })
@@ -353,16 +430,20 @@ export class BillingRepository {
     }
   }
 
-  async markIntentCompensationRequired(intentId: string, errorMessage: string) {
+  async markIntentCompensationRequired(
+    intentId: string,
+    errorMessage: string,
+    errorCode = "provider_subscription_persistence_failed",
+  ) {
     const { error } = await this.supabase
       .from("billing_intents")
       .update({
         status: "compensation_required",
-        last_error_code: "provider_subscription_persistence_failed",
+        last_error_code: errorCode,
         last_error_message: errorMessage,
       })
       .eq("id", intentId)
-      .eq("status", "created");
+      .neq("status", "succeeded");
 
     if (error) {
       throwDatabaseError(error, "No fue posible registrar la compensación pendiente de billing.");
@@ -410,6 +491,26 @@ export class BillingRepository {
 
     if (error) {
       throwDatabaseError(error, "No fue posible encontrar la suscripción externa.");
+    }
+
+    return data;
+  }
+
+  async findProviderSubscriptionForSubscription(
+    subscriptionId: string,
+    companyId: string,
+  ): Promise<BillingProviderSubscriptionRecord | null> {
+    const { data, error } = await this.supabase
+      .from("billing_provider_subscriptions")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at")
+      .eq("subscription_id", subscriptionId)
+      .eq("company_id", companyId)
+      .eq("provider", "mercado_pago")
+      .is("ended_at", null)
+      .maybeSingle<BillingProviderSubscriptionRecord>();
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible encontrar la suscripción externa activa.");
     }
 
     return data;
@@ -1089,6 +1190,67 @@ export class BillingRepository {
     }
   }
 
+  async completeApprovedUpgrade({
+    intent,
+    payment,
+    providerSubscription,
+    providerState,
+  }: {
+    intent: BillingIntentRecord;
+    payment: BillingPaymentRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerState: {
+      providerStatus: string;
+      providerVersion: number | null;
+      providerUpdatedAt: string | null;
+      nextPaymentAt: string | null;
+    };
+  }) {
+    const { error } = await this.supabase.rpc("complete_billing_upgrade", {
+      target_intent_id: intent.id,
+      target_payment_id: payment.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerState.providerStatus,
+      target_provider_version: providerState.providerVersion,
+      target_provider_updated_at: providerState.providerUpdatedAt,
+      target_next_payment_at: providerState.nextPaymentAt,
+      target_completed_at: payment.approved_at ?? new Date().toISOString(),
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible aplicar el aumento de capacidad.");
+    }
+  }
+
+  async completeScheduledDowngrade({
+    intent,
+    providerSubscription,
+    providerState,
+  }: {
+    intent: BillingIntentRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerState: {
+      providerStatus: string;
+      providerVersion: number | null;
+      providerUpdatedAt: string | null;
+      nextPaymentAt: string | null;
+    };
+  }) {
+    const { error } = await this.supabase.rpc("complete_scheduled_billing_downgrade", {
+      target_intent_id: intent.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerState.providerStatus,
+      target_provider_version: providerState.providerVersion,
+      target_provider_updated_at: providerState.providerUpdatedAt,
+      target_next_payment_at: providerState.nextPaymentAt,
+      target_completed_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible completar la reducción programada.");
+    }
+  }
+
   async createScheduledCapacityChange({
     companyId,
     subscriptionId,
@@ -1126,16 +1288,19 @@ export class BillingRepository {
     return data;
   }
 
-  async deleteScheduledCapacityChange(changeId: string, companyId: string) {
+  async cancelScheduledCapacityChange(changeId: string, companyId: string) {
     const { error } = await this.supabase
       .from("subscription_capacity_changes")
-      .delete()
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+      })
       .eq("id", changeId)
       .eq("company_id", companyId)
       .eq("status", "scheduled");
 
     if (error) {
-      throwDatabaseError(error, "No fue posible revertir el cambio de capacidad programado.");
+      throwDatabaseError(error, "No fue posible cancelar el cambio de capacidad programado.");
     }
   }
 }

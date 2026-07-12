@@ -26,6 +26,21 @@ export type ProviderSubscriptionCheckout = {
   nextPaymentAt: string | null;
 };
 
+export type ProviderOneTimeCheckoutRequest = {
+  intentId: string;
+  externalReference: string;
+  companyId: string;
+  payerEmail: string | null;
+  description: string;
+  amountCop: number;
+  returnUrl: string;
+};
+
+export type ProviderOneTimeCheckout = {
+  providerCheckoutId: string;
+  checkoutUrl: string;
+};
+
 export type ProviderPayment = {
   providerPaymentId: string;
   providerStatus: string;
@@ -72,6 +87,8 @@ export type ProviderSubscription = {
 export type BillingProvider = {
   readonly name: BillingProviderName;
   createSubscriptionCheckout(request: ProviderSubscriptionCheckoutRequest): Promise<ProviderSubscriptionCheckout>;
+  createOneTimeCheckout(request: ProviderOneTimeCheckoutRequest): Promise<ProviderOneTimeCheckout>;
+  updateSubscriptionAmount(providerSubscriptionId: string, recurringAmountCop: number): Promise<ProviderSubscription>;
   getPayment(providerPaymentId: string): Promise<ProviderPayment>;
   getAuthorizedPayment(providerInvoiceId: string): Promise<ProviderAuthorizedPayment>;
   getSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;

@@ -5,8 +5,10 @@ import { useFormStatus } from "react-dom";
 
 import {
   getCurrentUserProfileDetails,
+  schedulePlanDowngrade,
   sendCurrentUserPhoneChangeOTP,
   startPlanActivation,
+  startPlanUpgrade,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
 } from "@/app/dashboard/actions";
@@ -62,6 +64,7 @@ type PasswordFormData = {
 type ProfileFieldKey = keyof ProfileFormData;
 type ProfileEditableFieldKey = ProfileFieldKey | "password";
 type PlanActivationStep = "sites" | "confirm" | "payment";
+type PlanChangeMode = "activation" | "capacity";
 
 const emptyPasswordFormData = {
   currentPassword: "",
@@ -621,8 +624,10 @@ function PlanPaymentsDrawerContent({
   );
   const minimumSiteCount = visualState.isTrial ? minimumActivationSiteCount : minimumRecoverySiteCount;
   const [activationStep, setActivationStep] = useState<PlanActivationStep | null>(null);
+  const [planChangeMode, setPlanChangeMode] = useState<PlanChangeMode>("activation");
   const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [planChangeSuccess, setPlanChangeSuccess] = useState<string | null>(null);
   const [isActivationPending, startActivationTransition] = useTransition();
   const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
@@ -641,6 +646,16 @@ function PlanPaymentsDrawerContent({
   const paymentStatusLabel =
     planPayments.paymentMethodStatus === "configured" ? "Configurado" : "Pendiente de configuración";
   const isActivationMode = activationStep !== null;
+  const isCapacityChangeMode = planChangeMode === "capacity";
+  const capacityChangeDirection =
+    selectedSiteCount > planPayments.maxActiveLocations
+      ? "upgrade"
+      : selectedSiteCount < planPayments.maxActiveLocations
+        ? "downgrade"
+        : "unchanged";
+  const minimumSelectableSiteCount = isCapacityChangeMode
+    ? Math.max(planPayments.includedActiveSites, 1)
+    : minimumSiteCount;
 
   const handleNavigateToSites = () => {
     onNavigateToSites();
@@ -649,18 +664,29 @@ function PlanPaymentsDrawerContent({
     });
   };
   const openActivationFlow = () => {
+    setPlanChangeMode("activation");
     setSelectedSiteCount(minimumSiteCount);
     setActivationError(null);
+    setPlanChangeSuccess(null);
+    setActivationStep("sites");
+  };
+  const openCapacityChangeFlow = () => {
+    setPlanChangeMode("capacity");
+    setSelectedSiteCount(planPayments.maxActiveLocations);
+    setActivationError(null);
+    setPlanChangeSuccess(null);
     setActivationStep("sites");
   };
   const openPaymentRecovery = () => {
+    setPlanChangeMode("activation");
     setSelectedSiteCount(minimumSiteCount);
     setActivationStep("payment");
   };
   const increaseSites = () => setSelectedSiteCount((currentValue) => currentValue + 1);
-  const decreaseSites = () => setSelectedSiteCount((currentValue) => Math.max(minimumSiteCount, currentValue - 1));
+  const decreaseSites = () =>
+    setSelectedSiteCount((currentValue) => Math.max(minimumSelectableSiteCount, currentValue - 1));
   const startMercadoPagoCheckout = () => {
-    if (!visualState.isTrial) {
+    if (!visualState.isTrial && !isCapacityChangeMode) {
       setActivationError("La recuperación de pagos se implementará en una siguiente fase.");
       return;
     }
@@ -673,13 +699,31 @@ function PlanPaymentsDrawerContent({
     }
 
     startActivationTransition(async () => {
-      const result = await startPlanActivation({
-        companySlug,
-        requestedMaxActiveLocations: selectedSiteCount,
-      });
+      const result: { checkoutUrl?: string; success?: string; error?: string } = visualState.isTrial
+        ? await startPlanActivation({
+            companySlug,
+            requestedMaxActiveLocations: selectedSiteCount,
+          })
+        : capacityChangeDirection === "upgrade"
+          ? await startPlanUpgrade({
+              companySlug,
+              requestedMaxActiveLocations: selectedSiteCount,
+            })
+          : capacityChangeDirection === "downgrade"
+            ? await schedulePlanDowngrade({
+                companySlug,
+                requestedMaxActiveLocations: selectedSiteCount,
+              })
+            : { error: "Selecciona una capacidad diferente a la actual." };
 
       if (result.checkoutUrl) {
         window.location.assign(result.checkoutUrl);
+        return;
+      }
+
+      if (result.success) {
+        setActivationError(null);
+        setPlanChangeSuccess(result.success);
         return;
       }
 
@@ -760,6 +804,11 @@ function PlanPaymentsDrawerContent({
                 </button>
               </div>
             ) : null}
+            {visualState.isActivePlan && !scheduledCapacityChange ? (
+              <AdminDrawerButton variant="secondary" onClick={openCapacityChangeFlow}>
+                Cambiar capacidad
+              </AdminDrawerButton>
+            ) : null}
             {visualState.hasPaymentIssue ? (
               <AdminDrawerButton variant="primary" onClick={openPaymentRecovery}>
                 {planPayments.subscriptionViewState === "cancelled" ? "Recuperar suscripción" : "Actualizar pago"}
@@ -770,11 +819,17 @@ function PlanPaymentsDrawerContent({
           <>
             <div>
               <p className="text-lg font-semibold tracking-[-0.04em] text-[#12110f]">
-                {activationStep === "payment" ? "Mercado Pago" : "Configura tu plan"}
+                {activationStep === "payment"
+                  ? capacityChangeDirection === "downgrade"
+                    ? "Programa tu reducción"
+                    : "Mercado Pago"
+                  : isCapacityChangeMode
+                    ? "Ajusta tu capacidad"
+                    : "Configura tu plan"}
               </p>
               <p className="mt-2 text-sm leading-6 text-[#5e6770]">
                 {activationStep === "sites"
-                  ? "Elige la capacidad de sedes que quieres contratar. No crearemos sedes automáticamente."
+                  ? "Elige la capacidad de sedes que quieres contratar. Las sedes no se crean ni se eliminan automáticamente."
                   : "Revisa el resumen antes de continuar con Mercado Pago."}
               </p>
             </div>
@@ -794,7 +849,7 @@ function PlanPaymentsDrawerContent({
                 <button
                   type="button"
                   onClick={decreaseSites}
-                  disabled={selectedSiteCount <= minimumSiteCount}
+                  disabled={selectedSiteCount <= minimumSelectableSiteCount}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#12110f]/12 text-lg font-semibold text-[#12110f] transition hover:bg-[#f7f8f9] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   -
@@ -823,7 +878,22 @@ function PlanPaymentsDrawerContent({
                 </div>
               </div>
 
-              <AdminDrawerButton variant="primary" onClick={() => setActivationStep("confirm")}>
+              {isCapacityChangeMode && capacityChangeDirection === "downgrade" ? (
+                <p className="text-sm leading-6 text-[#5e6770]">
+                  Mantendrás tus {planPayments.maxActiveLocations} cupos hasta el {formatDateLabel(planPayments.nextChargeAt)}.
+                </p>
+              ) : null}
+              {isCapacityChangeMode && capacityChangeDirection === "upgrade" ? (
+                <p className="text-sm leading-6 text-[#5e6770]">
+                  Cobraremos ahora únicamente la diferencia proporcional del periodo actual.
+                </p>
+              ) : null}
+
+              <AdminDrawerButton
+                variant="primary"
+                onClick={() => setActivationStep("confirm")}
+                disabled={isCapacityChangeMode && capacityChangeDirection === "unchanged"}
+              >
                 Continuar
               </AdminDrawerButton>
             </>
@@ -844,8 +914,18 @@ function PlanPaymentsDrawerContent({
                 label="Valor mensual"
                 value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
               />
+              {isCapacityChangeMode ? (
+                <AdminDrawerSummaryRow
+                  label="Aplicación"
+                  value={
+                    capacityChangeDirection === "upgrade"
+                      ? "La capacidad aumenta cuando Mercado Pago apruebe el cobro proporcional."
+                      : `La capacidad se reduce el ${formatDateLabel(planPayments.nextChargeAt)}.`
+                  }
+                />
+              ) : null}
               <AdminDrawerButton variant="primary" onClick={() => setActivationStep("payment")}>
-                Continuar con pago
+                {capacityChangeDirection === "downgrade" ? "Programar reducción" : "Continuar con pago"}
               </AdminDrawerButton>
               <AdminDrawerButton onClick={() => setActivationStep("sites")}>Volver</AdminDrawerButton>
             </>
@@ -855,10 +935,14 @@ function PlanPaymentsDrawerContent({
             <>
               <div>
                 <p className="text-sm font-semibold leading-6 text-[#12110f]">
-                  Continúa con Mercado Pago
+                  {capacityChangeDirection === "downgrade" ? "Confirma el cambio" : "Continúa con Mercado Pago"}
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-                  Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago.
+                  {capacityChangeDirection === "downgrade"
+                    ? "No habrá cobro ni reducción inmediata. El nuevo valor aplicará en tu próxima renovación."
+                    : isCapacityChangeMode
+                      ? "La nueva capacidad se habilitará únicamente cuando Mercado Pago confirme el pago proporcional."
+                      : "Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago."}
                 </p>
               </div>
               <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
@@ -867,8 +951,19 @@ function PlanPaymentsDrawerContent({
                 value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
               />
               {activationError ? <AdminDrawerFeedback state={{ error: activationError }} /> : null}
-              <AdminDrawerButton variant="primary" onClick={startMercadoPagoCheckout} disabled={isActivationPending}>
-                {isActivationPending ? "Preparando pago..." : "Abrir Mercado Pago"}
+              {planChangeSuccess ? <AdminDrawerFeedback state={{ success: planChangeSuccess }} /> : null}
+              <AdminDrawerButton
+                variant="primary"
+                onClick={startMercadoPagoCheckout}
+                disabled={isActivationPending || Boolean(planChangeSuccess)}
+              >
+                {isActivationPending
+                  ? capacityChangeDirection === "downgrade"
+                    ? "Programando..."
+                    : "Preparando pago..."
+                  : capacityChangeDirection === "downgrade"
+                    ? "Confirmar reducción"
+                    : "Abrir Mercado Pago"}
               </AdminDrawerButton>
               <AdminDrawerButton disabled={isActivationPending} onClick={() => setActivationStep("confirm")}>
                 Volver

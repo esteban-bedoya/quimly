@@ -1037,6 +1037,10 @@ where status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing
 create index if not exists billing_intents_company_created_idx
 on public.billing_intents (company_id, created_at desc);
 
+create index if not exists billing_intents_open_expiry_idx
+on public.billing_intents (expires_at)
+where status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing');
+
 create unique index if not exists billing_provider_subscriptions_one_open_per_subscription_idx
 on public.billing_provider_subscriptions (subscription_id)
 where ended_at is null;
@@ -3106,6 +3110,16 @@ begin
     get diagnostics changed_count = row_count;
 
     if changed_count = 1 then
+      update public.billing_intents
+      set
+        status = 'succeeded',
+        completed_at = coalesce(completed_at, now()),
+        last_error_code = null,
+        last_error_message = null
+      where capacity_change_id = scheduled_change.id
+        and intent_type = 'downgrade'
+        and status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing');
+
       applied_count := applied_count + 1;
     end if;
   end loop;
@@ -3113,6 +3127,301 @@ begin
   return applied_count;
 end;
 $$;
+
+create or replace function public.expire_stale_billing_intents(target_company_id uuid default null)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  expired_count integer := 0;
+  expired_intent_ids uuid[] := '{}'::uuid[];
+begin
+  with expired as (
+    update public.billing_intents
+    set
+      status = 'expired',
+      completed_at = coalesce(completed_at, now()),
+      last_error_code = 'intent_expired',
+      last_error_message = 'La operación de billing venció antes de completarse.'
+    where status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing')
+      and (
+        (expires_at is not null and expires_at <= now())
+        or (expires_at is null and updated_at <= now() - interval '24 hours')
+      )
+      and (target_company_id is null or company_id = target_company_id)
+    returning id
+  )
+  select coalesce(array_agg(id), '{}'::uuid[]), count(*)::integer
+  into expired_intent_ids, expired_count
+  from expired;
+
+  update public.billing_provider_subscriptions bps
+  set
+    ended_at = coalesce(ended_at, now()),
+    provider_status = case
+      when provider_status in ('pending', 'unknown') then 'expired'
+      else provider_status
+    end
+  where bps.billing_intent_id = any(expired_intent_ids)
+    and bps.ended_at is null
+    and exists (
+      select 1
+      from public.company_subscriptions cs
+      where cs.id = bps.subscription_id
+        and cs.company_id = bps.company_id
+        and cs.status = 'trial'
+    );
+
+  return expired_count;
+end;
+$$;
+
+create or replace function public.complete_billing_upgrade(
+  target_intent_id uuid,
+  target_payment_id uuid,
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_version integer,
+  target_provider_updated_at timestamptz,
+  target_next_payment_at timestamptz,
+  target_completed_at timestamptz
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  intent_row public.billing_intents%rowtype;
+  payment_row public.billing_payments%rowtype;
+  provider_subscription_row public.billing_provider_subscriptions%rowtype;
+  current_capacity integer;
+  current_subscription_status public.company_subscription_status;
+begin
+  select *
+  into intent_row
+  from public.billing_intents
+  where id = target_intent_id
+  for update;
+
+  if not found then
+    raise exception 'La operación de billing no está disponible.';
+  end if;
+
+  if intent_row.status = 'succeeded' then
+    return false;
+  end if;
+
+  if intent_row.intent_type <> 'upgrade'
+    or intent_row.status not in ('created', 'awaiting_customer', 'awaiting_payment', 'processing')
+    or intent_row.requested_max_active_locations is null
+    or intent_row.previous_max_active_locations is null
+    or intent_row.monthly_amount_after_cop is null
+    or intent_row.expected_immediate_amount_cop is null then
+    raise exception 'La operación de billing no admite este cambio.';
+  end if;
+
+  select *
+  into payment_row
+  from public.billing_payments
+  where id = target_payment_id
+    and company_id = intent_row.company_id
+    and billing_intent_id = intent_row.id
+  for update;
+
+  if not found
+    or payment_row.normalized_status <> 'approved'
+    or payment_row.currency <> 'COP'
+    or payment_row.amount_cop <> intent_row.expected_immediate_amount_cop then
+    raise exception 'El pago aprobado no corresponde al upgrade solicitado.';
+  end if;
+
+  select *
+  into provider_subscription_row
+  from public.billing_provider_subscriptions
+  where id = target_provider_subscription_record_id
+    and company_id = intent_row.company_id
+    and subscription_id = intent_row.subscription_id
+    and provider = 'mercado_pago'
+    and ended_at is null
+  for update;
+
+  if not found then
+    raise exception 'La suscripción externa no está disponible.';
+  end if;
+
+  select max_active_locations, status
+  into current_capacity, current_subscription_status
+  from public.company_subscriptions
+  where id = intent_row.subscription_id
+    and company_id = intent_row.company_id
+  for update;
+
+  if not found or current_subscription_status <> 'active' then
+    raise exception 'La suscripción interna no admite el upgrade.';
+  end if;
+
+  if current_capacity <> intent_row.previous_max_active_locations
+    and current_capacity <> intent_row.requested_max_active_locations then
+    raise exception 'La capacidad contratada cambió antes de completar el upgrade.';
+  end if;
+
+  if provider_subscription_row.recurring_amount_cop <> intent_row.monthly_amount_after_cop then
+    update public.billing_provider_subscriptions
+    set
+      provider_status = target_provider_status,
+      provider_version = coalesce(target_provider_version, provider_version),
+      provider_updated_at = coalesce(target_provider_updated_at, provider_updated_at),
+      recurring_amount_cop = intent_row.monthly_amount_after_cop,
+      next_payment_at = coalesce(target_next_payment_at, next_payment_at)
+    where id = provider_subscription_row.id;
+  end if;
+
+  if current_capacity = intent_row.previous_max_active_locations then
+    update public.company_subscriptions
+    set max_active_locations = intent_row.requested_max_active_locations
+    where id = intent_row.subscription_id
+      and company_id = intent_row.company_id;
+  end if;
+
+  update public.billing_intents
+  set
+    status = 'succeeded',
+    completed_at = coalesce(target_completed_at, now()),
+    last_error_code = null,
+    last_error_message = null
+  where id = intent_row.id;
+
+  return true;
+end;
+$$;
+
+create or replace function public.complete_scheduled_billing_downgrade(
+  target_intent_id uuid,
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_version integer,
+  target_provider_updated_at timestamptz,
+  target_next_payment_at timestamptz,
+  target_completed_at timestamptz
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  intent_row public.billing_intents%rowtype;
+  capacity_change_row public.subscription_capacity_changes%rowtype;
+begin
+  select *
+  into intent_row
+  from public.billing_intents
+  where id = target_intent_id
+  for update;
+
+  if not found then
+    raise exception 'La operación de billing no está disponible.';
+  end if;
+
+  if intent_row.status = 'succeeded' then
+    return false;
+  end if;
+
+  if intent_row.intent_type <> 'downgrade'
+    or intent_row.status not in ('created', 'awaiting_customer', 'awaiting_payment', 'processing')
+    or intent_row.capacity_change_id is null
+    or intent_row.monthly_amount_after_cop is null then
+    raise exception 'La operación de billing no admite este cambio.';
+  end if;
+
+  select *
+  into capacity_change_row
+  from public.subscription_capacity_changes
+  where id = intent_row.capacity_change_id
+    and company_id = intent_row.company_id
+    and subscription_id = intent_row.subscription_id
+  for update;
+
+  if not found
+    or capacity_change_row.status <> 'scheduled'
+    or capacity_change_row.change_type <> 'downgrade'
+    or capacity_change_row.requested_max_active_locations <> intent_row.requested_max_active_locations then
+    raise exception 'El cambio de capacidad programado no corresponde al downgrade.';
+  end if;
+
+  update public.billing_provider_subscriptions
+  set
+    provider_status = target_provider_status,
+    provider_version = coalesce(target_provider_version, provider_version),
+    provider_updated_at = coalesce(target_provider_updated_at, provider_updated_at),
+    recurring_amount_cop = intent_row.monthly_amount_after_cop,
+    next_payment_at = coalesce(target_next_payment_at, next_payment_at)
+  where id = target_provider_subscription_record_id
+    and company_id = intent_row.company_id
+    and subscription_id = intent_row.subscription_id
+    and provider = 'mercado_pago'
+    and ended_at is null;
+
+  if not found then
+    raise exception 'La suscripción externa no está disponible.';
+  end if;
+
+  update public.subscription_capacity_changes
+  set metadata = metadata || jsonb_build_object(
+    'provider_amount_updated_at', coalesce(target_provider_updated_at, now())
+  )
+  where id = capacity_change_row.id;
+
+  update public.billing_intents
+  set
+    status = 'succeeded',
+    completed_at = coalesce(target_completed_at, now()),
+    last_error_code = null,
+    last_error_message = null
+  where id = intent_row.id;
+
+  return true;
+end;
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_namespace
+    where nspname = 'cron'
+  ) then
+    if not exists (
+      select 1
+      from cron.job
+      where jobname = 'expire_stale_billing_intents'
+    ) then
+      perform cron.schedule(
+        'expire_stale_billing_intents',
+        '*/15 * * * *',
+        'select public.expire_stale_billing_intents();'
+      );
+    end if;
+
+    if not exists (
+      select 1
+      from cron.job
+      where jobname = 'apply_due_subscription_capacity_changes'
+    ) then
+      perform cron.schedule(
+        'apply_due_subscription_capacity_changes',
+        '*/5 * * * *',
+        'select public.apply_due_subscription_capacity_changes();'
+      );
+    end if;
+  end if;
+exception
+  when undefined_table or undefined_function or insufficient_privilege then
+    raise notice 'No se pudieron programar los jobs de billing; configúralos desde Supabase Cron.';
+end $$;
 
 create or replace function public.resolve_company_capacity_excess(
   target_company_id uuid,
@@ -5089,6 +5398,21 @@ grant execute on function public.delete_branch_permanently(uuid, text) to authen
 revoke all on function public.apply_due_subscription_capacity_changes() from public;
 revoke all on function public.apply_due_subscription_capacity_changes() from anon;
 grant execute on function public.apply_due_subscription_capacity_changes() to service_role;
+
+revoke all on function public.expire_stale_billing_intents(uuid) from public;
+revoke all on function public.expire_stale_billing_intents(uuid) from anon;
+revoke all on function public.expire_stale_billing_intents(uuid) from authenticated;
+grant execute on function public.expire_stale_billing_intents(uuid) to service_role;
+
+revoke all on function public.complete_billing_upgrade(uuid, uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from public;
+revoke all on function public.complete_billing_upgrade(uuid, uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from anon;
+revoke all on function public.complete_billing_upgrade(uuid, uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from authenticated;
+grant execute on function public.complete_billing_upgrade(uuid, uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) to service_role;
+
+revoke all on function public.complete_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from public;
+revoke all on function public.complete_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from anon;
+revoke all on function public.complete_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) from authenticated;
+grant execute on function public.complete_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, timestamptz) to service_role;
 
 revoke all on function public.resolve_company_capacity_excess(uuid, uuid[]) from public;
 revoke all on function public.resolve_company_capacity_excess(uuid, uuid[]) from anon;
