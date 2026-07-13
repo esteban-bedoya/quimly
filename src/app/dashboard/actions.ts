@@ -53,6 +53,10 @@ export type StartCapacityChangeResult = {
   error?: string;
 };
 
+export type CancelPlanResult = AdminActionState & {
+  effectiveAt?: string;
+};
+
 export type PlanCapacityChangeQuoteResult = {
   quote?: CapacityChangeQuotePreview;
   pendingOperation?: PendingBillingOperation;
@@ -552,6 +556,33 @@ function canManageCompanySites(context: Awaited<ReturnType<typeof requireUserCon
   );
 }
 
+async function requireCompanyBillingAdmin(companySlug: string) {
+  const context = await requireUserContext();
+
+  if (context.profile.globalRole !== "company_admin") {
+    throw new Error("Solo el administrador de la empresa puede gestionar esta suscripción.");
+  }
+
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "requireCompanyBillingAdmin" });
+  const { data: company, error } = await supabase
+    .from("companies")
+    .select("id, company_admin_user_id")
+    .eq("slug", companySlug)
+    .eq("is_active", true)
+    .maybeSingle<{ id: string; company_admin_user_id: string | null }>();
+
+  if (
+    error ||
+    !company ||
+    company.company_admin_user_id !== context.profile.userId ||
+    context.profile.defaultCompanyId !== company.id
+  ) {
+    throw new Error("No tienes permisos para gestionar la suscripción de esta empresa.");
+  }
+
+  return { context, company };
+}
+
 async function getCompanyActiveLocationUsage({
   companyId,
   supabase,
@@ -907,6 +938,86 @@ export async function schedulePlanDowngrade({
     logAdminActionError("billing.downgrade_schedule_failed", error, { companySlug });
     return {
       error: error instanceof Error ? error.message : "No fue posible programar la reducción de capacidad.",
+    };
+  }
+}
+
+export async function cancelCompanyPlan({
+  companySlug,
+}: {
+  companySlug: string;
+}): Promise<CancelPlanResult> {
+  if (!companySlug) {
+    return { error: "No fue posible identificar la empresa." };
+  }
+
+  try {
+    const { context, company } = await requireCompanyBillingAdmin(companySlug);
+    const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
+    const result = await billingService.cancelSubscription({
+      companyId: company.id,
+      requestedBy: context.profile.userId,
+      provider,
+    });
+
+    logServerInfo("billing.subscription_cancellation_requested", {
+      actorUserId: context.profile.userId,
+      companyId: company.id,
+      effectiveAt: result.effectiveAt,
+      alreadyScheduled: result.alreadyScheduled,
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/plan-y-pagos");
+    return {
+      success: result.alreadyScheduled
+        ? "La cancelación ya estaba programada."
+        : "La suscripción fue cancelada en Mercado Pago y conservará acceso hasta finalizar el periodo pagado.",
+      effectiveAt: result.effectiveAt,
+    };
+  } catch (error) {
+    logAdminActionError("billing.subscription_cancellation_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible cancelar la suscripción.",
+    };
+  }
+}
+
+export async function updateCompanyPaymentMethod({
+  companySlug,
+  cardToken,
+}: {
+  companySlug: string;
+  cardToken: string;
+}): Promise<AdminActionState> {
+  const normalizedCardToken = cardToken.trim();
+
+  if (!companySlug || !normalizedCardToken || normalizedCardToken.length > 512) {
+    return { error: "Mercado Pago no entregó un token de tarjeta válido." };
+  }
+
+  try {
+    const { context, company } = await requireCompanyBillingAdmin(companySlug);
+    const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
+    await billingService.updateSubscriptionPaymentMethod({
+      companyId: company.id,
+      requestedBy: context.profile.userId,
+      cardToken: normalizedCardToken,
+      provider,
+    });
+
+    logServerInfo("billing.payment_method_updated", {
+      actorUserId: context.profile.userId,
+      companyId: company.id,
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/plan-y-pagos");
+    return { success: "Método de pago actualizado correctamente en Mercado Pago." };
+  } catch (error) {
+    logAdminActionError("billing.payment_method_update_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible actualizar el método de pago.",
     };
   }
 }

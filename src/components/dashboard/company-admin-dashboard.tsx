@@ -98,10 +98,12 @@ export function CompanyAdminDashboard({
   profile,
   branches,
   planPayments,
+  initialPlanPaymentsOpen = false,
 }: {
   profile: UserProfile;
   branches: AccessibleBranchSummary[];
   planPayments: PlanPaymentsData;
+  initialPlanPaymentsOpen?: boolean;
 }) {
   const activeBranches = branches.filter((branch) => branch.status === "active");
   const canCreateBranch = planPayments.accountCapabilities.canCreateBranch;
@@ -128,7 +130,11 @@ export function CompanyAdminDashboard({
     <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
-          <DashboardHeaderMenu profile={profile} planPayments={planPayments} />
+          <DashboardHeaderMenu
+            profile={profile}
+            planPayments={planPayments}
+            initialPlanPaymentsOpen={initialPlanPaymentsOpen}
+          />
 
           <div className="flex flex-col gap-4 lg:items-start">
             <div className="w-full space-y-3 pr-14 sm:pr-44">

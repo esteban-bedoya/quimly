@@ -3,6 +3,116 @@ import type { BillingIntentStatus, BillingIntentType } from "@/lib/billing/repos
 
 export type LateApprovedResolution = "apply" | "already_applied" | "refund";
 
+export function getCancellationProjection({
+  currentStatus,
+  currentPeriodEndsAt,
+  cancellationAt,
+  now,
+}: {
+  currentStatus: SubscriptionStatus;
+  currentPeriodEndsAt: string | null;
+  cancellationAt: string;
+  now: Date;
+}) {
+  const cancellationTime = new Date(cancellationAt).getTime();
+
+  if (!Number.isFinite(cancellationTime)) {
+    throw new Error("La fecha de cancelación no es válida.");
+  }
+
+  if (currentStatus === "trial" || currentStatus === "cancelled") {
+    return {
+      status: currentStatus,
+      effectiveAt: cancellationAt,
+    };
+  }
+
+  const periodEndTime = currentPeriodEndsAt ? new Date(currentPeriodEndsAt).getTime() : Number.NaN;
+  const effectiveAt = Number.isFinite(periodEndTime) && periodEndTime > cancellationTime
+    ? new Date(periodEndTime).toISOString()
+    : new Date(cancellationTime).toISOString();
+
+  return {
+    status: new Date(effectiveAt).getTime() <= now.getTime() ? "cancelled" as const : currentStatus,
+    effectiveAt,
+  };
+}
+
+export function shouldApplyRecurringPaymentAfterCancellation({
+  currentStatus,
+  paymentStatus,
+  cancellationRequested,
+}: {
+  currentStatus: SubscriptionStatus;
+  paymentStatus: string;
+  cancellationRequested: boolean;
+}) {
+  return currentStatus !== "cancelled" || (paymentStatus === "approved" && cancellationRequested);
+}
+
+function getRequiredTimestamp(value: string, fieldName: string) {
+  const timestamp = new Date(value).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`${fieldName} no es una fecha válida.`);
+  }
+
+  return timestamp;
+}
+
+export function getProtectedCancellationEffectiveAt({
+  requestedEffectiveAt,
+  currentPeriodEndsAt,
+  existingCancellationEffectiveAt,
+}: {
+  requestedEffectiveAt: string;
+  currentPeriodEndsAt: string | null;
+  existingCancellationEffectiveAt: string | null;
+}) {
+  const candidates = [requestedEffectiveAt, currentPeriodEndsAt, existingCancellationEffectiveAt]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => getRequiredTimestamp(value, "La fecha efectiva de cancelación"));
+
+  return new Date(Math.max(...candidates)).toISOString();
+}
+
+export function getApprovedRenewalProjection({
+  currentPeriodStartedAt,
+  currentPeriodEndsAt,
+  cancellationRequested,
+  cancellationEffectiveAt,
+  approvedPeriodStartedAt,
+  approvedPeriodEndsAt,
+}: {
+  currentPeriodStartedAt: string | null;
+  currentPeriodEndsAt: string | null;
+  cancellationRequested: boolean;
+  cancellationEffectiveAt: string | null;
+  approvedPeriodStartedAt: string;
+  approvedPeriodEndsAt: string;
+}) {
+  const approvedEnd = getRequiredTimestamp(approvedPeriodEndsAt, "El fin del periodo aprobado");
+  const currentEnd = currentPeriodEndsAt
+    ? getRequiredTimestamp(currentPeriodEndsAt, "El fin del periodo vigente")
+    : Number.NEGATIVE_INFINITY;
+  const keepsCurrentPeriod = currentEnd >= approvedEnd;
+  const protectedPeriodEndsAt = new Date(Math.max(currentEnd, approvedEnd)).toISOString();
+
+  return {
+    status: "active" as const,
+    currentPeriodStartedAt:
+      keepsCurrentPeriod && currentPeriodStartedAt ? currentPeriodStartedAt : approvedPeriodStartedAt,
+    currentPeriodEndsAt: protectedPeriodEndsAt,
+    cancellationEffectiveAt: cancellationRequested
+      ? getProtectedCancellationEffectiveAt({
+          requestedEffectiveAt: approvedPeriodEndsAt,
+          currentPeriodEndsAt: protectedPeriodEndsAt,
+          existingCancellationEffectiveAt: cancellationEffectiveAt,
+        })
+      : null,
+  };
+}
+
 export function isAbandonedActivationCheckoutForFounder({
   intentType,
   intentStatus,

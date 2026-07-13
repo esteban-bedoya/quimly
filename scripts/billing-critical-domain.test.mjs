@@ -4,11 +4,15 @@ import test from "node:test";
 import {
   assertNoScheduledDowngrade,
   decideLateApprovedResolution,
+  getApprovedRenewalProjection,
+  getCancellationProjection,
+  getProtectedCancellationEffectiveAt,
   getUpgradeReversalCapacity,
   isAbandonedActivationCheckoutForFounder,
   isCurrentPaymentEntitlement,
   isPaymentReversal,
   isUpgradePaymentHistorical,
+  shouldApplyRecurringPaymentAfterCancellation,
 } from "../src/lib/billing/financial-policy.ts";
 import {
   additionalSitePriceCop,
@@ -43,6 +47,101 @@ test("Founder permite cerrar solo un checkout de activación vencido, pending y 
   assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, providerStatus: "authorized" }), false);
   assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, hasChargeablePayment: true }), false);
   assert.equal(isAbandonedActivationCheckoutForFounder({ ...baseCase, intentStatus: "awaiting_payment" }), false);
+});
+
+test("cancelación conserva acceso hasta finalizar el periodo pagado", () => {
+  const scheduled = getCancellationProjection({
+    currentStatus: "active",
+    currentPeriodEndsAt: "2026-08-12T12:00:00.000Z",
+    cancellationAt: "2026-07-20T12:00:00.000Z",
+    now: new Date("2026-07-20T12:00:00.000Z"),
+  });
+
+  assert.deepEqual(scheduled, {
+    status: "active",
+    effectiveAt: "2026-08-12T12:00:00.000Z",
+  });
+
+  const due = getCancellationProjection({
+    currentStatus: "active",
+    currentPeriodEndsAt: "2026-08-12T12:00:00.000Z",
+    cancellationAt: "2026-07-20T12:00:00.000Z",
+    now: new Date("2026-08-12T12:00:00.000Z"),
+  });
+
+  assert.equal(due.status, "cancelled");
+  assert.equal(shouldApplyRecurringPaymentAfterCancellation({
+    currentStatus: "cancelled",
+    paymentStatus: "approved",
+    cancellationRequested: true,
+  }), true);
+  assert.equal(shouldApplyRecurringPaymentAfterCancellation({
+    currentStatus: "cancelled",
+    paymentStatus: "rejected",
+    cancellationRequested: true,
+  }), false);
+});
+
+test("cancelación solicitada y luego renovación aprobada extiende la fecha efectiva", () => {
+  const projection = getApprovedRenewalProjection({
+    currentPeriodStartedAt: "2026-07-12T00:00:00.000Z",
+    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
+    cancellationRequested: true,
+    cancellationEffectiveAt: "2026-08-12T00:00:00.000Z",
+    approvedPeriodStartedAt: "2026-08-12T00:00:00.000Z",
+    approvedPeriodEndsAt: "2026-09-12T00:00:00.000Z",
+  });
+
+  assert.deepEqual(projection, {
+    status: "active",
+    currentPeriodStartedAt: "2026-08-12T00:00:00.000Z",
+    currentPeriodEndsAt: "2026-09-12T00:00:00.000Z",
+    cancellationEffectiveAt: "2026-09-12T00:00:00.000Z",
+  });
+});
+
+test("renovación aprobada y luego cancelación confirmada conserva el periodo mayor", () => {
+  assert.equal(getProtectedCancellationEffectiveAt({
+    requestedEffectiveAt: "2026-08-12T00:00:00.000Z",
+    currentPeriodEndsAt: "2026-09-12T00:00:00.000Z",
+    existingCancellationEffectiveAt: null,
+  }), "2026-09-12T00:00:00.000Z");
+});
+
+test("cron finalizado y webhook aprobado tardío reactiva hasta el periodo pagado", () => {
+  assert.equal(shouldApplyRecurringPaymentAfterCancellation({
+    currentStatus: "cancelled",
+    paymentStatus: "approved",
+    cancellationRequested: true,
+  }), true);
+
+  const projection = getApprovedRenewalProjection({
+    currentPeriodStartedAt: "2026-07-12T00:00:00.000Z",
+    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
+    cancellationRequested: true,
+    cancellationEffectiveAt: "2026-08-12T00:00:00.000Z",
+    approvedPeriodStartedAt: "2026-08-12T00:00:00.000Z",
+    approvedPeriodEndsAt: "2026-09-12T00:00:00.000Z",
+  });
+
+  assert.equal(projection.status, "active");
+  assert.equal(projection.currentPeriodEndsAt, "2026-09-12T00:00:00.000Z");
+  assert.equal(projection.cancellationEffectiveAt, "2026-09-12T00:00:00.000Z");
+});
+
+test("una aprobación histórica nunca reduce un periodo vigente más largo", () => {
+  const projection = getApprovedRenewalProjection({
+    currentPeriodStartedAt: "2026-09-12T00:00:00.000Z",
+    currentPeriodEndsAt: "2026-10-12T00:00:00.000Z",
+    cancellationRequested: true,
+    cancellationEffectiveAt: "2026-10-12T00:00:00.000Z",
+    approvedPeriodStartedAt: "2026-08-12T00:00:00.000Z",
+    approvedPeriodEndsAt: "2026-09-12T00:00:00.000Z",
+  });
+
+  assert.equal(projection.currentPeriodStartedAt, "2026-09-12T00:00:00.000Z");
+  assert.equal(projection.currentPeriodEndsAt, "2026-10-12T00:00:00.000Z");
+  assert.equal(projection.cancellationEffectiveAt, "2026-10-12T00:00:00.000Z");
 });
 
 test("C1/C2 aplica una aprobación mientras la activación todavía es resoluble", () => {

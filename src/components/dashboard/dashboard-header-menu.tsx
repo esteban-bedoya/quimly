@@ -2,10 +2,12 @@
 
 import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 
 import {
   getCurrentUserProfileDetails,
   getPlanCapacityChangeQuote,
+  cancelCompanyPlan,
   schedulePlanDowngrade,
   sendCurrentUserPhoneChangeOTP,
   startPlanActivation,
@@ -23,6 +25,7 @@ import {
   adminDrawerInputClassName,
 } from "@/components/dashboard/admin-side-drawer";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
+import { MercadoPagoPaymentMethodForm } from "@/components/billing/mercado-pago-payment-method-form";
 import {
   calculatePlanMonthlyTotalCop,
   formatCopAmount,
@@ -646,6 +649,7 @@ function PlanPaymentsDrawerContent({
   planPayments: PlanPaymentsData;
   onNavigateToSites: () => void;
 }) {
+  const router = useRouter();
   const visualState = getPlanPaymentsVisualState({
     subscriptionViewState: planPayments.subscriptionViewState,
     planType: planPayments.planType,
@@ -665,8 +669,13 @@ function PlanPaymentsDrawerContent({
   const [planChangeSuccess, setPlanChangeSuccess] = useState<string | null>(null);
   const [capacityQuote, setCapacityQuote] = useState<CapacityChangeQuote | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingPlanOperation | null>(null);
+  const [isPaymentMethodFormOpen, setIsPaymentMethodFormOpen] = useState(false);
+  const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
+  const [billingLifecycleState, setBillingLifecycleState] = useState<AdminActionState | undefined>(undefined);
+  const [cancellationEffectiveOverride, setCancellationEffectiveOverride] = useState<string | null>(null);
   const [isActivationPending, startActivationTransition] = useTransition();
   const [isQuotePending, startQuoteTransition] = useTransition();
+  const [isLifecyclePending, startLifecycleTransition] = useTransition();
   const capacityQuoteRequestRef = useRef(0);
   const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
@@ -685,7 +694,13 @@ function PlanPaymentsDrawerContent({
         includedActiveSites: planPayments.includedActiveSites,
       });
   const paymentStatusLabel =
-    planPayments.paymentMethodStatus === "configured" ? "Configurado" : "Pendiente de configuración";
+    planPayments.paymentAttentionRequired
+      ? "Requiere atención"
+      : planPayments.paymentMethodStatus === "configured"
+        ? "Configurado"
+        : "Pendiente de configuración";
+  const cancellationEffectiveAt = cancellationEffectiveOverride ?? planPayments.cancellationEffectiveAt;
+  const isCancellationScheduled = Boolean(planPayments.cancellationRequestedAt || cancellationEffectiveAt);
   const isActivationMode = activationStep !== null;
   const isCapacityChangeMode = planChangeMode === "capacity";
   const capacityChangeDirection =
@@ -705,6 +720,30 @@ function PlanPaymentsDrawerContent({
     onNavigateToSites();
     window.requestAnimationFrame(() => {
       document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  const handlePaymentMethodCompleted = useCallback((state: AdminActionState) => {
+    setBillingLifecycleState(state);
+    setIsPaymentMethodFormOpen(false);
+    router.refresh();
+  }, [router]);
+  const requestCancellation = () => {
+    const companySlug = planPayments.companySlug;
+
+    if (!companySlug) {
+      setBillingLifecycleState({ error: "No fue posible identificar la empresa." });
+      return;
+    }
+
+    startLifecycleTransition(async () => {
+      const result = await cancelCompanyPlan({ companySlug });
+      setBillingLifecycleState(result);
+
+      if (result.success) {
+        setCancellationEffectiveOverride(result.effectiveAt ?? planPayments.cancellationEffectiveAt);
+        setIsCancellationConfirmationOpen(false);
+        router.refresh();
+      }
     });
   };
   const requestCapacityQuote = (requestedMaxActiveLocations: number) => {
@@ -765,11 +804,6 @@ function PlanPaymentsDrawerContent({
     setPendingOperation(null);
     setActivationStep("sites");
     requestCapacityQuote(planPayments.maxActiveLocations);
-  };
-  const openPaymentRecovery = () => {
-    setPlanChangeMode("activation");
-    setSelectedSiteCount(minimumSiteCount);
-    setActivationStep("payment");
   };
   const updateSelectedSiteCount = (nextValue: number) => {
     setSelectedSiteCount(nextValue);
@@ -863,7 +897,7 @@ function PlanPaymentsDrawerContent({
               >
                 {visualState.title}
               </p>
-              {visualState.isActivePlan ? (
+              {!visualState.isTrial ? (
                 <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">
                   {formatCopAmount(planPayments.monthlyTotalCop)}/mes
                 </p>
@@ -883,8 +917,26 @@ function PlanPaymentsDrawerContent({
                   label="Valor mensual"
                   value={`${formatCopAmount(planPayments.monthlyTotalCop)}/mes`}
                 />
-                <AdminDrawerSummaryRow label="Próximo cobro" value={formatDateLabel(planPayments.nextChargeAt)} />
+                {isCancellationScheduled ? (
+                  <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(cancellationEffectiveAt)} />
+                ) : (
+                  <AdminDrawerSummaryRow label="Próximo cobro" value={formatDateLabel(planPayments.nextChargeAt)} />
+                )}
                 <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
+                <AdminDrawerSummaryRow label="Estado de pago" value={paymentStatusLabel} />
+              </div>
+            ) : null}
+
+            {isCancellationScheduled ? (
+              <div className="grid gap-2 rounded-2xl border border-[#ead8b6] bg-[#fff8e9] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8f5b15]">
+                  {planPayments.subscriptionViewState === "cancelled" ? "Suscripción cancelada" : "Cancelación programada"}
+                </p>
+                <p className="text-sm leading-6 text-[#6d5218]">
+                  {planPayments.subscriptionViewState === "cancelled"
+                    ? `Tu acceso operativo finalizó el ${formatDateLabel(cancellationEffectiveAt)}. Mercado Pago no realizará nuevos cobros.`
+                    : `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. Mercado Pago no realizará una nueva renovación.`}
+                </p>
               </div>
             ) : null}
 
@@ -916,14 +968,18 @@ function PlanPaymentsDrawerContent({
                 </button>
               </div>
             ) : null}
-            {visualState.isActivePlan && !scheduledCapacityChange ? (
+            {visualState.isActivePlan && !scheduledCapacityChange && !isCancellationScheduled ? (
               <AdminDrawerButton variant="secondary" onClick={openCapacityChangeFlow}>
                 Cambiar capacidad
               </AdminDrawerButton>
             ) : null}
             {visualState.hasPaymentIssue ? (
-              <AdminDrawerButton variant="primary" onClick={openPaymentRecovery}>
-                {planPayments.subscriptionViewState === "cancelled" ? "Recuperar suscripción" : "Actualizar pago"}
+              <AdminDrawerButton
+                variant="primary"
+                onClick={() => setIsPaymentMethodFormOpen(true)}
+                disabled={planPayments.subscriptionViewState === "cancelled" || isCancellationScheduled}
+              >
+                {planPayments.subscriptionViewState === "cancelled" ? "Suscripción cancelada" : "Actualizar método de pago"}
               </AdminDrawerButton>
             ) : null}
           </>
@@ -1213,7 +1269,14 @@ function PlanPaymentsDrawerContent({
       </AdminDrawerSection>
 
       <AdminDrawerSection title="Pago">
-        {visualState.isTrial ? (
+        {isPaymentMethodFormOpen && planPayments.companySlug ? (
+          <MercadoPagoPaymentMethodForm
+            companySlug={planPayments.companySlug}
+            monthlyAmountCop={planPayments.monthlyTotalCop}
+            onCompleted={handlePaymentMethodCompleted}
+            onCancel={() => setIsPaymentMethodFormOpen(false)}
+          />
+        ) : visualState.isTrial ? (
           <>
             <div>
               <p className="text-sm font-semibold leading-6 text-[#12110f]">Aún no tienes un método de pago configurado.</p>
@@ -1231,20 +1294,46 @@ function PlanPaymentsDrawerContent({
             <AdminDrawerSummaryRow label="Estado" value={paymentStatusLabel} />
             <AdminDrawerButton
               variant={visualState.hasPaymentIssue ? "primary" : "secondary"}
-              onClick={visualState.hasPaymentIssue ? openPaymentRecovery : undefined}
-              disabled={!visualState.hasPaymentIssue}
+              onClick={() => {
+                setBillingLifecycleState(undefined);
+                setIsPaymentMethodFormOpen(true);
+              }}
+              disabled={isCancellationScheduled || !planPayments.companySlug}
             >
-              {visualState.hasPaymentIssue ? "Actualizar pago" : "Actualizar método de pago"}
+              Actualizar método de pago
             </AdminDrawerButton>
-            {visualState.isActivePlan ? (
+            {visualState.isActivePlan && !isCancellationScheduled ? (
               <button
                 type="button"
-                disabled
-                className="w-fit justify-self-center text-xs font-semibold text-[#8a9298] underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => {
+                  setBillingLifecycleState(undefined);
+                  setIsCancellationConfirmationOpen(true);
+                }}
+                className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
               >
-                Cancelar suscripción
+                Cancelar plan
               </button>
             ) : null}
+
+            {isCancellationConfirmationOpen ? (
+              <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
+                <div>
+                  <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
+                  <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
+                    Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
+                  </p>
+                </div>
+                <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
+                <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
+                  {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
+                </AdminDrawerButton>
+                <AdminDrawerButton onClick={() => setIsCancellationConfirmationOpen(false)} disabled={isLifecyclePending}>
+                  Volver
+                </AdminDrawerButton>
+              </div>
+            ) : null}
+
+            <AdminDrawerFeedback state={billingLifecycleState} />
           </>
         )}
       </AdminDrawerSection>
@@ -1255,12 +1344,17 @@ function PlanPaymentsDrawerContent({
 export function DashboardHeaderMenu({
   profile,
   planPayments,
+  initialPlanPaymentsOpen = false,
 }: {
   profile: UserProfile;
   planPayments: PlanPaymentsData;
+  initialPlanPaymentsOpen?: boolean;
 }) {
+  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(null);
+  const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(
+    initialPlanPaymentsOpen ? "planPayments" : null,
+  );
 
   useEffect(() => {
     const closeMenu = () => setIsMenuOpen(false);
@@ -1328,7 +1422,14 @@ export function DashboardHeaderMenu({
               <button type="button" onClick={() => openPanel("profile")} className={menuItemClass}>
                 Mi perfil
               </button>
-              <button type="button" onClick={() => openPanel("planPayments")} className={menuItemClass}>
+              <button
+                type="button"
+                onClick={() => {
+                  openPanel("planPayments");
+                  router.push("/dashboard/plan-y-pagos");
+                }}
+                className={menuItemClass}
+              >
                 Plan y pagos
               </button>
               <div className="my-1 h-px bg-[#48c7d2]/20" />

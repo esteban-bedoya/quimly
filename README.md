@@ -25,11 +25,12 @@ supabase/
 
 ## Variables de entorno
 
-Copia `env.example` a `.env.local` y completa las credenciales de Supabase.
+Copia `.env.example` a `.env.local` y completa las credenciales de Supabase y Mercado Pago.
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (solo para operaciones Auth Admin en servidor)
+- `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` (tokenización segura de tarjeta en MercadoPago.js)
 
 ## Auth y roles
 
@@ -43,3 +44,33 @@ npm run dev
 ```
 
 La vista principal queda en `http://localhost:3000`.
+
+## Verificación de Supabase Cron
+
+La finalización del acceso de suscripciones canceladas depende del job
+`finalize_due_subscription_cancellations`, programado cada cinco minutos. Antes de producción,
+verifica la extensión, la definición del job y sus últimas ejecuciones desde Supabase SQL Editor:
+
+```sql
+select extname, extversion
+from pg_extension
+where extname = 'pg_cron';
+
+select jobid, jobname, schedule, command, active
+from cron.job
+where jobname = 'finalize_due_subscription_cancellations';
+
+select status, start_time, end_time, return_message
+from cron.job_run_details
+where jobid = (
+  select jobid
+  from cron.job
+  where jobname = 'finalize_due_subscription_cancellations'
+)
+order by start_time desc
+limit 20;
+```
+
+El resultado esperado es una extensión `pg_cron` instalada, un único job activo con schedule
+`*/5 * * * *`, el comando `select public.finalize_due_subscription_cancellations();` y ejecuciones
+recientes con estado `succeeded`.

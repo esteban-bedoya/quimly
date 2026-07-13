@@ -47,11 +47,14 @@ export type PlanPaymentsData = {
   planType: PlanType;
   trialEndsAt: string | null;
   nextChargeAt: string | null;
+  cancellationRequestedAt: string | null;
+  cancellationEffectiveAt: string | null;
   baseMonthlyPriceCop: number;
   additionalSiteMonthlyPriceCop: number;
   includedActiveSites: number;
   maxActiveLocations: number;
   paymentMethodStatus: PaymentMethodStatus;
+  paymentAttentionRequired: boolean;
   totalSites: number;
   activeSites: number;
   inactiveSites: number;

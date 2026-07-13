@@ -406,6 +406,27 @@ export class MercadoPagoBillingProvider implements BillingProvider {
     return this.mapSubscription(response);
   }
 
+  async updateSubscriptionPaymentMethod(
+    providerSubscriptionId: string,
+    cardToken: string,
+  ): Promise<ProviderSubscription> {
+    const normalizedCardToken = cardToken.trim();
+
+    if (!normalizedCardToken || normalizedCardToken.length > 512) {
+      throw new Error("Mercado Pago no entregó un token de tarjeta válido.");
+    }
+
+    const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>(
+      `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ card_token_id: normalizedCardToken }),
+      },
+    );
+
+    return this.mapSubscription(response);
+  }
+
   async updateSubscriptionStatus(
     providerSubscriptionId: string,
     status: "paused" | "canceled",

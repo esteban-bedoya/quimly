@@ -3140,7 +3140,7 @@ begin
     join public.billing_intents bi
       on bi.capacity_change_id = scc.id
       and bi.intent_type = 'downgrade'
-      and bi.status = 'processing'
+      and bi.status = 'succeeded'
     where scc.status = 'scheduled'
       and scc.effective_at <= now()
     order by scc.effective_at asc, scc.created_at asc
@@ -3153,7 +3153,7 @@ begin
         last_error_code = 'downgrade_provider_amount_mismatch',
         last_error_message = 'El valor recurrente externo no coincide con el downgrade programado.'
       where id = scheduled_change.intent_id
-        and status = 'processing';
+        and status = 'succeeded';
       continue;
     end if;
 
@@ -3172,7 +3172,7 @@ begin
         last_error_code = 'downgrade_subscription_state_changed',
         last_error_message = 'La suscripción cambió antes de aplicar el downgrade programado.'
       where id = scheduled_change.intent_id
-        and status = 'processing';
+        and status = 'succeeded';
       continue;
     end if;
 
@@ -3188,12 +3188,11 @@ begin
     if changed_count = 1 then
       update public.billing_intents
       set
-        status = 'succeeded',
-        completed_at = coalesce(completed_at, now()),
+        metadata = metadata || jsonb_build_object('capacityAppliedAt', now()),
         last_error_code = null,
         last_error_message = null
       where id = scheduled_change.intent_id
-        and status = 'processing';
+        and status = 'succeeded';
 
       applied_count := applied_count + 1;
     end if;
@@ -3202,6 +3201,19 @@ begin
   return applied_count;
 end;
 $$;
+
+update public.billing_intents bi
+set
+  status = 'succeeded',
+  completed_at = coalesce(completed_at, bi.updated_at, now()),
+  expires_at = null,
+  last_error_code = null,
+  last_error_message = null
+from public.subscription_capacity_changes scc
+where bi.capacity_change_id = scc.id
+  and bi.intent_type = 'downgrade'
+  and bi.status = 'processing'
+  and scc.status = 'scheduled';
 
 create or replace function public.expire_stale_billing_intents(target_company_id uuid default null)
 returns integer
@@ -3368,6 +3380,577 @@ begin
   where id = intent_row.id;
 
   return true;
+end;
+$$;
+
+create or replace function public.complete_billing_cancellation(
+  target_intent_id uuid,
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_version bigint,
+  target_provider_updated_at timestamptz,
+  target_requested_at timestamptz,
+  target_effective_at timestamptz
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  intent_row public.billing_intents%rowtype;
+  subscription_row public.company_subscriptions%rowtype;
+  resolved_effective_at timestamptz;
+begin
+  if lower(trim(coalesce(target_provider_status, ''))) not in ('canceled', 'cancelled') then
+    raise exception 'Mercado Pago no confirmó la cancelación del preapproval.';
+  end if;
+
+  select * into intent_row
+  from public.billing_intents
+  where id = target_intent_id
+  for update;
+
+  if not found or intent_row.intent_type <> 'cancellation' then
+    raise exception 'La cancelación solicitada no está disponible.';
+  end if;
+
+  if intent_row.status = 'succeeded' then
+    return false;
+  end if;
+
+  if intent_row.status <> 'processing' then
+    raise exception 'La cancelación no se encuentra en procesamiento.';
+  end if;
+
+  select * into subscription_row
+  from public.company_subscriptions
+  where id = intent_row.subscription_id
+    and company_id = intent_row.company_id
+  for update;
+
+  if not found or subscription_row.status not in ('active', 'payment_issue', 'cancelled') then
+    raise exception 'La suscripción interna ya no admite cancelación.';
+  end if;
+
+  if target_requested_at is null or target_effective_at is null or target_effective_at < target_requested_at then
+    raise exception 'El periodo efectivo de cancelación no es válido.';
+  end if;
+
+  resolved_effective_at := greatest(
+    target_effective_at,
+    subscription_row.current_period_ends_at,
+    subscription_row.cancellation_effective_at
+  );
+
+  update public.billing_provider_subscriptions
+  set
+    provider_status = target_provider_status,
+    provider_version = coalesce(target_provider_version, provider_version),
+    provider_updated_at = coalesce(target_provider_updated_at, provider_updated_at),
+    next_payment_at = null,
+    ended_at = coalesce(ended_at, target_provider_updated_at, target_requested_at, now())
+  where id = target_provider_subscription_record_id
+    and subscription_id = subscription_row.id
+    and company_id = subscription_row.company_id
+    and provider = 'mercado_pago';
+
+  if not found then
+    raise exception 'La suscripción externa no corresponde a la empresa indicada.';
+  end if;
+
+  update public.company_subscriptions
+  set
+    status = case when resolved_effective_at <= now() then 'cancelled' else status end,
+    cancellation_requested_at = coalesce(cancellation_requested_at, target_requested_at),
+    cancellation_effective_at = resolved_effective_at,
+    payment_attention_required = case when resolved_effective_at <= now() then false else payment_attention_required end
+  where id = subscription_row.id;
+
+  update public.subscription_capacity_changes
+  set
+    status = 'cancelled',
+    cancelled_at = coalesce(cancelled_at, target_requested_at)
+  where subscription_id = subscription_row.id
+    and company_id = subscription_row.company_id
+    and status = 'scheduled';
+
+  update public.billing_intents
+  set
+    status = 'succeeded',
+    completed_at = coalesce(completed_at, target_requested_at),
+    expires_at = null,
+    last_error_code = null,
+    last_error_message = null,
+    metadata = metadata || jsonb_build_object(
+      'providerSubscriptionId', target_provider_subscription_record_id,
+      'cancellationEffectiveAt', resolved_effective_at
+    )
+  where id = intent_row.id;
+
+  if resolved_effective_at <= now() and subscription_row.status <> 'cancelled' then
+    insert into public.subscription_status_history (
+      company_id,
+      subscription_id,
+      from_status,
+      to_status,
+      reason,
+      source,
+      billing_intent_id,
+      actor_user_id,
+      deduplication_key,
+      metadata,
+      occurred_at
+    ) values (
+      subscription_row.company_id,
+      subscription_row.id,
+      subscription_row.status,
+      'cancelled',
+      'subscription_cancellation_effective',
+      'billing',
+      intent_row.id,
+      intent_row.requested_by,
+      'subscription_cancellation_effective:' || subscription_row.id,
+      jsonb_build_object('effectiveAt', resolved_effective_at),
+      resolved_effective_at
+    )
+    on conflict (deduplication_key) do nothing;
+  end if;
+
+  return true;
+end;
+$$;
+
+create or replace function public.apply_recurring_billing_payment_state(
+  target_provider_subscription_record_id uuid,
+  target_payment_id uuid,
+  target_webhook_event_id uuid,
+  target_normalized_status public.billing_payment_status,
+  target_period_started_at timestamptz,
+  target_period_ends_at timestamptz,
+  target_occurred_at timestamptz
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  provider_subscription_row public.billing_provider_subscriptions%rowtype;
+  payment_row public.billing_payments%rowtype;
+  subscription_row public.company_subscriptions%rowtype;
+  next_status public.company_subscription_status;
+  protected_period_started_at timestamptz;
+  protected_period_ends_at timestamptz;
+  protected_cancellation_effective_at timestamptz;
+begin
+  select * into provider_subscription_row
+  from public.billing_provider_subscriptions
+  where id = target_provider_subscription_record_id;
+
+  if not found then
+    raise exception 'La suscripción externa no está disponible.';
+  end if;
+
+  select * into subscription_row
+  from public.company_subscriptions
+  where id = provider_subscription_row.subscription_id
+    and company_id = provider_subscription_row.company_id
+  for update;
+
+  if not found then
+    raise exception 'La suscripción interna no está disponible.';
+  end if;
+
+  select * into payment_row
+  from public.billing_payments
+  where id = target_payment_id
+    and company_id = provider_subscription_row.company_id
+    and provider_subscription_record_id = provider_subscription_row.id
+  for update;
+
+  if not found
+    or payment_row.normalized_status <> target_normalized_status
+    or payment_row.currency <> 'COP' then
+    raise exception 'El pago recurrente no corresponde a la suscripción.';
+  end if;
+
+  if subscription_row.status = 'trial'
+    or (
+      subscription_row.status = 'cancelled'
+      and not (
+        target_normalized_status = 'approved'
+        and subscription_row.cancellation_requested_at is not null
+      )
+    ) then
+    return false;
+  end if;
+
+  if target_normalized_status = 'approved' then
+    if target_period_started_at is null
+      or target_period_ends_at is null
+      or target_period_ends_at <= target_period_started_at then
+      raise exception 'El periodo de renovación aprobado no es válido.';
+    end if;
+
+    protected_period_ends_at := greatest(
+      subscription_row.current_period_ends_at,
+      target_period_ends_at
+    );
+    protected_period_started_at := case
+      when subscription_row.current_period_ends_at is not null
+        and subscription_row.current_period_ends_at >= target_period_ends_at
+        and subscription_row.current_period_started_at is not null
+      then subscription_row.current_period_started_at
+      else target_period_started_at
+    end;
+    protected_cancellation_effective_at := case
+      when subscription_row.cancellation_requested_at is not null then greatest(
+        subscription_row.cancellation_effective_at,
+        protected_period_ends_at
+      )
+      else null
+    end;
+    next_status := 'active';
+
+    update public.company_subscriptions
+    set
+      status = next_status,
+      payment_method_status = 'configured',
+      payment_attention_required = false,
+      last_payment_issue_at = null,
+      payment_grace_ends_at = null,
+      last_successful_payment_at = greatest(last_successful_payment_at, coalesce(payment_row.approved_at, target_occurred_at, now())),
+      current_period_started_at = protected_period_started_at,
+      current_period_ends_at = protected_period_ends_at,
+      cancellation_effective_at = protected_cancellation_effective_at
+    where id = subscription_row.id;
+  elsif target_normalized_status in ('rejected', 'cancelled', 'charged_back') then
+    next_status := 'payment_issue';
+
+    update public.company_subscriptions
+    set
+      status = next_status,
+      payment_attention_required = true,
+      last_payment_issue_at = coalesce(target_occurred_at, now())
+    where id = subscription_row.id;
+  else
+    return false;
+  end if;
+
+  if subscription_row.status <> next_status then
+    insert into public.subscription_status_history (
+      company_id,
+      subscription_id,
+      from_status,
+      to_status,
+      reason,
+      source,
+      billing_payment_id,
+      webhook_event_id,
+      deduplication_key,
+      metadata,
+      occurred_at
+    ) values (
+      subscription_row.company_id,
+      subscription_row.id,
+      subscription_row.status,
+      next_status,
+      case
+        when next_status = 'active' then 'recurring_subscription_payment_approved'
+        else 'recurring_subscription_payment_failed'
+      end,
+      'webhook',
+      payment_row.id,
+      target_webhook_event_id,
+      'mercado_pago_recurring_payment:' || payment_row.provider_payment_id || ':' || next_status::text,
+      jsonb_build_object(
+        'provider', 'mercado_pago',
+        'providerPaymentId', payment_row.provider_payment_id,
+        'providerStatus', payment_row.provider_status
+      ),
+      coalesce(target_occurred_at, now())
+    )
+    on conflict (deduplication_key) do nothing;
+  end if;
+
+  return true;
+end;
+$$;
+
+create or replace function public.apply_billing_provider_cancellation_state(
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_updated_at timestamptz,
+  target_webhook_event_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  provider_subscription_row public.billing_provider_subscriptions%rowtype;
+  subscription_row public.company_subscriptions%rowtype;
+  cancellation_at timestamptz;
+  protected_effective_at timestamptz;
+  next_status public.company_subscription_status;
+begin
+  if lower(trim(coalesce(target_provider_status, ''))) not in ('canceled', 'cancelled') then
+    raise exception 'El estado externo no corresponde a una cancelación.';
+  end if;
+
+  select * into provider_subscription_row
+  from public.billing_provider_subscriptions
+  where id = target_provider_subscription_record_id;
+
+  if not found then
+    raise exception 'La suscripción externa no está disponible.';
+  end if;
+
+  select * into subscription_row
+  from public.company_subscriptions
+  where id = provider_subscription_row.subscription_id
+    and company_id = provider_subscription_row.company_id
+  for update;
+
+  if not found then
+    raise exception 'La suscripción interna no está disponible.';
+  end if;
+
+  if subscription_row.status = 'trial' then
+    update public.company_subscriptions
+    set mercado_pago_subscription_id = provider_subscription_row.provider_subscription_id
+    where id = subscription_row.id;
+
+    return false;
+  end if;
+
+  cancellation_at := coalesce(target_provider_updated_at, now());
+  protected_effective_at := greatest(
+    cancellation_at,
+    subscription_row.current_period_ends_at,
+    subscription_row.cancellation_effective_at
+  );
+  next_status := case
+    when protected_effective_at <= now() then 'cancelled'
+    else subscription_row.status
+  end;
+
+  update public.company_subscriptions
+  set
+    mercado_pago_subscription_id = provider_subscription_row.provider_subscription_id,
+    status = next_status,
+    cancellation_requested_at = coalesce(cancellation_requested_at, cancellation_at),
+    cancellation_effective_at = protected_effective_at,
+    payment_attention_required = case
+      when next_status = 'cancelled' then false
+      else payment_attention_required
+    end,
+    payment_grace_ends_at = case
+      when next_status = 'cancelled' then null
+      else payment_grace_ends_at
+    end
+  where id = subscription_row.id;
+
+  if subscription_row.status <> next_status then
+    insert into public.subscription_status_history (
+      company_id,
+      subscription_id,
+      from_status,
+      to_status,
+      reason,
+      source,
+      webhook_event_id,
+      deduplication_key,
+      metadata,
+      occurred_at
+    ) values (
+      subscription_row.company_id,
+      subscription_row.id,
+      subscription_row.status,
+      next_status,
+      'provider_subscription_cancelled',
+      'webhook',
+      target_webhook_event_id,
+      'mercado_pago_preapproval:' || provider_subscription_row.provider_subscription_id || ':cancelled',
+      jsonb_build_object(
+        'provider', 'mercado_pago',
+        'providerSubscriptionId', provider_subscription_row.provider_subscription_id,
+        'providerStatus', target_provider_status,
+        'effectiveAt', protected_effective_at
+      ),
+      cancellation_at
+    )
+    on conflict (deduplication_key) do nothing;
+  end if;
+
+  return true;
+end;
+$$;
+
+create or replace function public.complete_billing_payment_method_update(
+  target_intent_id uuid,
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_version bigint,
+  target_provider_updated_at timestamptz,
+  target_next_payment_at timestamptz
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  intent_row public.billing_intents%rowtype;
+  subscription_row public.company_subscriptions%rowtype;
+begin
+  select * into intent_row
+  from public.billing_intents
+  where id = target_intent_id
+  for update;
+
+  if not found or intent_row.intent_type <> 'payment_method_update' then
+    raise exception 'La actualización del método de pago no está disponible.';
+  end if;
+
+  if intent_row.status = 'succeeded' then
+    return false;
+  end if;
+
+  if intent_row.status <> 'processing' then
+    raise exception 'La actualización del método de pago no se encuentra en procesamiento.';
+  end if;
+
+  if lower(trim(coalesce(target_provider_status, ''))) in ('canceled', 'cancelled') then
+    raise exception 'La suscripción externa está cancelada.';
+  end if;
+
+  select * into subscription_row
+  from public.company_subscriptions
+  where id = intent_row.subscription_id
+    and company_id = intent_row.company_id
+  for update;
+
+  if not found or subscription_row.status not in ('active', 'payment_issue') then
+    raise exception 'La suscripción interna no admite actualizar el método de pago.';
+  end if;
+
+  if subscription_row.cancellation_requested_at is not null then
+    raise exception 'La suscripción ya tiene una cancelación programada.';
+  end if;
+
+  update public.billing_provider_subscriptions
+  set
+    provider_status = target_provider_status,
+    provider_version = coalesce(target_provider_version, provider_version),
+    provider_updated_at = coalesce(target_provider_updated_at, provider_updated_at),
+    next_payment_at = target_next_payment_at,
+    ended_at = null
+  where id = target_provider_subscription_record_id
+    and subscription_id = subscription_row.id
+    and company_id = subscription_row.company_id
+    and provider = 'mercado_pago';
+
+  if not found then
+    raise exception 'La suscripción externa no corresponde a la empresa indicada.';
+  end if;
+
+  update public.company_subscriptions
+  set payment_method_status = 'configured'
+  where id = subscription_row.id;
+
+  update public.billing_intents
+  set
+    status = 'succeeded',
+    completed_at = coalesce(target_provider_updated_at, now()),
+    expires_at = null,
+    last_error_code = null,
+    last_error_message = null,
+    metadata = metadata || jsonb_build_object(
+      'providerSubscriptionId', target_provider_subscription_record_id,
+      'providerStatus', target_provider_status
+    )
+  where id = intent_row.id;
+
+  return true;
+end;
+$$;
+
+create or replace function public.finalize_due_subscription_cancellations()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  finalized_count integer := 0;
+begin
+  with due as (
+    select
+      cs.id,
+      cs.company_id,
+      cs.status as from_status,
+      cs.cancellation_effective_at
+    from public.company_subscriptions cs
+    where cs.status in ('active', 'payment_issue')
+      and cs.cancellation_requested_at is not null
+      and cs.cancellation_effective_at is not null
+      and cs.cancellation_effective_at <= now()
+    for update skip locked
+  ), finalized as (
+    update public.company_subscriptions cs
+    set
+      status = 'cancelled',
+      payment_attention_required = false,
+      payment_grace_ends_at = null
+    from due
+    where cs.id = due.id
+    returning cs.id, cs.company_id, due.from_status, due.cancellation_effective_at
+  ), history as (
+    insert into public.subscription_status_history (
+      company_id,
+      subscription_id,
+      from_status,
+      to_status,
+      reason,
+      source,
+      billing_intent_id,
+      actor_user_id,
+      deduplication_key,
+      metadata,
+      occurred_at
+    )
+    select
+      finalized.company_id,
+      finalized.id,
+      finalized.from_status,
+      'cancelled',
+      'subscription_cancellation_effective',
+      'billing',
+      cancellation_intent.id,
+      cancellation_intent.requested_by,
+      'subscription_cancellation_effective:' || finalized.id,
+      jsonb_build_object('effectiveAt', finalized.cancellation_effective_at),
+      finalized.cancellation_effective_at
+    from finalized
+    left join lateral (
+      select bi.id, bi.requested_by
+      from public.billing_intents bi
+      where bi.subscription_id = finalized.id
+        and bi.company_id = finalized.company_id
+        and bi.intent_type = 'cancellation'
+      order by bi.created_at desc
+      limit 1
+    ) cancellation_intent on true
+    on conflict (deduplication_key) do nothing
+    returning id
+  )
+  select count(*)::integer into finalized_count
+  from finalized;
+
+  return finalized_count;
 end;
 $$;
 
@@ -3874,9 +4457,9 @@ begin
 
   update public.billing_intents
   set
-    status = 'processing',
-    expires_at = greatest(capacity_change_row.effective_at + interval '1 hour', now() + interval '1 hour'),
-    completed_at = null,
+    status = 'succeeded',
+    expires_at = null,
+    completed_at = coalesce(target_completed_at, now()),
     last_error_code = null,
     last_error_message = null
   where id = intent_row.id;
@@ -3904,26 +4487,6 @@ begin
     raise exception 'Existen downgrades programados con upgrades posteriores; concílialos antes de aplicar la migración crítica de Billing.';
   end if;
 end $$;
-
-update public.billing_intents bi
-set
-  status = 'processing',
-  completed_at = null,
-  expires_at = greatest(scc.effective_at + interval '1 hour', now() + interval '1 hour'),
-  last_error_code = null,
-  last_error_message = null
-from public.subscription_capacity_changes scc
-where bi.capacity_change_id = scc.id
-  and bi.intent_type = 'downgrade'
-  and bi.status = 'succeeded'
-  and scc.status = 'scheduled'
-  and not exists (
-    select 1
-    from public.billing_intents conflicting
-    where conflicting.company_id = bi.company_id
-      and conflicting.id <> bi.id
-      and conflicting.status in ('created', 'awaiting_customer', 'awaiting_payment', 'processing')
-  );
 
 do $$
 begin
@@ -3953,6 +4516,18 @@ begin
         'apply_due_subscription_capacity_changes',
         '*/5 * * * *',
         'select public.apply_due_subscription_capacity_changes();'
+      );
+    end if;
+
+    if not exists (
+      select 1
+      from cron.job
+      where jobname = 'finalize_due_subscription_cancellations'
+    ) then
+      perform cron.schedule(
+        'finalize_due_subscription_cancellations',
+        '*/5 * * * *',
+        'select public.finalize_due_subscription_cancellations();'
       );
     end if;
   end if;
@@ -6062,6 +6637,21 @@ grant execute on function public.claim_billing_activation_attempt_closure(uuid, 
 
 revoke all on function public.close_billing_activation_attempt(uuid, uuid, text, timestamptz, public.billing_intent_status, text, text) from public, anon, authenticated;
 grant execute on function public.close_billing_activation_attempt(uuid, uuid, text, timestamptz, public.billing_intent_status, text, text) to service_role;
+
+revoke all on function public.complete_billing_cancellation(uuid, uuid, text, bigint, timestamptz, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.complete_billing_cancellation(uuid, uuid, text, bigint, timestamptz, timestamptz, timestamptz) to service_role;
+
+revoke all on function public.apply_recurring_billing_payment_state(uuid, uuid, uuid, public.billing_payment_status, timestamptz, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.apply_recurring_billing_payment_state(uuid, uuid, uuid, public.billing_payment_status, timestamptz, timestamptz, timestamptz) to service_role;
+
+revoke all on function public.apply_billing_provider_cancellation_state(uuid, text, timestamptz, uuid) from public, anon, authenticated;
+grant execute on function public.apply_billing_provider_cancellation_state(uuid, text, timestamptz, uuid) to service_role;
+
+revoke all on function public.complete_billing_payment_method_update(uuid, uuid, text, bigint, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.complete_billing_payment_method_update(uuid, uuid, text, bigint, timestamptz, timestamptz) to service_role;
+
+revoke all on function public.finalize_due_subscription_cancellations() from public, anon, authenticated;
+grant execute on function public.finalize_due_subscription_cancellations() to service_role;
 
 revoke all on function public.complete_billing_activation(uuid, uuid, uuid, timestamptz, timestamptz) from public, anon, authenticated;
 grant execute on function public.complete_billing_activation(uuid, uuid, uuid, timestamptz, timestamptz) to service_role;

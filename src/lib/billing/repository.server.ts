@@ -8,6 +8,7 @@ import type {
   PlanType,
   SubscriptionStatus,
 } from "@/lib/billing";
+import type { ProviderSubscription } from "@/lib/billing/provider";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -27,6 +28,8 @@ export type CompanySubscriptionBillingRecord = {
   max_active_locations: number;
   payment_attention_required: boolean;
   payment_grace_ends_at: string | null;
+  cancellation_requested_at: string | null;
+  cancellation_effective_at: string | null;
 };
 
 export type BillingIntentRecord = {
@@ -220,7 +223,7 @@ export class BillingRepository {
       this.supabase
         .from("company_subscriptions")
         .select(
-          "id, company_id, status, plan_type, trial_started_at, trial_ends_at, current_period_started_at, current_period_ends_at, billing_cycle_anchor_at, base_monthly_price_cop, additional_site_monthly_price_cop, included_active_sites, max_active_locations, payment_attention_required, payment_grace_ends_at",
+          "id, company_id, status, plan_type, trial_started_at, trial_ends_at, current_period_started_at, current_period_ends_at, billing_cycle_anchor_at, base_monthly_price_cop, additional_site_monthly_price_cop, included_active_sites, max_active_locations, payment_attention_required, payment_grace_ends_at, cancellation_requested_at, cancellation_effective_at",
         )
         .eq("company_id", companyId)
         .maybeSingle<CompanySubscriptionBillingRecord>(),
@@ -249,7 +252,7 @@ export class BillingRepository {
       .from("billing_intents")
       .select("*")
       .eq("company_id", companyId)
-      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing"])
+      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing", "compensation_required"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle<BillingIntentRecord>();
@@ -640,6 +643,61 @@ export class BillingRepository {
 
     if (error) {
       throwDatabaseError(error, "No fue posible cerrar de forma segura la activación anterior.");
+    }
+
+    return data === true;
+  }
+
+  async completeCancellation({
+    intent,
+    providerSubscription,
+    providerState,
+    requestedAt,
+    effectiveAt,
+  }: {
+    intent: BillingIntentRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerState: ProviderSubscription;
+    requestedAt: string;
+    effectiveAt: string;
+  }): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc("complete_billing_cancellation", {
+      target_intent_id: intent.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerState.providerStatus,
+      target_provider_version: providerState.providerVersion,
+      target_provider_updated_at: providerState.providerUpdatedAt,
+      target_requested_at: requestedAt,
+      target_effective_at: effectiveAt,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible registrar la cancelación del plan.");
+    }
+
+    return data === true;
+  }
+
+  async completePaymentMethodUpdate({
+    intent,
+    providerSubscription,
+    providerState,
+  }: {
+    intent: BillingIntentRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerState: ProviderSubscription;
+  }): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc("complete_billing_payment_method_update", {
+      target_intent_id: intent.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerState.providerStatus,
+      target_provider_version: providerState.providerVersion,
+      target_provider_updated_at: providerState.providerUpdatedAt,
+      target_next_payment_at: providerState.nextPaymentAt,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible registrar el nuevo método de pago.");
     }
 
     return data === true;
@@ -1082,96 +1140,18 @@ export class BillingRepository {
     periodStartedAt: string;
     periodEndsAt: string;
   }) {
-    const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
-      .from("company_subscriptions")
-      .select("status")
-      .eq("id", providerSubscription.subscription_id)
-      .eq("company_id", providerSubscription.company_id)
-      .maybeSingle<{ status: SubscriptionStatus }>();
+    const { error } = await this.supabase.rpc("apply_recurring_billing_payment_state", {
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_payment_id: payment.id,
+      target_webhook_event_id: webhookEventId,
+      target_normalized_status: normalizedStatus,
+      target_period_started_at: periodStartedAt,
+      target_period_ends_at: periodEndsAt,
+      target_occurred_at: payment.approved_at ?? new Date().toISOString(),
+    });
 
-    if (currentSubscriptionError || !currentSubscription) {
-      throwDatabaseError(
-        currentSubscriptionError ?? { message: "No fue posible encontrar la suscripción interna." },
-        "No fue posible encontrar la suscripción interna.",
-      );
-    }
-
-    if (currentSubscription.status === "trial" || currentSubscription.status === "cancelled") {
-      return;
-    }
-
-    const now = payment.approved_at ?? new Date().toISOString();
-    let nextStatus: SubscriptionStatus | null = null;
-    let update: Record<string, unknown> | null = null;
-
-    if (normalizedStatus === "approved") {
-      nextStatus = "active";
-      update = {
-        status: nextStatus,
-        payment_method_status: "configured",
-        payment_attention_required: false,
-        last_payment_issue_at: null,
-        payment_grace_ends_at: null,
-        last_successful_payment_at: now,
-        current_period_started_at: periodStartedAt,
-        current_period_ends_at: periodEndsAt,
-      };
-    } else if (
-      normalizedStatus === "rejected" ||
-      normalizedStatus === "cancelled" ||
-      normalizedStatus === "charged_back"
-    ) {
-      nextStatus = "payment_issue";
-      update = {
-        status: nextStatus,
-        payment_attention_required: true,
-        last_payment_issue_at: new Date().toISOString(),
-      };
-    }
-
-    if (!update || !nextStatus) {
-      return;
-    }
-
-    const { error: subscriptionError } = await this.supabase
-      .from("company_subscriptions")
-      .update(update)
-      .eq("id", providerSubscription.subscription_id)
-      .eq("company_id", providerSubscription.company_id)
-      .eq("status", currentSubscription.status);
-
-    if (subscriptionError) {
-      throwDatabaseError(subscriptionError, "No fue posible actualizar el estado de la renovación.");
-    }
-
-    if (currentSubscription.status === nextStatus) {
-      return;
-    }
-
-    const { error: historyError } = await this.supabase.from("subscription_status_history").upsert(
-      {
-        company_id: providerSubscription.company_id,
-        subscription_id: providerSubscription.subscription_id,
-        from_status: currentSubscription.status,
-        to_status: nextStatus,
-        reason:
-          nextStatus === "active" ? "recurring_subscription_payment_approved" : "recurring_subscription_payment_failed",
-        source: "webhook",
-        billing_payment_id: payment.id,
-        webhook_event_id: webhookEventId,
-        deduplication_key: `mercado_pago_recurring_payment:${payment.provider_payment_id}:${nextStatus}`,
-        metadata: {
-          provider: "mercado_pago",
-          providerPaymentId: payment.provider_payment_id,
-          providerStatus: payment.provider_status,
-        },
-        occurred_at: now,
-      },
-      { onConflict: "deduplication_key", ignoreDuplicates: true },
-    );
-
-    if (historyError) {
-      throwDatabaseError(historyError, "No fue posible registrar el estado de la renovación.");
+    if (error) {
+      throwDatabaseError(error, "No fue posible actualizar el estado de la renovación.");
     }
   }
 
@@ -1187,12 +1167,28 @@ export class BillingRepository {
     webhookEventId: string;
   }) {
     const normalizedProviderStatus = providerStatus.trim().toLowerCase();
+
+    if (normalizedProviderStatus === "cancelled" || normalizedProviderStatus === "canceled") {
+      const { error } = await this.supabase.rpc("apply_billing_provider_cancellation_state", {
+        target_provider_subscription_record_id: providerSubscription.id,
+        target_provider_status: providerStatus,
+        target_provider_updated_at: providerUpdatedAt,
+        target_webhook_event_id: webhookEventId,
+      });
+
+      if (error) {
+        throwDatabaseError(error, "No fue posible sincronizar la cancelación externa de la suscripción.");
+      }
+
+      return;
+    }
+
     const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
       .from("company_subscriptions")
-      .select("status, cancellation_requested_at")
+      .select("status")
       .eq("id", providerSubscription.subscription_id)
       .eq("company_id", providerSubscription.company_id)
-      .maybeSingle<{ status: SubscriptionStatus; cancellation_requested_at: string | null }>();
+      .maybeSingle<{ status: SubscriptionStatus }>();
 
     if (currentSubscriptionError || !currentSubscription) {
       throwDatabaseError(
@@ -1218,16 +1214,6 @@ export class BillingRepository {
       baseUpdate.status = nextStatus;
       baseUpdate.payment_attention_required = true;
       baseUpdate.last_payment_issue_at = providerUpdatedAt ?? new Date().toISOString();
-    } else if (
-      (normalizedProviderStatus === "cancelled" || normalizedProviderStatus === "canceled") &&
-      currentSubscription.status !== "trial"
-    ) {
-      const cancellationAt = providerUpdatedAt ?? new Date().toISOString();
-      nextStatus = "cancelled";
-      reason = "provider_subscription_cancelled";
-      baseUpdate.status = nextStatus;
-      baseUpdate.cancellation_requested_at = currentSubscription.cancellation_requested_at ?? cancellationAt;
-      baseUpdate.cancellation_effective_at = cancellationAt;
     }
 
     const { error: subscriptionError } = await this.supabase

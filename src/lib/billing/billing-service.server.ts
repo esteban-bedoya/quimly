@@ -105,7 +105,7 @@ export type DowngradePreparation = {
 
 export type PendingBillingOperation = {
   intentType: BillingIntentType;
-  status: "created" | "awaiting_customer" | "awaiting_payment" | "processing";
+  status: "created" | "awaiting_customer" | "awaiting_payment" | "processing" | "compensation_required";
   expiresAt: string | null;
   remainingSeconds: number | null;
 };
@@ -118,6 +118,11 @@ export type CapacityChangeQuotePreview = {
   requestedMonthlyTotalCop: number;
   immediateChargeCop: number | null;
   effectiveAt: string | null;
+};
+
+export type SubscriptionCancellationResult = {
+  effectiveAt: string;
+  alreadyScheduled: boolean;
 };
 
 export class BillingOperationPendingError extends Error {
@@ -283,6 +288,242 @@ export class BillingService {
   async getAccountSnapshot(companyId: string): Promise<BillingAccountSnapshot> {
     const context = await this.repository.getCompanyBillingContext(companyId);
     return this.buildAccountSnapshot(context);
+  }
+
+  async cancelSubscription({
+    companyId,
+    requestedBy,
+    provider,
+    now = new Date(),
+  }: {
+    companyId: string;
+    requestedBy: string;
+    provider: BillingProvider;
+    now?: Date;
+  }): Promise<SubscriptionCancellationResult> {
+    const account = await this.getAccountSnapshot(companyId);
+    const { subscription } = account;
+
+    if (subscription.cancellation_requested_at && subscription.cancellation_effective_at) {
+      return {
+        effectiveAt: subscription.cancellation_effective_at,
+        alreadyScheduled: true,
+      };
+    }
+
+    if (
+      account.subscriptionViewState !== "founder_active" &&
+      account.subscriptionViewState !== "operational_active"
+    ) {
+      throw new Error("Solo puedes cancelar una suscripción activa.");
+    }
+
+    await this.ensureNoOpenIntent(companyId);
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      subscription.id,
+      companyId,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("La empresa no tiene una suscripción activa en Mercado Pago.");
+    }
+
+    const requestedAt = now.toISOString();
+    const periodEndTime = subscription.current_period_ends_at
+      ? new Date(subscription.current_period_ends_at).getTime()
+      : Number.NaN;
+    const effectiveAt = Number.isFinite(periodEndTime) && periodEndTime > now.getTime()
+      ? new Date(periodEndTime).toISOString()
+      : requestedAt;
+    const intent = await this.repository.createIntent({
+      company_id: companyId,
+      subscription_id: subscription.id,
+      capacity_change_id: null,
+      intent_type: "cancellation",
+      plan_type_snapshot: account.currentQuote.planType,
+      previous_max_active_locations: subscription.max_active_locations,
+      requested_max_active_locations: subscription.max_active_locations,
+      monthly_amount_before_cop: account.currentQuote.monthlyTotalCop,
+      monthly_amount_after_cop: 0,
+      expected_immediate_amount_cop: 0,
+      currency: "COP",
+      period_started_at: subscription.current_period_started_at,
+      period_ends_at: effectiveAt,
+      proration_amount_cop: null,
+      proration_calculated_at: null,
+      proration_formula_version: null,
+      external_reference: getIntentReference("cancellation"),
+      requested_by: requestedBy,
+      expires_at: getProcessingExpiry(now),
+      last_error_code: null,
+      last_error_message: null,
+      metadata: { source: "plan_payments" },
+    });
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
+
+    let terminalProviderState: ProviderSubscription;
+
+    try {
+      const currentProviderState = await provider.getSubscription(
+        providerSubscription.provider_subscription_id,
+      );
+      terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
+        ? currentProviderState
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+    } catch (error) {
+      await this.repository.markIntentFailed(
+        intent.id,
+        "provider_subscription_cancellation_failed",
+        error instanceof Error ? error.message : "Mercado Pago no pudo cancelar la suscripción.",
+      );
+      throw error;
+    }
+
+    if (
+      terminalProviderState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      terminalProviderState.currency !== "COP" ||
+      !isCanceledProviderStatus(terminalProviderState.providerStatus)
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago no confirmó de forma consistente la cancelación de la suscripción.",
+        "provider_subscription_cancellation_mismatch",
+      );
+      throw new Error("Mercado Pago no confirmó la cancelación del plan.");
+    }
+
+    try {
+      await this.repository.completeCancellation({
+        intent,
+        providerSubscription,
+        providerState: terminalProviderState,
+        requestedAt,
+        effectiveAt,
+      });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Quimly no pudo registrar la cancelación confirmada.",
+        "cancellation_internal_persistence_failed",
+      );
+      throw error;
+    }
+
+    const updatedAccount = await this.getAccountSnapshot(companyId);
+
+    return {
+      effectiveAt: updatedAccount.subscription.cancellation_effective_at ?? effectiveAt,
+      alreadyScheduled: false,
+    };
+  }
+
+  async updateSubscriptionPaymentMethod({
+    companyId,
+    requestedBy,
+    cardToken,
+    provider,
+    now = new Date(),
+  }: {
+    companyId: string;
+    requestedBy: string;
+    cardToken: string;
+    provider: BillingProvider;
+    now?: Date;
+  }): Promise<void> {
+    const account = await this.getAccountSnapshot(companyId);
+    const { subscription } = account;
+
+    if (subscription.cancellation_requested_at) {
+      throw new Error("No puedes cambiar el método de pago de una suscripción cancelada.");
+    }
+
+    if (
+      account.subscriptionViewState !== "founder_active" &&
+      account.subscriptionViewState !== "operational_active" &&
+      account.subscriptionViewState !== "payment_issue"
+    ) {
+      throw new Error("La suscripción no admite actualizar el método de pago.");
+    }
+
+    await this.ensureNoOpenIntent(companyId);
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      subscription.id,
+      companyId,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("La empresa no tiene una suscripción actualizable en Mercado Pago.");
+    }
+
+    const intent = await this.repository.createIntent({
+      company_id: companyId,
+      subscription_id: subscription.id,
+      capacity_change_id: null,
+      intent_type: "payment_method_update",
+      plan_type_snapshot: account.currentQuote.planType,
+      previous_max_active_locations: subscription.max_active_locations,
+      requested_max_active_locations: subscription.max_active_locations,
+      monthly_amount_before_cop: account.currentQuote.monthlyTotalCop,
+      monthly_amount_after_cop: account.currentQuote.monthlyTotalCop,
+      expected_immediate_amount_cop: 0,
+      currency: "COP",
+      period_started_at: subscription.current_period_started_at,
+      period_ends_at: subscription.current_period_ends_at,
+      proration_amount_cop: null,
+      proration_calculated_at: null,
+      proration_formula_version: null,
+      external_reference: getIntentReference("payment_method_update"),
+      requested_by: requestedBy,
+      expires_at: getProcessingExpiry(now),
+      last_error_code: null,
+      last_error_message: null,
+      metadata: { source: "plan_payments" },
+    });
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
+
+    let providerState: ProviderSubscription;
+
+    try {
+      providerState = await provider.updateSubscriptionPaymentMethod(
+        providerSubscription.provider_subscription_id,
+        cardToken,
+      );
+    } catch (error) {
+      await this.repository.markIntentFailed(
+        intent.id,
+        "provider_payment_method_update_failed",
+        error instanceof Error ? error.message : "Mercado Pago no pudo actualizar el método de pago.",
+      );
+      throw error;
+    }
+
+    if (
+      providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      providerState.currency !== "COP" ||
+      isCanceledProviderStatus(providerState.providerStatus)
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago respondió con una suscripción inconsistente después de actualizar la tarjeta.",
+        "payment_method_update_provider_mismatch",
+      );
+      throw new Error("Mercado Pago no confirmó el nuevo método de pago.");
+    }
+
+    try {
+      await this.repository.completePaymentMethodUpdate({ intent, providerSubscription, providerState });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Quimly no pudo registrar el nuevo método de pago.",
+        "payment_method_update_internal_persistence_failed",
+      );
+      throw error;
+    }
   }
 
   async getPendingOperation(companyId: string, now = new Date()): Promise<PendingBillingOperation | null> {

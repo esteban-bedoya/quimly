@@ -98,6 +98,10 @@ export type BillingProvider = {
   createSubscriptionCheckout(request: ProviderSubscriptionCheckoutRequest): Promise<ProviderSubscriptionCheckout>;
   createOneTimeCheckout(request: ProviderOneTimeCheckoutRequest): Promise<ProviderOneTimeCheckout>;
   updateSubscriptionAmount(providerSubscriptionId: string, recurringAmountCop: number): Promise<ProviderSubscription>;
+  updateSubscriptionPaymentMethod(
+    providerSubscriptionId: string,
+    cardToken: string,
+  ): Promise<ProviderSubscription>;
   updateSubscriptionStatus(
     providerSubscriptionId: string,
     status: "paused" | "canceled",
