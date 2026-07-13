@@ -6,7 +6,6 @@ import {
   CompanyBranchStatusToggle,
   EditCompanyBranchForm,
   RoleBadge,
-  SetMainBranchButton,
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
 import { requireCompanyAccess } from "@/lib/auth/authorization";
@@ -49,7 +48,7 @@ async function getCompanyModuleData(companyId: string) {
       }>(),
     supabase
       .from("branches")
-      .select("id, company_id, name, slug, is_main, is_active, status")
+      .select("id, company_id, name, slug, is_active, status")
       .eq("company_id", companyId)
       .order("created_at", { ascending: true }),
   ]);
@@ -74,7 +73,6 @@ async function getCompanyModuleData(companyId: string) {
         companyId: branch.company_id,
         name: branch.name,
         slug: branch.slug,
-        isMain: branch.is_main,
         isActive: branch.is_active,
         status: normalizeSiteStatus(branch.status, branch.is_active),
       })) ?? [],
@@ -192,20 +190,12 @@ export default async function CompanyDashboardPage({
                           <p className="font-semibold text-[#12110f]">{branch.name}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {branch.isMain ? (
-                            <span className="rounded-full bg-[#12110f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white">
-                              Principal
-                            </span>
-                          ) : canManageSites && branch.status === "active" ? (
-                            <SetMainBranchButton branchId={branch.id} companySlug={company.slug} />
-                          ) : null}
                           <CompanyBranchStatusBadge branch={branch} />
                           {canManageSites ? (
                             <CompanyBranchStatusToggle
                               branchId={branch.id}
                               companySlug={company.slug}
                               isActive={branch.isActive}
-                              disabled={branch.isMain}
                             />
                           ) : null}
                           {canManageSites && branch.status === "inactive" ? (

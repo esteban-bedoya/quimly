@@ -90,7 +90,6 @@ export async function getAccessibleBranches(
     company_id: string;
     name: string;
     slug: string;
-    is_main: boolean;
     is_active: boolean;
     status: string | null;
     company: { name: string; slug: string } | { name: string; slug: string }[] | null;
@@ -98,7 +97,7 @@ export async function getAccessibleBranches(
 
   const { data, error } = await supabase
     .from("branches")
-    .select("id, company_id, name, slug, is_main, is_active, status, company:companies!inner(name, slug)")
+    .select("id, company_id, name, slug, is_active, status, company:companies!inner(name, slug)")
     .order("created_at", { ascending: true })
     .returns<AccessibleBranchRow[]>();
 
@@ -120,7 +119,6 @@ export async function getAccessibleBranches(
           companyId: branch.company_id,
           name: branch.name,
           slug: branch.slug,
-          isMain: branch.is_main,
           isActive: branch.is_active,
           status: normalizeSiteStatus(branch.status, branch.is_active),
           companyName: company.name,
@@ -241,7 +239,7 @@ export async function requireBranchAccess(companySlug: string, branchSlug: strin
 
   const { data: branch, error: branchError } = await supabase
     .from("branches")
-    .select("id, company_id, name, slug, is_main, is_active, status")
+    .select("id, company_id, name, slug, is_active, status")
     .eq("company_id", company.id)
     .eq("slug", branchSlug)
     .maybeSingle();
@@ -274,7 +272,6 @@ export async function requireBranchAccess(companySlug: string, branchSlug: strin
       companyId: branch.company_id,
       name: branch.name,
       slug: branch.slug,
-      isMain: branch.is_main,
       isActive: branch.is_active,
       status: branchStatus,
     },

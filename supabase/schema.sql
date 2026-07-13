@@ -1118,7 +1118,6 @@ create table if not exists public.branches (
   company_id uuid not null references public.companies (id) on delete cascade,
   name text not null,
   slug text not null,
-  is_main boolean not null default false,
   status public.site_status not null default 'active',
   is_active boolean not null default true,
   billing_activation_confirmed_at timestamptz,
@@ -1134,7 +1133,6 @@ create table if not exists public.branches (
   ),
   constraint branches_active_billing_confirmation_check check (
     status <> 'active'
-    or is_main = true
     or billing_activation_confirmed_at is not null
   )
 );
@@ -1186,7 +1184,6 @@ drop constraint if exists branches_active_billing_confirmation_check;
 alter table if exists public.branches
 add constraint branches_active_billing_confirmation_check check (
   status <> 'active'
-  or is_main = true
   or billing_activation_confirmed_at is not null
 );
 
@@ -5350,62 +5347,18 @@ begin
 end;
 $$;
 
-create or replace function public.validate_branch_rules()
-returns trigger
-language plpgsql
-set search_path = public
-as $$
-declare
-  existing_branch_count integer;
-begin
-  if current_setting('app.allow_main_branch_switch', true) = 'on' then
-    return new;
-  end if;
-
-  if tg_op = 'INSERT' then
-    select count(*)
-    from public.branches b
-    where b.company_id = new.company_id
-    into existing_branch_count;
-
-    if existing_branch_count = 0 and not new.is_main then
-      raise exception 'La primera sede de una empresa debe ser la sede principal.';
-    end if;
-  end if;
-
-  if tg_op = 'UPDATE' then
-    if old.is_main and not new.is_main then
-      raise exception 'La sede principal no puede dejar de ser principal sin asignar otra sede principal primero.';
-    end if;
-
-    if old.is_main and not new.is_active then
-      raise exception 'La sede principal no puede desactivarse. Asigna otra sede principal primero.';
-    end if;
-
-    if old.is_main and new.status <> 'active' then
-      raise exception 'La sede principal debe permanecer activa.';
-    end if;
-  end if;
-
-  if new.is_main and (not new.is_active or new.status <> 'active') then
-    raise exception 'La sede principal debe permanecer activa.';
-  end if;
-
-  return new;
-end;
-$$;
-
 drop trigger if exists branches_validate_rules on public.branches;
-create trigger branches_validate_rules
-before insert or update on public.branches
-for each row
-execute function public.validate_branch_rules();
-
-create unique index if not exists branches_one_main_per_company_idx
-on public.branches (company_id)
-where is_main = true;
-
+drop function if exists public.validate_branch_rules();
+drop index if exists public.branches_one_main_per_company_idx;
+drop function if exists public.create_company_with_main_branch(text, uuid, text);
+drop function if exists public.set_main_branch(uuid);
+drop function if exists public.delete_branch_permanently(uuid, text);
 drop function if exists public.onboard_company_trial(uuid, text, text, text);
+drop policy if exists "branches_insert_policy" on public.branches;
+drop policy if exists "branches_delete_policy" on public.branches;
+
+alter table if exists public.branches
+drop column if exists is_main;
 
 create or replace function public.onboard_company_trial(
   target_user_id uuid,
@@ -5475,7 +5428,6 @@ begin
   insert into public.branches (
     company_id,
     name,
-    is_main,
     status,
     is_active,
     billing_activation_confirmed_at,
@@ -5483,8 +5435,7 @@ begin
   )
   values (
     new_company_id,
-    'Sede Principal',
-    true,
+    'Sede 1',
     'active',
     true,
     now(),
@@ -5531,10 +5482,10 @@ begin
 end;
 $$;
 
-create or replace function public.create_company_with_main_branch(
+create or replace function public.create_company_with_initial_branch(
   company_name text,
   actor_user_id uuid default null,
-  main_branch_name text default 'Sede Principal'
+  initial_branch_name text default 'Sede 1'
 )
 returns uuid
 language plpgsql
@@ -5578,7 +5529,6 @@ begin
   insert into public.branches (
     company_id,
     name,
-    is_main,
     status,
     is_active,
     billing_activation_confirmed_at,
@@ -5586,8 +5536,7 @@ begin
   )
   values (
     new_company_id,
-    coalesce(nullif(trim(main_branch_name), ''), 'Sede Principal'),
-    true,
+    coalesce(nullif(trim(initial_branch_name), ''), 'Sede 1'),
     'active',
     true,
     now(),
@@ -5725,70 +5674,6 @@ begin
 end;
 $$;
 
-create or replace function public.set_main_branch(target_branch_id uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  actor_id uuid;
-  actor_role public.app_role;
-  target_company_id uuid;
-  target_status public.site_status;
-begin
-  actor_id := auth.uid();
-
-  if actor_id is null then
-    raise exception 'No tienes permisos para modificar sedes.';
-  end if;
-
-  select up.global_role
-  into actor_role
-  from public.user_profiles up
-  where up.user_id = actor_id
-    and up.is_active = true
-  limit 1;
-
-  if actor_role is null or actor_role not in ('owner', 'super_admin') then
-    raise exception 'No tienes permisos para modificar sedes.';
-  end if;
-
-  select
-    b.company_id,
-    b.status
-  into
-    target_company_id,
-    target_status
-  from public.branches b
-  where b.id = target_branch_id;
-
-  if target_company_id is null then
-    raise exception 'La sede indicada no existe.';
-  end if;
-
-  if target_status <> 'active' then
-    raise exception 'Activa la sede antes de marcarla como principal.';
-  end if;
-
-  perform set_config('app.allow_main_branch_switch', 'on', true);
-
-  update public.branches
-  set is_main = false
-  where company_id = target_company_id
-    and is_main = true
-    and id <> target_branch_id;
-
-  update public.branches
-  set
-    is_main = true,
-    status = 'active',
-    is_active = true,
-    billing_activation_confirmed_at = coalesce(billing_activation_confirmed_at, now())
-  where id = target_branch_id;
-end;
-$$;
-
 drop function if exists public.delete_branch_permanently(uuid);
 drop function if exists public.delete_branch_permanently(uuid, text);
 
@@ -5818,7 +5703,6 @@ begin
     b.company_id,
     b.name,
     b.slug,
-    b.is_main,
     b.status
   into target_branch
   from public.branches b
@@ -5838,10 +5722,6 @@ begin
     and public.can_access_company(target_branch.company_id)
   ) then
     raise exception 'No fue posible eliminar la sede solicitada.';
-  end if;
-
-  if target_branch.is_main then
-    raise exception 'La sede principal no se puede eliminar. Primero asigna otra sede principal.';
   end if;
 
   if target_branch.status = 'active' then
@@ -6327,7 +6207,6 @@ with check (
   or (
     public.current_profile_role() = 'company_admin'
     and public.can_access_company(company_id)
-    and is_main = false
     and is_active = true
     and status = 'active'
     and public.can_create_active_branch(company_id)
@@ -6369,7 +6248,6 @@ using (
   )
   and public.can_access_company(company_id)
   and public.can_company_operate(company_id)
-  and is_main = false
   and status <> 'active'
 );
 
@@ -6685,17 +6563,13 @@ revoke all on function public.onboard_company_trial(uuid, text, text, text) from
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;
 grant execute on function public.onboard_company_trial(uuid, text, text, text) to service_role;
 
-revoke all on function public.create_company_with_main_branch(text, uuid, text) from public;
-revoke all on function public.create_company_with_main_branch(text, uuid, text) from anon;
-grant execute on function public.create_company_with_main_branch(text, uuid, text) to authenticated;
+revoke all on function public.create_company_with_initial_branch(text, uuid, text) from public;
+revoke all on function public.create_company_with_initial_branch(text, uuid, text) from anon;
+grant execute on function public.create_company_with_initial_branch(text, uuid, text) to authenticated;
 
 revoke all on function public.assign_company_founder(uuid) from public;
 revoke all on function public.assign_company_founder(uuid) from anon;
 grant execute on function public.assign_company_founder(uuid) to authenticated;
-
-revoke all on function public.set_main_branch(uuid) from public;
-revoke all on function public.set_main_branch(uuid) from anon;
-grant execute on function public.set_main_branch(uuid) to authenticated;
 
 revoke all on function public.delete_branch_permanently(uuid, text) from public;
 revoke all on function public.delete_branch_permanently(uuid, text) from anon;

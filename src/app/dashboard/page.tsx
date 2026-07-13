@@ -14,7 +14,6 @@ import {
   EditCompanyBranchForm,
   EditCompanyForm,
   RoleBadge,
-  SetMainBranchButton,
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
 import { logout } from "@/app/login/actions";
@@ -80,7 +79,6 @@ type ManagedBranchRow = {
   company_id: string;
   name: string;
   slug: string;
-  is_main: boolean;
   is_active: boolean;
   status: string | null;
   company: { name: string; slug: string } | { name: string; slug: string }[] | null;
@@ -117,7 +115,7 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       .order("created_at", { ascending: false }),
     supabase
       .from("branches")
-      .select("id, company_id, name, slug, is_main, is_active, status, company:companies!inner(name, slug)")
+      .select("id, company_id, name, slug, is_active, status, company:companies!inner(name, slug)")
       .order("created_at", { ascending: false })
       .returns<ManagedBranchRow[]>(),
     supabase
@@ -159,7 +157,6 @@ async function getManagementData(role: UserProfile["globalRole"]) {
             companyId: branch.company_id,
             name: branch.name,
             slug: branch.slug,
-            isMain: branch.is_main,
             isActive: branch.is_active,
             status: normalizeSiteStatus(branch.status, branch.is_active),
             companyName: company.name,
@@ -545,19 +542,11 @@ export default async function DashboardPage() {
                             <p className="text-sm text-[#5d574f]">{branch.companyName}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            {branch.isMain ? (
-                              <span className="rounded-full bg-[#12110f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white">
-                                Principal
-                              </span>
-                            ) : branch.status === "active" ? (
-                              <SetMainBranchButton branchId={branch.id} companySlug={branch.companySlug} />
-                            ) : null}
                             <CompanyBranchStatusBadge branch={branch} />
                             <CompanyBranchStatusToggle
                               branchId={branch.id}
                               companySlug={branch.companySlug}
                               isActive={branch.isActive}
-                              disabled={branch.isMain}
                             />
                             {branch.status === "inactive" ? (
                               <CompanyBranchDeleteButton branch={branch} companySlug={branch.companySlug} />

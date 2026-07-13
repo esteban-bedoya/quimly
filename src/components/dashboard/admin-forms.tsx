@@ -14,7 +14,6 @@ import {
   resolveCompanyCapacityExceeded,
   sendCompanyAdminRegistrationOTP,
   sendSuperAdminRegistrationOTP,
-  setMainCompanyBranch,
   updateCompany,
   updateCompanyBranch,
   toggleCompanyStatus,
@@ -570,7 +569,7 @@ export function CompanyBranchDeleteButton({
           setConfirmationName("");
           setIsConfirming(true);
         }}
-        disabled={branch.isMain || branch.status === "active"}
+        disabled={branch.status === "active"}
         className="inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8a2d1f] transition hover:bg-[#fff1ee] disabled:cursor-not-allowed disabled:opacity-45"
       >
         Eliminar
@@ -692,27 +691,6 @@ export function EditCompanyBranchForm({
         className="inline-flex rounded-full border border-[#12110f]/14 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#12110f] transition hover:bg-[#f3eee6]"
       >
         Guardar nombre
-      </button>
-    </form>
-  );
-}
-
-export function SetMainBranchButton({
-  branchId,
-  companySlug,
-}: {
-  branchId: string;
-  companySlug?: string;
-}) {
-  return (
-    <form action={setMainCompanyBranch}>
-      <input type="hidden" name="branchId" value={branchId} />
-      <input type="hidden" name="companySlug" value={companySlug ?? ""} />
-      <button
-        type="submit"
-        className="inline-flex rounded-full bg-[#12110f] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-[#1d1b18]"
-      >
-        Marcar principal
       </button>
     </form>
   );

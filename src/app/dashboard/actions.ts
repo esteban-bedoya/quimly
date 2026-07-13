@@ -1035,10 +1035,10 @@ export async function createCompany(
     return { error: "Debes indicar un nombre válido para la empresa." };
   }
 
-  const { error } = await supabase.rpc("create_company_with_main_branch", {
+  const { error } = await supabase.rpc("create_company_with_initial_branch", {
     actor_user_id: context.profile.userId,
     company_name: name,
-    main_branch_name: "Sede Principal",
+    initial_branch_name: "Sede 1",
   });
 
   if (error) {
@@ -1046,7 +1046,7 @@ export async function createCompany(
   }
 
   revalidatePath("/dashboard");
-  return { success: `Empresa "${name}" creada correctamente con su sede principal.` };
+  return { success: `Empresa "${name}" creada correctamente con su primera sede.` };
 }
 
 export async function assignCompanyFounder(
@@ -1326,7 +1326,6 @@ export async function createCompanyBranch(
       company_id: companyId,
       name,
       created_by: context.profile.userId,
-      is_main: false,
       status: "active",
       is_active: true,
       billing_activation_confirmed_at: new Date().toISOString(),
@@ -2837,9 +2836,9 @@ export async function toggleCompanyBranchStatus(
 
   const { data: branch, error: branchError } = await supabase
     .from("branches")
-    .select("company_id, is_main, status")
+    .select("company_id, status")
     .eq("id", branchId)
-    .maybeSingle<{ company_id: string; is_main: boolean; status: string | null }>();
+    .maybeSingle<{ company_id: string; status: string | null }>();
 
   if (branchError || !branch) {
     return { error: branchError?.message ?? "No fue posible encontrar la sede." };
@@ -2847,10 +2846,6 @@ export async function toggleCompanyBranchStatus(
 
   if (!canManageCompanySites(context, branch.company_id)) {
     return { error: "No tienes permisos para modificar esta sede." };
-  }
-
-  if (branch.is_main && !nextIsActive) {
-    return { error: "La sede principal no se puede desactivar. Primero asigna otra sede principal." };
   }
 
   if (nextIsActive) {
@@ -3022,36 +3017,4 @@ export async function deleteCompanyBranch(
   }
 
   return { success: `Sede "${deletedBranch.branch_name}" eliminada permanentemente.` };
-}
-
-export async function setMainCompanyBranch(formData: FormData): Promise<void> {
-  await requireOperatorAccess();
-  const supabase = await getSupabaseRlsClientOrThrow({ operation: "setMainCompanyBranch" });
-
-  const branchId = readString(formData, "branchId");
-  const companySlug = readString(formData, "companySlug");
-
-  if (!branchId) {
-    throw new Error("Sede inválida.");
-  }
-
-  const { error } = await supabase.rpc("set_main_branch", {
-    target_branch_id: branchId,
-  });
-
-  if (error) {
-    throw new Error(formatDatabaseError(error, "No fue posible actualizar la sede principal."));
-  }
-
-  const branchRouteTarget = await resolveBranchRouteTarget(branchId);
-
-  revalidatePath("/dashboard");
-
-  if (companySlug) {
-    revalidatePath(`/dashboard/companies/${companySlug}`);
-  }
-
-  if (branchRouteTarget) {
-    revalidatePath(`/dashboard/sedes/${branchRouteTarget.companySlug}/${branchRouteTarget.branchSlug}`);
-  }
 }

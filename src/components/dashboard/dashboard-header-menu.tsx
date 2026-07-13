@@ -644,10 +644,8 @@ function getPendingOperationMessage(operation: PendingPlanOperation) {
 
 function PlanPaymentsDrawerContent({
   planPayments,
-  onNavigateToSites,
 }: {
   planPayments: PlanPaymentsData;
-  onNavigateToSites: () => void;
 }) {
   const router = useRouter();
   const visualState = getPlanPaymentsVisualState({
@@ -679,10 +677,6 @@ function PlanPaymentsDrawerContent({
   const capacityQuoteRequestRef = useRef(0);
   const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
-  const contractedAdditionalSites = Math.max(
-    planPayments.accountCapabilities.maxBranches - planPayments.includedActiveSites,
-    0,
-  );
   const scheduledCapacityChange = planPayments.scheduledCapacityChange;
   const activationMonthlyTotal = planChangeMode === "capacity"
     ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
@@ -716,12 +710,6 @@ function PlanPaymentsDrawerContent({
     ? Math.max(planPayments.includedActiveSites, 1)
     : minimumSiteCount;
 
-  const handleNavigateToSites = () => {
-    onNavigateToSites();
-    window.requestAnimationFrame(() => {
-      document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  };
   const handlePaymentMethodCompleted = useCallback((state: AdminActionState) => {
     setBillingLifecycleState(state);
     setIsPaymentMethodFormOpen(false);
@@ -970,7 +958,7 @@ function PlanPaymentsDrawerContent({
             ) : null}
             {visualState.isActivePlan && !scheduledCapacityChange && !isCancellationScheduled ? (
               <AdminDrawerButton variant="secondary" onClick={openCapacityChangeFlow}>
-                Cambiar capacidad
+                Ajustar sedes
               </AdminDrawerButton>
             ) : null}
             {visualState.hasPaymentIssue ? (
@@ -1251,23 +1239,6 @@ function PlanPaymentsDrawerContent({
         )}
       </AdminDrawerSection>
 
-      <AdminDrawerSection title="Sedes">
-        <div>
-          <p className="text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">
-            {planPayments.activeSites} / {planPayments.accountCapabilities.maxBranches}
-          </p>
-          <p className="mt-1 text-sm leading-6 text-[#5e6770]">Sedes activas</p>
-        </div>
-        <AdminDrawerSummaryRow
-          label="Incluidas en tu plan"
-          value={`${planPayments.includedActiveSites} ${planPayments.includedActiveSites === 1 ? "sede" : "sedes"}`}
-        />
-        <AdminDrawerSummaryRow label="Sedes adicionales contratadas" value={contractedAdditionalSites} />
-        <AdminDrawerButton variant="primary" onClick={handleNavigateToSites}>
-          Administrar sedes
-        </AdminDrawerButton>
-      </AdminDrawerSection>
-
       <AdminDrawerSection title="Pago">
         {isPaymentMethodFormOpen && planPayments.companySlug ? (
           <MercadoPagoPaymentMethodForm
@@ -1446,7 +1417,7 @@ export function DashboardHeaderMenu({
       <AdminSideDrawer isOpen={Boolean(activePanel)} title={panelTitle} onClose={closePanel}>
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "planPayments" ? (
-          <PlanPaymentsDrawerContent planPayments={planPayments} onNavigateToSites={closePanel} />
+          <PlanPaymentsDrawerContent planPayments={planPayments} />
         ) : null}
       </AdminSideDrawer>
     </>

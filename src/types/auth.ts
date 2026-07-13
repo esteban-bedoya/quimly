@@ -37,7 +37,6 @@ export type CompanyBranchSummary = {
   companyId: string;
   name: string;
   slug: string;
-  isMain: boolean;
   isActive: boolean;
   status: SiteStatus;
 };

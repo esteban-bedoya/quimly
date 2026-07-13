@@ -44,7 +44,6 @@ type BranchDetailViewProps = {
     companyId: string;
     name: string;
     slug: string;
-    isMain: boolean;
     isActive: boolean;
     status: CompanyBranchSummary["status"];
   };

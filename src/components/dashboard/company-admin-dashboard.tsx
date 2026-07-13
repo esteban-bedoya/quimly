@@ -50,11 +50,6 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            {branch.isMain ? (
-              <span className="rounded-full border border-[#d9dfe0] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#6b655d]">
-                Principal
-              </span>
-            ) : null}
             <span
               className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] ${
                 branch.status === "active"
@@ -84,7 +79,6 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
               branchId={branch.id}
               companySlug={branch.companySlug}
               isActive={branch.isActive}
-              disabled={branch.isMain && isOperative}
             />
             {!isOperative ? <CompanyBranchDeleteButton branch={branch} companySlug={branch.companySlug} /> : null}
           </div>
