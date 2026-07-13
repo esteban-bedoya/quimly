@@ -47,9 +47,10 @@ La vista principal queda en `http://localhost:3000`.
 
 ## Verificación de Supabase Cron
 
-La finalización del acceso de suscripciones canceladas depende del job
-`finalize_due_subscription_cancellations`, programado cada cinco minutos. Antes de producción,
-verifica la extensión, la definición del job y sus últimas ejecuciones desde Supabase SQL Editor:
+La finalización del acceso de suscripciones canceladas y de incidencias de cobro diferidas hasta
+el fin del periodo pagado depende del job `finalize_due_subscription_cancellations`, programado
+cada cinco minutos. Antes de producción, verifica la extensión, la definición del job y sus
+últimas ejecuciones desde Supabase SQL Editor:
 
 ```sql
 select extname, extversion

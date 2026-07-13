@@ -3543,6 +3543,7 @@ declare
   protected_period_started_at timestamptz;
   protected_period_ends_at timestamptz;
   protected_cancellation_effective_at timestamptz;
+  protected_access_ends_at timestamptz;
 begin
   select * into provider_subscription_row
   from public.billing_provider_subscriptions
@@ -3626,14 +3627,35 @@ begin
       cancellation_effective_at = protected_cancellation_effective_at
     where id = subscription_row.id;
   elsif target_normalized_status in ('rejected', 'cancelled', 'charged_back') then
-    next_status := 'payment_issue';
+    protected_access_ends_at := greatest(
+      subscription_row.current_period_ends_at,
+      case
+        when subscription_row.cancellation_requested_at is not null
+          then subscription_row.cancellation_effective_at
+        else null
+      end
+    );
 
-    update public.company_subscriptions
-    set
-      status = next_status,
-      payment_attention_required = true,
-      last_payment_issue_at = coalesce(target_occurred_at, now())
-    where id = subscription_row.id;
+    if protected_access_ends_at is not null and protected_access_ends_at > now() then
+      next_status := subscription_row.status;
+
+      update public.company_subscriptions
+      set
+        payment_attention_required = subscription_row.cancellation_requested_at is null,
+        last_payment_issue_at = coalesce(target_occurred_at, now()),
+        payment_grace_ends_at = protected_access_ends_at
+      where id = subscription_row.id;
+    else
+      next_status := 'payment_issue';
+
+      update public.company_subscriptions
+      set
+        status = next_status,
+        payment_attention_required = true,
+        last_payment_issue_at = coalesce(target_occurred_at, now()),
+        payment_grace_ends_at = null
+      where id = subscription_row.id;
+    end if;
   else
     return false;
   end if;
@@ -3887,7 +3909,7 @@ as $$
 declare
   finalized_count integer := 0;
 begin
-  with due as (
+  with due_cancellations as (
     select
       cs.id,
       cs.company_id,
@@ -3899,16 +3921,16 @@ begin
       and cs.cancellation_effective_at is not null
       and cs.cancellation_effective_at <= now()
     for update skip locked
-  ), finalized as (
+  ), finalized_cancellations as (
     update public.company_subscriptions cs
     set
       status = 'cancelled',
       payment_attention_required = false,
       payment_grace_ends_at = null
-    from due
-    where cs.id = due.id
-    returning cs.id, cs.company_id, due.from_status, due.cancellation_effective_at
-  ), history as (
+    from due_cancellations
+    where cs.id = due_cancellations.id
+    returning cs.id, cs.company_id, due_cancellations.from_status, due_cancellations.cancellation_effective_at
+  ), cancellation_history as (
     insert into public.subscription_status_history (
       company_id,
       subscription_id,
@@ -3923,32 +3945,88 @@ begin
       occurred_at
     )
     select
-      finalized.company_id,
-      finalized.id,
-      finalized.from_status,
+      finalized_cancellations.company_id,
+      finalized_cancellations.id,
+      finalized_cancellations.from_status,
       'cancelled',
       'subscription_cancellation_effective',
       'billing',
       cancellation_intent.id,
       cancellation_intent.requested_by,
-      'subscription_cancellation_effective:' || finalized.id,
-      jsonb_build_object('effectiveAt', finalized.cancellation_effective_at),
-      finalized.cancellation_effective_at
-    from finalized
+      'subscription_cancellation_effective:' || finalized_cancellations.id,
+      jsonb_build_object('effectiveAt', finalized_cancellations.cancellation_effective_at),
+      finalized_cancellations.cancellation_effective_at
+    from finalized_cancellations
     left join lateral (
       select bi.id, bi.requested_by
       from public.billing_intents bi
-      where bi.subscription_id = finalized.id
-        and bi.company_id = finalized.company_id
+      where bi.subscription_id = finalized_cancellations.id
+        and bi.company_id = finalized_cancellations.company_id
         and bi.intent_type = 'cancellation'
       order by bi.created_at desc
       limit 1
     ) cancellation_intent on true
     on conflict (deduplication_key) do nothing
     returning id
+  ), due_payment_issues as (
+    select
+      cs.id,
+      cs.company_id,
+      cs.status as from_status,
+      cs.payment_grace_ends_at,
+      cs.last_payment_issue_at
+    from public.company_subscriptions cs
+    where cs.status = 'active'
+      and cs.cancellation_requested_at is null
+      and cs.payment_attention_required = true
+      and cs.payment_grace_ends_at is not null
+      and cs.payment_grace_ends_at <= now()
+    for update skip locked
+  ), finalized_payment_issues as (
+    update public.company_subscriptions cs
+    set
+      status = 'payment_issue',
+      payment_grace_ends_at = null
+    from due_payment_issues
+    where cs.id = due_payment_issues.id
+    returning
+      cs.id,
+      cs.company_id,
+      due_payment_issues.from_status,
+      due_payment_issues.payment_grace_ends_at,
+      due_payment_issues.last_payment_issue_at
+  ), payment_issue_history as (
+    insert into public.subscription_status_history (
+      company_id,
+      subscription_id,
+      from_status,
+      to_status,
+      reason,
+      source,
+      deduplication_key,
+      metadata,
+      occurred_at
+    )
+    select
+      finalized_payment_issues.company_id,
+      finalized_payment_issues.id,
+      finalized_payment_issues.from_status,
+      'payment_issue',
+      'recurring_subscription_payment_grace_ended',
+      'billing',
+      'recurring_subscription_payment_grace_ended:' || finalized_payment_issues.id || ':' || finalized_payment_issues.last_payment_issue_at::text,
+      jsonb_build_object('graceEndsAt', finalized_payment_issues.payment_grace_ends_at),
+      finalized_payment_issues.payment_grace_ends_at
+    from finalized_payment_issues
+    on conflict (deduplication_key) do nothing
+    returning id
   )
   select count(*)::integer into finalized_count
-  from finalized;
+  from (
+    select id from finalized_cancellations
+    union all
+    select id from finalized_payment_issues
+  ) finalized;
 
   return finalized_count;
 end;

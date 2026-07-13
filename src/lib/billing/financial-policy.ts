@@ -113,6 +113,36 @@ export function getApprovedRenewalProjection({
   };
 }
 
+export function getRecurringPaymentFailureProjection({
+  currentStatus,
+  currentPeriodEndsAt,
+  cancellationRequested,
+  cancellationEffectiveAt,
+  now,
+}: {
+  currentStatus: SubscriptionStatus;
+  currentPeriodEndsAt: string | null;
+  cancellationRequested: boolean;
+  cancellationEffectiveAt: string | null;
+  now: Date;
+}) {
+  const protectedAccessUntil = [
+    currentPeriodEndsAt,
+    cancellationRequested ? cancellationEffectiveAt : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => getRequiredTimestamp(value, "El fin del acceso pagado"))
+    .reduce<number | null>((latest, value) => latest === null || value > latest ? value : latest, null);
+
+  const keepsPaidAccess = protectedAccessUntil !== null && protectedAccessUntil > now.getTime();
+
+  return {
+    status: keepsPaidAccess ? currentStatus : "payment_issue" as const,
+    paymentAttentionRequired: !cancellationRequested,
+    paymentGraceEndsAt: keepsPaidAccess ? new Date(protectedAccessUntil).toISOString() : null,
+  };
+}
+
 export function isAbandonedActivationCheckoutForFounder({
   intentType,
   intentStatus,

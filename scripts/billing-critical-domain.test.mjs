@@ -7,6 +7,7 @@ import {
   getApprovedRenewalProjection,
   getCancellationProjection,
   getProtectedCancellationEffectiveAt,
+  getRecurringPaymentFailureProjection,
   getUpgradeReversalCapacity,
   isAbandonedActivationCheckoutForFounder,
   isCurrentPaymentEntitlement,
@@ -142,6 +143,54 @@ test("una aprobación histórica nunca reduce un periodo vigente más largo", ()
   assert.equal(projection.currentPeriodStartedAt, "2026-09-12T00:00:00.000Z");
   assert.equal(projection.currentPeriodEndsAt, "2026-10-12T00:00:00.000Z");
   assert.equal(projection.cancellationEffectiveAt, "2026-10-12T00:00:00.000Z");
+});
+
+test("renovación rechazada conserva acceso mientras el periodo pagado siga vigente", () => {
+  const projection = getRecurringPaymentFailureProjection({
+    currentStatus: "active",
+    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
+    cancellationRequested: false,
+    cancellationEffectiveAt: null,
+    now: new Date("2026-07-12T00:00:00.000Z"),
+  });
+
+  assert.deepEqual(projection, {
+    status: "active",
+    paymentAttentionRequired: true,
+    paymentGraceEndsAt: "2026-08-12T00:00:00.000Z",
+  });
+});
+
+test("renovación rechazada marca payment_issue cuando el periodo ya venció", () => {
+  const projection = getRecurringPaymentFailureProjection({
+    currentStatus: "active",
+    currentPeriodEndsAt: "2026-07-11T23:59:59.000Z",
+    cancellationRequested: false,
+    cancellationEffectiveAt: null,
+    now: new Date("2026-07-12T00:00:00.000Z"),
+  });
+
+  assert.deepEqual(projection, {
+    status: "payment_issue",
+    paymentAttentionRequired: true,
+    paymentGraceEndsAt: null,
+  });
+});
+
+test("cancelación solicitada conserva acceso ante renovación rechazada hasta la fecha efectiva", () => {
+  const projection = getRecurringPaymentFailureProjection({
+    currentStatus: "active",
+    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
+    cancellationRequested: true,
+    cancellationEffectiveAt: "2026-08-12T00:00:00.000Z",
+    now: new Date("2026-07-12T00:00:00.000Z"),
+  });
+
+  assert.deepEqual(projection, {
+    status: "active",
+    paymentAttentionRequired: false,
+    paymentGraceEndsAt: "2026-08-12T00:00:00.000Z",
+  });
 });
 
 test("C1/C2 aplica una aprobación mientras la activación todavía es resoluble", () => {
