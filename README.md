@@ -32,6 +32,27 @@ Copia `.env.example` a `.env.local` y completa las credenciales de Supabase y Me
 - `SUPABASE_SERVICE_ROLE_KEY` (solo para operaciones Auth Admin en servidor)
 - `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` (tokenización segura de tarjeta en MercadoPago.js)
 
+### WhatsApp Business con Twilio
+
+La bandeja interna usa las credenciales de Twilio que ya existen en el servidor; no agrega ninguna variable pública ni expone secretos al navegador.
+
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `NEXT_PUBLIC_APP_URL` (debe ser la URL pública y canónica, por ejemplo `https://quimly.co`)
+- `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja usa el sender asociado a cada empresa en la base de datos.
+
+Después de ejecutar `supabase/schema.sql`, entra como `owner` a **Dashboard → WhatsApp** y asocia cada WhatsApp Sender de Twilio con una empresa. Un sender solo puede estar asociado a una empresa, lo que permite resolver el `company_id` de cada webhook entrante.
+
+En Twilio, configura el webhook de mensajes entrantes del WhatsApp Sender o del Messaging Service con método `POST`:
+
+```txt
+https://quimly.co/api/webhooks/twilio/whatsapp
+```
+
+Usa exactamente el mismo dominio configurado en `NEXT_PUBLIC_APP_URL`; Twilio firma la URL completa y Quimly valida `X-Twilio-Signature` con el Auth Token antes de procesar cualquier evento. Las respuestas enviadas desde la bandeja incluyen automáticamente el callback de estado `/api/webhooks/twilio/whatsapp/status` para registrar envío, entrega, lectura o error.
+
+WhatsApp permite texto libre durante la ventana de atención de 24 horas desde el último mensaje del cliente. Para responder por fuera de esa ventana, Twilio/Meta exige una plantilla aprobada; este MVP no envía plantillas todavía.
+
 ## Auth y roles
 
 1. Ejecuta `supabase/schema.sql` en el SQL editor de tu proyecto.

@@ -252,6 +252,19 @@ export default async function DashboardPage() {
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Empresas accesibles</p>
               <p className="mt-3 text-xl font-semibold text-[#12110f]">{accessibleCompanies.length}</p>
             </article>
+            {profile.globalRole === "owner" ? (
+              <Link
+                href="/dashboard/whatsapp"
+                className="group rounded-[1.5rem] border border-[#12110f]/10 bg-[#12110f] p-5 text-white transition hover:bg-[#26231f]"
+              >
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#7ad9dd]">WhatsApp</p>
+                <p className="mt-3 text-xl font-semibold">Bandeja de atención</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Consulta conversaciones y responde desde Quimly.</p>
+                <span className="mt-4 inline-flex text-sm font-semibold text-[#7ad9dd] transition group-hover:text-white">
+                  Abrir bandeja →
+                </span>
+              </Link>
+            ) : null}
           </div>
         </section>
 

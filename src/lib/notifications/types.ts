@@ -17,6 +17,8 @@ export type NotificationDeliveryResult = {
 export type WhatsAppMessageInput = {
   to: PhoneNumber;
   body: string;
+  from?: string;
+  statusCallback?: string;
 };
 
 export type OTPCheckResult = {

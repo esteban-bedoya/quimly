@@ -47,6 +47,11 @@ export function getTwilioWhatsAppFrom() {
   return readEnv("whatsappFrom")!;
 }
 
+export function getTwilioAuthToken() {
+  requireTwilioConfig(["authToken"]);
+  return readEnv("authToken")!;
+}
+
 export function getTwilioVerifyServiceSid() {
   const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
 

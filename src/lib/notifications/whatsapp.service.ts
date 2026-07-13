@@ -14,11 +14,12 @@ function normalizeWhatsAppPhoneNumber(phone: PhoneNumber) {
   return normalizedPhone;
 }
 
-export async function sendWhatsAppMessage({ to, body }: WhatsAppMessageInput) {
+export async function sendWhatsAppMessage({ to, body, from, statusCallback }: WhatsAppMessageInput) {
   const message = await getTwilioClient().messages.create({
-    from: getTwilioWhatsAppFrom(),
+    from: from ?? getTwilioWhatsAppFrom(),
     to: normalizeWhatsAppPhoneNumber(to),
     body,
+    ...(statusCallback ? { statusCallback } : {}),
   });
 
   return {
