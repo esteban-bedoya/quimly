@@ -85,7 +85,6 @@ export async function POST(request: Request) {
 
     logServerInfo("whatsapp.inbound_processed", {
       twilioMessageSid: messageSid,
-      configuredChannel: result.configured,
       inserted: result.inserted,
     });
     return twimlResponse();

@@ -315,21 +315,17 @@ create table if not exists public.companies (
   constraint companies_slug_format check (slug = lower(slug))
 );
 
-create table if not exists public.company_whatsapp_channels (
+create table if not exists public.whatsapp_channels (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null unique references public.companies (id) on delete cascade,
   whatsapp_phone text not null unique,
-  is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint company_whatsapp_channels_phone_e164 check (public.is_e164_phone(whatsapp_phone)),
-  constraint company_whatsapp_channels_id_company_unique unique (id, company_id)
+  constraint whatsapp_channels_phone_e164 check (public.is_e164_phone(whatsapp_phone))
 );
 
 create table if not exists public.whatsapp_conversations (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies (id) on delete cascade,
-  channel_id uuid not null,
+  channel_id uuid not null references public.whatsapp_channels (id) on delete cascade,
   contact_phone text not null,
   contact_name text,
   status public.whatsapp_conversation_status not null default 'open',
@@ -340,21 +336,15 @@ create table if not exists public.whatsapp_conversations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint whatsapp_conversations_contact_phone_e164 check (public.is_e164_phone(contact_phone)),
-  constraint whatsapp_conversations_channel_company_fk
-    foreign key (channel_id, company_id)
-    references public.company_whatsapp_channels (id, company_id)
-    on delete cascade,
-  constraint whatsapp_conversations_id_company_unique unique (id, company_id),
   constraint whatsapp_conversations_channel_contact_unique unique (channel_id, contact_phone)
 );
 
-create index if not exists whatsapp_conversations_company_last_message_idx
-on public.whatsapp_conversations (company_id, last_message_at desc);
+create index if not exists whatsapp_conversations_last_message_idx
+on public.whatsapp_conversations (last_message_at desc);
 
 create table if not exists public.whatsapp_messages (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null,
-  conversation_id uuid not null,
+  conversation_id uuid not null references public.whatsapp_conversations (id) on delete cascade,
   direction public.whatsapp_message_direction not null,
   twilio_message_sid text unique,
   twilio_status text not null,
@@ -369,10 +359,6 @@ create table if not exists public.whatsapp_messages (
   twilio_status_updated_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint whatsapp_messages_conversation_company_fk
-    foreign key (conversation_id, company_id)
-    references public.whatsapp_conversations (id, company_id)
-    on delete cascade,
   constraint whatsapp_messages_num_media_check check (num_media >= 0),
   constraint whatsapp_messages_inbound_sid_check check (
     direction <> 'inbound' or twilio_message_sid is not null
@@ -2555,9 +2541,9 @@ before update on public.companies
 for each row
 execute function public.set_updated_at();
 
-drop trigger if exists set_company_whatsapp_channels_updated_at on public.company_whatsapp_channels;
-create trigger set_company_whatsapp_channels_updated_at
-before update on public.company_whatsapp_channels
+drop trigger if exists set_whatsapp_channels_updated_at on public.whatsapp_channels;
+create trigger set_whatsapp_channels_updated_at
+before update on public.whatsapp_channels
 for each row
 execute function public.set_updated_at();
 
@@ -6123,7 +6109,6 @@ $$;
 
 create or replace function public.record_whatsapp_inbound_message(
   p_channel_id uuid,
-  p_company_id uuid,
   p_contact_phone text,
   p_contact_name text,
   p_twilio_message_sid text,
@@ -6145,7 +6130,6 @@ declare
   message_preview text;
 begin
   if p_channel_id is null
-    or p_company_id is null
     or not public.is_e164_phone(p_contact_phone)
     or nullif(trim(coalesce(p_twilio_message_sid, '')), '') is null
     or nullif(trim(coalesce(p_from_address, '')), '') is null
@@ -6160,10 +6144,8 @@ begin
 
   if not exists (
     select 1
-    from public.company_whatsapp_channels channel
+    from public.whatsapp_channels channel
     where channel.id = p_channel_id
-      and channel.company_id = p_company_id
-      and channel.is_active = true
   ) then
     raise exception 'Canal de WhatsApp no disponible.';
   end if;
@@ -6178,7 +6160,6 @@ begin
   );
 
   insert into public.whatsapp_conversations (
-    company_id,
     channel_id,
     contact_phone,
     contact_name,
@@ -6188,7 +6169,6 @@ begin
     last_inbound_at
   )
   values (
-    p_company_id,
     p_channel_id,
     p_contact_phone,
     nullif(trim(coalesce(p_contact_name, '')), ''),
@@ -6202,7 +6182,6 @@ begin
   returning id into resolved_conversation_id;
 
   insert into public.whatsapp_messages (
-    company_id,
     conversation_id,
     direction,
     twilio_message_sid,
@@ -6215,7 +6194,6 @@ begin
     twilio_status_updated_at
   )
   values (
-    p_company_id,
     resolved_conversation_id,
     'inbound',
     trim(p_twilio_message_sid),
@@ -6247,7 +6225,7 @@ end;
 $$;
 
 alter table public.companies enable row level security;
-alter table public.company_whatsapp_channels enable row level security;
+alter table public.whatsapp_channels enable row level security;
 alter table public.whatsapp_conversations enable row level security;
 alter table public.whatsapp_messages enable row level security;
 alter table public.company_subscriptions enable row level security;
@@ -6296,9 +6274,9 @@ for update
 using (public.is_owner() or public.is_super_admin())
 with check (public.is_owner() or public.is_super_admin());
 
-drop policy if exists "company_whatsapp_channels_select_policy" on public.company_whatsapp_channels;
-create policy "company_whatsapp_channels_select_policy"
-on public.company_whatsapp_channels
+drop policy if exists "whatsapp_channels_select_policy" on public.whatsapp_channels;
+create policy "whatsapp_channels_select_policy"
+on public.whatsapp_channels
 for select
 using (public.is_owner());
 
@@ -6803,9 +6781,9 @@ revoke all on table public.billing_payments from anon, authenticated;
 revoke all on table public.billing_webhook_events from anon, authenticated;
 revoke all on table public.subscription_status_history from anon, authenticated;
 revoke all on table public.billing_reconciliation_runs from anon, authenticated;
-revoke all on table public.company_whatsapp_channels from anon, authenticated;
-revoke all on table public.whatsapp_conversations from anon, authenticated;
-revoke all on table public.whatsapp_messages from anon, authenticated;
+revoke all on table public.whatsapp_channels from public, anon, authenticated;
+revoke all on table public.whatsapp_conversations from public, anon, authenticated;
+revoke all on table public.whatsapp_messages from public, anon, authenticated;
 
 grant select, insert, update, delete on table public.billing_intents to service_role;
 grant select, insert, update, delete on table public.billing_provider_subscriptions to service_role;
@@ -6814,15 +6792,15 @@ grant select, insert, update, delete on table public.billing_payments to service
 grant select, insert, update, delete on table public.billing_webhook_events to service_role;
 grant select, insert, update, delete on table public.subscription_status_history to service_role;
 grant select, insert, update, delete on table public.billing_reconciliation_runs to service_role;
-grant select on table public.company_whatsapp_channels to authenticated;
+grant select on table public.whatsapp_channels to authenticated;
 grant select on table public.whatsapp_conversations to authenticated;
 grant select on table public.whatsapp_messages to authenticated;
-grant select, insert, update, delete on table public.company_whatsapp_channels to service_role;
+grant select, insert, update, delete on table public.whatsapp_channels to service_role;
 grant select, insert, update, delete on table public.whatsapp_conversations to service_role;
 grant select, insert, update, delete on table public.whatsapp_messages to service_role;
 
-revoke all on function public.record_whatsapp_inbound_message(uuid, uuid, text, text, text, text, text, text, integer, text, timestamptz) from public, anon, authenticated;
-grant execute on function public.record_whatsapp_inbound_message(uuid, uuid, text, text, text, text, text, text, integer, text, timestamptz) to service_role;
+revoke all on function public.record_whatsapp_inbound_message(uuid, text, text, text, text, text, text, integer, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.record_whatsapp_inbound_message(uuid, text, text, text, text, text, text, integer, text, timestamptz) to service_role;
 
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from public;
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { WhatsAppChannelForm, WhatsAppReplyForm } from "@/components/dashboard/whatsapp-inbox-forms";
+import { WhatsAppReplyForm } from "@/components/dashboard/whatsapp-inbox-forms";
 import { formatPhoneNumberForDisplay } from "@/lib/phone";
 import { getOwnerWhatsAppInboxData, type WhatsAppMessageSummary } from "@/lib/whatsapp-inbox/service.server";
 
@@ -65,7 +65,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
               </p>
               <h1 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-[#12110f]">Bandeja de WhatsApp</h1>
               <p className="mt-2 max-w-2xl text-sm leading-7 text-[#565149] sm:text-base">
-                Mensajes recibidos por los WhatsApp Senders de tus empresas. Las respuestas salen por Twilio sin exponer credenciales al navegador.
+                Bandeja interna del WhatsApp Business de Quimly. Todo contacto nuevo genera una conversación y las respuestas salen por Twilio sin exponer credenciales al navegador.
               </p>
             </div>
             <Link
@@ -112,7 +112,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                         {conversation.lastMessagePreview || "Mensaje sin texto"}
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold text-[#2a7f86]">{conversation.companyName}</span>
+                        <span className="text-xs font-semibold text-[#2a7f86]">WhatsApp Quimly</span>
                         <span className="rounded-full bg-[#dff3e6] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.12em] text-[#265b38]">
                           {conversationStatusLabel(conversation.status)}
                         </span>
@@ -122,7 +122,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                 })
               ) : (
                 <div className="px-5 py-10 text-sm leading-7 text-[#6b655d] sm:px-6">
-                  Todavía no hay conversaciones. Configura un sender abajo y apunta Twilio al webhook de Quimly.
+                  Todavía no hay conversaciones. El primer mensaje válido recibido por Twilio creará el contacto y la conversación automáticamente.
                 </div>
               )}
             </div>
@@ -140,7 +140,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                       <p className="mt-1 text-sm text-[#625c53]">{formatPhoneNumberForDisplay(selectedConversation.contactPhone)}</p>
                     </div>
                     <div className="text-left sm:text-right">
-                      <p className="text-sm font-semibold text-[#12110f]">{selectedConversation.companyName}</p>
+                      <p className="text-sm font-semibold text-[#12110f]">WhatsApp interno Quimly</p>
                       <p className="mt-1 text-xs text-[#756e65]">{conversationStatusLabel(selectedConversation.status)}</p>
                     </div>
                   </div>
@@ -195,42 +195,32 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
         </section>
 
         <section className="rounded-[2rem] border border-[#12110f]/10 bg-white p-6 shadow-[0_20px_60px_rgba(18,17,15,0.08)] sm:p-8">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Configuración</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">WhatsApp Senders por empresa</h2>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Canal interno</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#12110f]">WhatsApp Senders detectados</h2>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-[#625c53]">
-            Asocia el número conectado en Twilio a una empresa. Cuando llegue un webhook, Quimly usa ese sender para guardar el mensaje en el tenant correcto.
+            Quimly registra automáticamente el número destinatario de cada webhook firmado. No requiere asociarlo a una empresa ni configurar contactos previamente.
           </p>
-
-          <div className="mt-6 rounded-[1.5rem] border border-[#12110f]/10 bg-[#fcfbf8] p-5 sm:p-6">
-            <WhatsAppChannelForm companies={inbox.companies} />
-          </div>
 
           <div className="mt-6 overflow-x-auto rounded-[1.5rem] border border-[#12110f]/10">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[#f4efe7] text-xs uppercase tracking-[0.14em] text-[#655f57]">
                 <tr>
-                  <th className="px-5 py-3">Empresa</th>
                   <th className="px-5 py-3">Sender</th>
-                  <th className="px-5 py-3">Estado</th>
+                  <th className="px-5 py-3">Uso</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#12110f]/8 bg-white">
                 {inbox.channels.length ? (
                   inbox.channels.map((channel) => (
                     <tr key={channel.id}>
-                      <td className="px-5 py-4 font-semibold text-[#12110f]">{channel.companyName}</td>
-                      <td className="px-5 py-4 text-[#5d574f]">{formatPhoneNumberForDisplay(channel.whatsappPhone)}</td>
-                      <td className="px-5 py-4">
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${channel.isActive ? "bg-[#dff3e6] text-[#265b38]" : "bg-[#f2ebe0] text-[#6b655d]"}`}>
-                          {channel.isActive ? "Activo" : "Inactivo"}
-                        </span>
-                      </td>
+                      <td className="px-5 py-4 font-semibold text-[#12110f]">{formatPhoneNumberForDisplay(channel.whatsappPhone)}</td>
+                      <td className="px-5 py-4 text-[#5d574f]">Canal interno de Quimly</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={3} className="px-5 py-8 text-center text-[#6b655d]">
-                      Aún no has configurado un WhatsApp Sender.
+                    <td colSpan={2} className="px-5 py-8 text-center text-[#6b655d]">
+                      El sender aparecerá automáticamente al recibir el primer mensaje firmado por Twilio.
                     </td>
                   </tr>
                 )}

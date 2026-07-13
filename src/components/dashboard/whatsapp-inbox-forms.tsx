@@ -4,15 +4,9 @@ import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
-  configureWhatsAppChannel,
   sendWhatsAppReply,
   type WhatsAppInboxActionState,
 } from "@/app/dashboard/whatsapp/actions";
-
-type CompanyOption = {
-  id: string;
-  name: string;
-};
 
 function ActionFeedback({ state }: { state: WhatsAppInboxActionState | undefined }) {
   if (!state?.error && !state?.success) {
@@ -44,69 +38,6 @@ function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingL
     >
       {pending ? pendingLabel : idleLabel}
     </button>
-  );
-}
-
-export function WhatsAppChannelForm({ companies }: { companies: CompanyOption[] }) {
-  const [state, formAction] = useActionState(configureWhatsAppChannel, undefined);
-
-  return (
-    <form action={formAction} className="grid gap-4 sm:grid-cols-2">
-      <div className="space-y-2">
-        <label htmlFor="whatsapp-company" className="text-sm font-medium text-[#12110f]">
-          Empresa
-        </label>
-        <select
-          id="whatsapp-company"
-          name="companyId"
-          required
-          defaultValue=""
-          className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-2.5 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-        >
-          <option value="" disabled>
-            Selecciona una empresa
-          </option>
-          {companies.map((company) => (
-            <option key={company.id} value={company.id}>
-              {company.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <label htmlFor="whatsapp-phone" className="text-sm font-medium text-[#12110f]">
-          WhatsApp Sender
-        </label>
-        <input
-          id="whatsapp-phone"
-          name="whatsappPhone"
-          type="tel"
-          inputMode="tel"
-          placeholder="+57 300 123 4567"
-          required
-          className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-2.5 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-        />
-      </div>
-
-      <label className="flex items-center gap-3 text-sm text-[#403c36] sm:col-span-2">
-        <input
-          name="isActive"
-          type="checkbox"
-          defaultChecked
-          className="h-4 w-4 rounded border-[#12110f]/20 accent-[#21734f]"
-        />
-        Recibir y enviar mensajes con este sender
-      </label>
-
-      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <SubmitButton idleLabel="Guardar canal" pendingLabel="Guardando..." />
-        <p className="text-xs leading-5 text-[#6b655d]">Un sender solo puede pertenecer a una empresa.</p>
-      </div>
-      <div className="sm:col-span-2">
-        <ActionFeedback state={state} />
-      </div>
-    </form>
   );
 }
 

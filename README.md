@@ -20,7 +20,8 @@ src/
   lib/supabase/         Cliente server-side de Supabase
   types/                Tipos compartidos
 supabase/
-  schema.sql            Modelo multi-tenant, roles y RLS
+  schema.sql            Modelo canónico, roles y RLS
+  migrations/           Cambios incrementales para bases ya desplegadas
 ```
 
 ## Variables de entorno
@@ -39,9 +40,11 @@ La bandeja interna usa las credenciales de Twilio que ya existen en el servidor;
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `NEXT_PUBLIC_APP_URL` (debe ser la URL pública y canónica, por ejemplo `https://quimly.co`)
-- `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja usa el sender asociado a cada empresa en la base de datos.
+- `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja responde usando el sender que recibió la conversación.
 
-Después de ejecutar `supabase/schema.sql`, entra como `owner` a **Dashboard → WhatsApp** y asocia cada WhatsApp Sender de Twilio con una empresa. Un sender solo puede estar asociado a una empresa, lo que permite resolver el `company_id` de cada webhook entrante.
+La bandeja es una herramienta interna exclusiva del rol `owner`; no pertenece a las empresas clientes y sus tablas no usan `company_id`. Un webhook firmado registra automáticamente el sender de Quimly, el contacto por número telefónico y su conversación, incluso si el contacto nunca había escrito antes.
+
+Para una instalación nueva, aplica `supabase/schema.sql`. Si la versión multiempresa de WhatsApp ya fue desplegada, aplica una sola vez `supabase/migrations/2026071301_whatsapp_owner_internal.sql`: la migración conserva los IDs y el historial de canales, conversaciones y mensajes, y elimina únicamente las asociaciones empresariales obsoletas. En producción, ejecuta la migración y despliega esta versión de la aplicación de forma coordinada, porque el nombre de la tabla cambia dentro de la transacción.
 
 En Twilio, configura el webhook de mensajes entrantes del WhatsApp Sender o del Messaging Service con método `POST`:
 

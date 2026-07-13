@@ -12,21 +12,13 @@ import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_OUTBOUND_BODY_LENGTH = 4_096;
 
-type CompanyRow = {
-  id: string;
-  name: string;
-};
-
 type ChannelRow = {
   id: string;
-  company_id: string;
   whatsapp_phone: string;
-  is_active: boolean;
 };
 
 type ConversationRow = {
   id: string;
-  company_id: string;
   channel_id: string;
   contact_phone: string;
   contact_name: string | null;
@@ -53,16 +45,11 @@ type MessageRow = {
 
 export type WhatsAppChannelSummary = {
   id: string;
-  companyId: string;
-  companyName: string;
   whatsappPhone: string;
-  isActive: boolean;
 };
 
 export type WhatsAppConversationSummary = {
   id: string;
-  companyId: string;
-  companyName: string;
   channelId: string;
   contactPhone: string;
   contactName: string | null;
@@ -86,7 +73,6 @@ export type WhatsAppMessageSummary = {
 };
 
 export type OwnerWhatsAppInboxData = {
-  companies: CompanyRow[];
   channels: WhatsAppChannelSummary[];
   conversations: WhatsAppConversationSummary[];
   selectedConversation: WhatsAppConversationSummary | null;
@@ -169,11 +155,9 @@ export function getTwilioWhatsAppStatusCallbackUrl() {
   return new URL("/api/webhooks/twilio/whatsapp/status", getPublicApplicationOrigin()).toString();
 }
 
-function mapConversation(row: ConversationRow, companyNames: Map<string, string>): WhatsAppConversationSummary {
+function mapConversation(row: ConversationRow): WhatsAppConversationSummary {
   return {
     id: row.id,
-    companyId: row.company_id,
-    companyName: companyNames.get(row.company_id) ?? "Empresa sin nombre",
     channelId: row.channel_id,
     contactPhone: row.contact_phone,
     contactName: row.contact_name,
@@ -204,37 +188,34 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
   const supabase = await getRequiredRlsClient();
   const selectedId = selectedConversationId && isUuid(selectedConversationId) ? selectedConversationId : null;
 
-  const [companiesResult, channelsResult, conversationsResult, selectedResult] = await Promise.all([
-    supabase.from("companies").select("id, name").eq("is_active", true).order("name", { ascending: true }).returns<CompanyRow[]>(),
+  const [channelsResult, conversationsResult, selectedResult] = await Promise.all([
     supabase
-      .from("company_whatsapp_channels")
-      .select("id, company_id, whatsapp_phone, is_active")
+      .from("whatsapp_channels")
+      .select("id, whatsapp_phone")
       .order("created_at", { ascending: true })
       .returns<ChannelRow[]>(),
     supabase
       .from("whatsapp_conversations")
-      .select("id, company_id, channel_id, contact_phone, contact_name, status, last_message_at, last_message_preview, last_message_direction, last_inbound_at")
+      .select("id, channel_id, contact_phone, contact_name, status, last_message_at, last_message_preview, last_message_direction, last_inbound_at")
       .order("last_message_at", { ascending: false })
       .limit(100)
       .returns<ConversationRow[]>(),
     selectedId
       ? supabase
           .from("whatsapp_conversations")
-          .select("id, company_id, channel_id, contact_phone, contact_name, status, last_message_at, last_message_preview, last_message_direction, last_inbound_at")
+          .select("id, channel_id, contact_phone, contact_name, status, last_message_at, last_message_preview, last_message_direction, last_inbound_at")
           .eq("id", selectedId)
           .maybeSingle<ConversationRow>()
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  const firstError = companiesResult.error ?? channelsResult.error ?? conversationsResult.error ?? selectedResult.error;
+  const firstError = channelsResult.error ?? conversationsResult.error ?? selectedResult.error;
 
   if (firstError) {
     throw new Error("No fue posible cargar la bandeja de WhatsApp.");
   }
 
-  const companies = companiesResult.data ?? [];
-  const companyNames = new Map(companies.map((company) => [company.id, company.name]));
-  const selectedConversation = selectedResult.data ? mapConversation(selectedResult.data, companyNames) : null;
+  const selectedConversation = selectedResult.data ? mapConversation(selectedResult.data) : null;
 
   const messagesResult = selectedConversation
     ? await supabase
@@ -251,75 +232,14 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
   }
 
   return {
-    companies,
     channels: (channelsResult.data ?? []).map((channel) => ({
       id: channel.id,
-      companyId: channel.company_id,
-      companyName: companyNames.get(channel.company_id) ?? "Empresa sin nombre",
       whatsappPhone: channel.whatsapp_phone,
-      isActive: channel.is_active,
     })),
-    conversations: (conversationsResult.data ?? []).map((conversation) => mapConversation(conversation, companyNames)),
+    conversations: (conversationsResult.data ?? []).map(mapConversation),
     selectedConversation,
     messages: (messagesResult.data ?? []).map(mapMessage),
   };
-}
-
-export async function configureOwnerWhatsAppChannel({
-  companyId,
-  phone,
-  isActive,
-}: {
-  companyId: string;
-  phone: string;
-  isActive: boolean;
-}) {
-  await requireRole(["owner"]);
-
-  if (!isUuid(companyId)) {
-    throw new Error("Selecciona una empresa válida.");
-  }
-
-  const whatsappPhone = normalizePhoneNumber(phone);
-
-  if (!whatsappPhone) {
-    throw new Error("Ingresa el número del WhatsApp Sender en formato internacional.");
-  }
-
-  const rlsClient = await getRequiredRlsClient();
-  const { data: company, error: companyError } = await rlsClient
-    .from("companies")
-    .select("id")
-    .eq("id", companyId)
-    .eq("is_active", true)
-    .maybeSingle<{ id: string }>();
-
-  if (companyError || !company) {
-    throw new Error("La empresa seleccionada no está disponible.");
-  }
-
-  const adminClient = getRequiredAdminClient();
-  const { error } = await adminClient
-    .from("company_whatsapp_channels")
-    .upsert(
-      {
-        company_id: company.id,
-        whatsapp_phone: whatsappPhone,
-        is_active: isActive,
-      },
-      { onConflict: "company_id" },
-    );
-
-  if (error) {
-    if (error.code === "23505") {
-      throw new Error("Ese WhatsApp Sender ya está asociado a otra empresa.");
-    }
-
-    throw new Error("No fue posible guardar el canal de WhatsApp.");
-  }
-
-  revalidatePath("/dashboard/whatsapp");
-  logServerInfo("whatsapp.channel_configured", { companyId: company.id, isActive });
 }
 
 export async function recordTwilioInboundWhatsAppMessage(input: TwilioInboundMessage) {
@@ -336,23 +256,17 @@ export async function recordTwilioInboundWhatsAppMessage(input: TwilioInboundMes
 
   const adminClient = getRequiredAdminClient();
   const { data: channel, error: channelError } = await adminClient
-    .from("company_whatsapp_channels")
-    .select("id, company_id")
-    .eq("whatsapp_phone", whatsappPhone)
-    .eq("is_active", true)
-    .maybeSingle<{ id: string; company_id: string }>();
+    .from("whatsapp_channels")
+    .upsert({ whatsapp_phone: whatsappPhone }, { onConflict: "whatsapp_phone" })
+    .select("id, whatsapp_phone")
+    .single<ChannelRow>();
 
-  if (channelError) {
+  if (channelError || !channel) {
     throw new Error("No fue posible resolver el canal de WhatsApp entrante.");
-  }
-
-  if (!channel) {
-    return { configured: false, inserted: false };
   }
 
   const { data, error } = await adminClient.rpc("record_whatsapp_inbound_message", {
     p_channel_id: channel.id,
-    p_company_id: channel.company_id,
     p_contact_phone: contactPhone,
     p_contact_name: input.profileName,
     p_twilio_message_sid: input.messageSid.trim(),
@@ -370,7 +284,6 @@ export async function recordTwilioInboundWhatsAppMessage(input: TwilioInboundMes
 
   revalidatePath("/dashboard/whatsapp");
   return {
-    configured: true,
     inserted: Array.isArray(data) ? Boolean(data[0]?.inserted) : false,
   };
 }
@@ -401,14 +314,12 @@ async function updateConversationAfterOutboundMessage({
 }
 
 async function recordFailedOutboundMessage({
-  companyId,
   conversationId,
   from,
   to,
   body,
   error,
 }: {
-  companyId: string;
   conversationId: string;
   from: string;
   to: string;
@@ -421,7 +332,6 @@ async function recordFailedOutboundMessage({
   const attemptedAt = new Date().toISOString();
 
   const { error: persistenceError } = await adminClient.from("whatsapp_messages").insert({
-    company_id: companyId,
     conversation_id: conversationId,
     direction: "outbound",
     twilio_status: "failed",
@@ -465,24 +375,22 @@ export async function sendOwnerWhatsAppReply({
   const rlsClient = await getRequiredRlsClient();
   const { data: conversation, error: conversationError } = await rlsClient
     .from("whatsapp_conversations")
-    .select("id, company_id, channel_id, contact_phone")
+    .select("id, channel_id, contact_phone")
     .eq("id", conversationId)
-    .maybeSingle<{ id: string; company_id: string; channel_id: string; contact_phone: string }>();
+    .maybeSingle<{ id: string; channel_id: string; contact_phone: string }>();
 
   if (conversationError || !conversation) {
     throw new Error("No tienes acceso a esta conversación.");
   }
 
   const { data: channel, error: channelError } = await rlsClient
-    .from("company_whatsapp_channels")
-    .select("id, company_id, whatsapp_phone, is_active")
+    .from("whatsapp_channels")
+    .select("id, whatsapp_phone")
     .eq("id", conversation.channel_id)
-    .eq("company_id", conversation.company_id)
-    .eq("is_active", true)
     .maybeSingle<ChannelRow>();
 
   if (channelError || !channel) {
-    throw new Error("El canal de WhatsApp de esta conversación no está activo.");
+    throw new Error("El canal interno de WhatsApp de esta conversación no está disponible.");
   }
 
   const from = formatPhoneForWhatsApp(channel.whatsapp_phone);
@@ -504,7 +412,6 @@ export async function sendOwnerWhatsAppReply({
   } catch (error) {
     try {
       await recordFailedOutboundMessage({
-        companyId: conversation.company_id,
         conversationId: conversation.id,
         from,
         to: formatPhoneForWhatsApp(to)!,
@@ -524,7 +431,6 @@ export async function sendOwnerWhatsAppReply({
   const sentAt = new Date().toISOString();
   const adminClient = getRequiredAdminClient();
   const { error: messageError } = await adminClient.from("whatsapp_messages").insert({
-    company_id: conversation.company_id,
     conversation_id: conversation.id,
     direction: "outbound",
     twilio_message_sid: sentMessage.sid,
