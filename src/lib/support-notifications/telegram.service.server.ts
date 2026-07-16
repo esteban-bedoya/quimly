@@ -26,9 +26,7 @@ function formatTelegramMessage(alert: InboundWhatsAppSupportAlert) {
   ].join("\n");
 }
 
-export async function sendTelegramInboundWhatsAppSupportAlert(
-  alert: InboundWhatsAppSupportAlert,
-): Promise<TelegramSupportAlertResult> {
+async function sendTelegramMessage(text: string): Promise<TelegramSupportAlertResult> {
   const config = getTelegramSupportAlertConfig();
 
   if (!config) {
@@ -41,7 +39,7 @@ export async function sendTelegramInboundWhatsAppSupportAlert(
     signal: AbortSignal.timeout(10_000),
     body: JSON.stringify({
       chat_id: config.chatId,
-      text: formatTelegramMessage(alert),
+      text,
       disable_web_page_preview: true,
     }),
   });
@@ -51,4 +49,10 @@ export async function sendTelegramInboundWhatsAppSupportAlert(
   }
 
   return { provider: "telegram", status: "sent" };
+}
+
+export async function sendTelegramInboundWhatsAppSupportAlert(
+  alert: InboundWhatsAppSupportAlert,
+): Promise<TelegramSupportAlertResult> {
+  return sendTelegramMessage(formatTelegramMessage(alert));
 }
