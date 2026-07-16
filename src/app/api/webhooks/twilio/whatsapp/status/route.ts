@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import { getTwilioAuthToken } from "@/lib/notifications/twilio.client";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getCanonicalTwilioWebhookUrl } from "@/lib/whatsapp-inbox/service.server";
+import {
+  getCanonicalTwilioWebhookUrl,
+  recordWhatsAppInboxEventBestEffort,
+} from "@/lib/whatsapp-inbox/service.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
 
   const errorCode = getString(params, "ErrorCode").trim() || null;
   const errorMessage = getString(params, "ErrorMessage").trim().slice(0, 1_000) || null;
-  const { error } = await adminClient
+  const { data: updatedMessages, error } = await adminClient
     .from("whatsapp_messages")
     .update({
       twilio_status: messageStatus,
@@ -78,12 +81,24 @@ export async function POST(request: Request) {
       twilio_status_updated_at: new Date().toISOString(),
     })
     .eq("twilio_message_sid", messageSid)
-    .eq("direction", "outbound");
+    .eq("direction", "outbound")
+    .select("id, conversation_id")
+    .returns<{ id: string; conversation_id: string }[]>();
 
   if (error) {
     logServerError("whatsapp.status_update_failed", error, { twilioMessageSid: messageSid, messageStatus });
     return Response.json({ error: "Unable to process webhook." }, { status: 500 });
   }
+
+  await Promise.all(
+    (updatedMessages ?? []).map((message) =>
+      recordWhatsAppInboxEventBestEffort({
+        type: "message_status_updated",
+        conversationId: message.conversation_id,
+        messageId: message.id,
+      }),
+    ),
+  );
 
   revalidatePath("/dashboard/whatsapp");
   logServerInfo("whatsapp.status_processed", { twilioMessageSid: messageSid, messageStatus });

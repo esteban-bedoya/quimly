@@ -368,6 +368,27 @@ create table if not exists public.whatsapp_messages (
 create index if not exists whatsapp_messages_conversation_created_idx
 on public.whatsapp_messages (conversation_id, created_at asc);
 
+create table if not exists public.whatsapp_conversation_reads (
+  conversation_id uuid not null references public.whatsapp_conversations (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  last_read_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (conversation_id, user_id)
+);
+
+create table if not exists public.whatsapp_inbox_events (
+  id bigint generated always as identity primary key,
+  event_type text not null check (event_type in ('inbound_message', 'outbound_message', 'message_status_updated')),
+  conversation_id uuid not null references public.whatsapp_conversations (id) on delete cascade,
+  message_id uuid references public.whatsapp_messages (id) on delete cascade,
+  contact_name text,
+  contact_phone text,
+  message_preview text,
+  is_new_conversation boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.company_subscriptions (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null unique references public.companies (id) on delete cascade,
@@ -2556,6 +2577,12 @@ execute function public.set_updated_at();
 drop trigger if exists set_whatsapp_messages_updated_at on public.whatsapp_messages;
 create trigger set_whatsapp_messages_updated_at
 before update on public.whatsapp_messages
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_whatsapp_conversation_reads_updated_at on public.whatsapp_conversation_reads;
+create trigger set_whatsapp_conversation_reads_updated_at
+before update on public.whatsapp_conversation_reads
 for each row
 execute function public.set_updated_at();
 
@@ -6107,7 +6134,9 @@ begin
 end;
 $$;
 
-create or replace function public.record_whatsapp_inbound_message(
+drop function if exists public.record_whatsapp_inbound_message(uuid, text, text, text, text, text, text, integer, text, timestamptz);
+
+create function public.record_whatsapp_inbound_message(
   p_channel_id uuid,
   p_contact_phone text,
   p_contact_name text,
@@ -6119,7 +6148,7 @@ create or replace function public.record_whatsapp_inbound_message(
   p_twilio_status text,
   p_received_at timestamptz
 )
-returns table (conversation_id uuid, inserted boolean)
+returns table (conversation_id uuid, message_id uuid, inserted boolean)
 language plpgsql
 security definer
 set search_path = public
@@ -6128,6 +6157,7 @@ declare
   resolved_conversation_id uuid;
   inserted_message_id uuid;
   message_preview text;
+  is_new_conversation boolean := false;
 begin
   if p_channel_id is null
     or not public.is_e164_phone(p_contact_phone)
@@ -6177,9 +6207,18 @@ begin
     'inbound',
     coalesce(p_received_at, now())
   )
-  on conflict (channel_id, contact_phone) do update
-  set contact_phone = excluded.contact_phone
+  on conflict (channel_id, contact_phone) do nothing
   returning id into resolved_conversation_id;
+
+  if resolved_conversation_id is null then
+    select id
+    into resolved_conversation_id
+    from public.whatsapp_conversations
+    where channel_id = p_channel_id
+      and contact_phone = p_contact_phone;
+  else
+    is_new_conversation := true;
+  end if;
 
   insert into public.whatsapp_messages (
     conversation_id,
@@ -6218,16 +6257,103 @@ begin
       last_inbound_at = coalesce(p_received_at, now())
     where id = resolved_conversation_id
       and last_message_at <= coalesce(p_received_at, now());
+
+    insert into public.whatsapp_inbox_events (
+      event_type,
+      conversation_id,
+      message_id,
+      contact_name,
+      contact_phone,
+      message_preview,
+      is_new_conversation
+    )
+    values (
+      'inbound_message',
+      resolved_conversation_id,
+      inserted_message_id,
+      nullif(trim(coalesce(p_contact_name, '')), ''),
+      p_contact_phone,
+      message_preview,
+      is_new_conversation
+    );
   end if;
 
-  return query select resolved_conversation_id, inserted_message_id is not null;
+  return query select resolved_conversation_id, inserted_message_id, inserted_message_id is not null;
 end;
+$$;
+
+create or replace function public.mark_whatsapp_conversation_read(
+  p_conversation_id uuid,
+  p_read_through timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  latest_inbound_at timestamptz;
+  effective_read_at timestamptz;
+begin
+  if auth.uid() is null or not public.is_owner() then
+    raise exception 'No autorizado para marcar conversaciones de WhatsApp.';
+  end if;
+
+  select last_inbound_at
+  into latest_inbound_at
+  from public.whatsapp_conversations
+  where id = p_conversation_id;
+
+  if not found or latest_inbound_at is null or p_read_through is null then
+    raise exception 'Conversación de WhatsApp no disponible.';
+  end if;
+
+  effective_read_at := least(p_read_through, latest_inbound_at, now());
+
+  insert into public.whatsapp_conversation_reads (
+    conversation_id,
+    user_id,
+    last_read_at
+  )
+  values (
+    p_conversation_id,
+    auth.uid(),
+    effective_read_at
+  )
+  on conflict (conversation_id, user_id) do update
+  set last_read_at = greatest(
+    public.whatsapp_conversation_reads.last_read_at,
+    excluded.last_read_at
+  );
+end;
+$$;
+
+create or replace function public.get_whatsapp_unread_conversation_count()
+returns bigint
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select count(*)
+  from public.whatsapp_conversations conversation
+  left join public.whatsapp_conversation_reads read_cursor
+    on read_cursor.conversation_id = conversation.id
+    and read_cursor.user_id = auth.uid()
+  where public.is_owner()
+    and conversation.last_inbound_at is not null
+    and (
+      read_cursor.last_read_at is null
+      or conversation.last_inbound_at > read_cursor.last_read_at
+    )
 $$;
 
 alter table public.companies enable row level security;
 alter table public.whatsapp_channels enable row level security;
 alter table public.whatsapp_conversations enable row level security;
 alter table public.whatsapp_messages enable row level security;
+alter table public.whatsapp_conversation_reads enable row level security;
+alter table public.whatsapp_inbox_events enable row level security;
 alter table public.company_subscriptions enable row level security;
 alter table public.subscription_capacity_changes enable row level security;
 alter table public.billing_intents enable row level security;
@@ -6289,6 +6415,18 @@ using (public.is_owner());
 drop policy if exists "whatsapp_messages_select_policy" on public.whatsapp_messages;
 create policy "whatsapp_messages_select_policy"
 on public.whatsapp_messages
+for select
+using (public.is_owner());
+
+drop policy if exists "whatsapp_conversation_reads_select_policy" on public.whatsapp_conversation_reads;
+create policy "whatsapp_conversation_reads_select_policy"
+on public.whatsapp_conversation_reads
+for select
+using (public.is_owner());
+
+drop policy if exists "whatsapp_inbox_events_select_policy" on public.whatsapp_inbox_events;
+create policy "whatsapp_inbox_events_select_policy"
+on public.whatsapp_inbox_events
 for select
 using (public.is_owner());
 
@@ -6784,6 +6922,8 @@ revoke all on table public.billing_reconciliation_runs from anon, authenticated;
 revoke all on table public.whatsapp_channels from public, anon, authenticated;
 revoke all on table public.whatsapp_conversations from public, anon, authenticated;
 revoke all on table public.whatsapp_messages from public, anon, authenticated;
+revoke all on table public.whatsapp_conversation_reads from public, anon, authenticated;
+revoke all on table public.whatsapp_inbox_events from public, anon, authenticated;
 
 grant select, insert, update, delete on table public.billing_intents to service_role;
 grant select, insert, update, delete on table public.billing_provider_subscriptions to service_role;
@@ -6795,12 +6935,22 @@ grant select, insert, update, delete on table public.billing_reconciliation_runs
 grant select on table public.whatsapp_channels to authenticated;
 grant select on table public.whatsapp_conversations to authenticated;
 grant select on table public.whatsapp_messages to authenticated;
+grant select on table public.whatsapp_conversation_reads to authenticated;
+grant select on table public.whatsapp_inbox_events to authenticated;
 grant select, insert, update, delete on table public.whatsapp_channels to service_role;
 grant select, insert, update, delete on table public.whatsapp_conversations to service_role;
 grant select, insert, update, delete on table public.whatsapp_messages to service_role;
+grant select, insert, update, delete on table public.whatsapp_conversation_reads to service_role;
+grant select, insert, update, delete on table public.whatsapp_inbox_events to service_role;
 
 revoke all on function public.record_whatsapp_inbound_message(uuid, text, text, text, text, text, text, integer, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.record_whatsapp_inbound_message(uuid, text, text, text, text, text, text, integer, text, timestamptz) to service_role;
+
+revoke all on function public.mark_whatsapp_conversation_read(uuid, timestamptz) from public, anon;
+grant execute on function public.mark_whatsapp_conversation_read(uuid, timestamptz) to authenticated;
+
+revoke all on function public.get_whatsapp_unread_conversation_count() from public, anon;
+grant execute on function public.get_whatsapp_unread_conversation_count() to authenticated;
 
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from public;
 revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;

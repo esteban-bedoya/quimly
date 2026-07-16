@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -44,12 +45,14 @@ function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingL
 export function WhatsAppReplyForm({ conversationId }: { conversationId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction] = useActionState(sendWhatsAppReply, undefined);
+  const router = useRouter();
 
   useEffect(() => {
     if (state?.success) {
       formRef.current?.reset();
+      router.refresh();
     }
-  }, [state?.success]);
+  }, [router, state?.success]);
 
   return (
     <form ref={formRef} action={formAction} className="border-t border-[#12110f]/8 bg-[#fcfbf8] p-4 sm:p-5">

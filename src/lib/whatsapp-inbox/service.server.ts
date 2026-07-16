@@ -6,8 +6,10 @@ import { requireRole } from "@/lib/auth/authorization";
 import { formatPhoneForWhatsApp, normalizePhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppMessage } from "@/lib/notifications/whatsapp.service";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
+import type { InboundWhatsAppSupportAlert } from "@/lib/support-notifications/types";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
+import type { WhatsAppInboxSyncEvent, WhatsAppInboxSyncState } from "@/types/whatsapp-inbox";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_OUTBOUND_BODY_LENGTH = 4_096;
@@ -43,6 +45,29 @@ type MessageRow = {
   created_at: string;
 };
 
+type ConversationReadRow = {
+  conversation_id: string;
+  last_read_at: string;
+};
+
+type InboxEventRow = {
+  id: number;
+  event_type: "inbound_message" | "outbound_message" | "message_status_updated";
+  conversation_id: string;
+  message_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  message_preview: string | null;
+  is_new_conversation: boolean;
+  created_at: string;
+};
+
+type InboundRecordRow = {
+  conversation_id: string;
+  message_id: string | null;
+  inserted: boolean;
+};
+
 export type WhatsAppChannelSummary = {
   id: string;
   whatsappPhone: string;
@@ -58,6 +83,7 @@ export type WhatsAppConversationSummary = {
   lastMessagePreview: string | null;
   lastMessageDirection: "inbound" | "outbound" | null;
   lastInboundAt: string | null;
+  isUnread: boolean;
 };
 
 export type WhatsAppMessageSummary = {
@@ -77,6 +103,8 @@ export type OwnerWhatsAppInboxData = {
   conversations: WhatsAppConversationSummary[];
   selectedConversation: WhatsAppConversationSummary | null;
   messages: WhatsAppMessageSummary[];
+  latestEventId: number;
+  unreadConversationCount: number;
 };
 
 type TwilioInboundMessage = {
@@ -155,7 +183,19 @@ export function getTwilioWhatsAppStatusCallbackUrl() {
   return new URL("/api/webhooks/twilio/whatsapp/status", getPublicApplicationOrigin()).toString();
 }
 
-function mapConversation(row: ConversationRow): WhatsAppConversationSummary {
+function isUnreadInbound(lastInboundAt: string | null, lastReadAt: string | null) {
+  if (!lastInboundAt) {
+    return false;
+  }
+
+  if (!lastReadAt) {
+    return true;
+  }
+
+  return new Date(lastInboundAt).getTime() > new Date(lastReadAt).getTime();
+}
+
+function mapConversation(row: ConversationRow, lastReadAt: string | null = null): WhatsAppConversationSummary {
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -166,6 +206,7 @@ function mapConversation(row: ConversationRow): WhatsAppConversationSummary {
     lastMessagePreview: row.last_message_preview,
     lastMessageDirection: row.last_message_direction,
     lastInboundAt: row.last_inbound_at,
+    isUnread: isUnreadInbound(row.last_inbound_at, lastReadAt),
   };
 }
 
@@ -184,11 +225,11 @@ function mapMessage(row: MessageRow): WhatsAppMessageSummary {
 }
 
 export async function getOwnerWhatsAppInboxData(selectedConversationId: string | null): Promise<OwnerWhatsAppInboxData> {
-  await requireRole(["owner"]);
+  const context = await requireRole(["owner"]);
   const supabase = await getRequiredRlsClient();
   const selectedId = selectedConversationId && isUuid(selectedConversationId) ? selectedConversationId : null;
 
-  const [channelsResult, conversationsResult, selectedResult] = await Promise.all([
+  const [channelsResult, conversationsResult, selectedResult, readsResult, latestEventResult, unreadCountResult] = await Promise.all([
     supabase
       .from("whatsapp_channels")
       .select("id, whatsapp_phone")
@@ -207,15 +248,32 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
           .eq("id", selectedId)
           .maybeSingle<ConversationRow>()
       : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from("whatsapp_conversation_reads")
+      .select("conversation_id, last_read_at")
+      .eq("user_id", context.profile.userId)
+      .returns<ConversationReadRow[]>(),
+    supabase
+      .from("whatsapp_inbox_events")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: number }>(),
+    supabase.rpc("get_whatsapp_unread_conversation_count").returns<number>(),
   ]);
 
-  const firstError = channelsResult.error ?? conversationsResult.error ?? selectedResult.error;
+  const firstError = channelsResult.error ?? conversationsResult.error ?? selectedResult.error ?? readsResult.error ?? latestEventResult.error ?? unreadCountResult.error;
 
   if (firstError) {
     throw new Error("No fue posible cargar la bandeja de WhatsApp.");
   }
 
-  const selectedConversation = selectedResult.data ? mapConversation(selectedResult.data) : null;
+  const readAtByConversationId = new Map(
+    (readsResult.data ?? []).map((read) => [read.conversation_id, read.last_read_at]),
+  );
+  const selectedConversation = selectedResult.data
+    ? mapConversation(selectedResult.data, readAtByConversationId.get(selectedResult.data.id) ?? null)
+    : null;
 
   const messagesResult = selectedConversation
     ? await supabase
@@ -236,10 +294,74 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
       id: channel.id,
       whatsappPhone: channel.whatsapp_phone,
     })),
-    conversations: (conversationsResult.data ?? []).map(mapConversation),
+    conversations: (conversationsResult.data ?? []).map((conversation) =>
+      mapConversation(conversation, readAtByConversationId.get(conversation.id) ?? null),
+    ),
     selectedConversation,
     messages: (messagesResult.data ?? []).map(mapMessage),
+    latestEventId: latestEventResult.data?.id ?? 0,
+    unreadConversationCount: Number(unreadCountResult.data) || 0,
   };
+}
+
+export async function getOwnerWhatsAppInboxSyncState(afterEventId: number): Promise<WhatsAppInboxSyncState> {
+  await requireRole(["owner"]);
+  const supabase = await getRequiredRlsClient();
+  const safeAfterEventId = Number.isSafeInteger(afterEventId) && afterEventId >= 0 ? afterEventId : 0;
+  const { data, error } = await supabase
+    .from("whatsapp_inbox_events")
+    .select("id, event_type, conversation_id, message_id, contact_name, contact_phone, message_preview, is_new_conversation, created_at")
+    .gt("id", safeAfterEventId)
+    .order("id", { ascending: true })
+    .limit(50)
+    .returns<InboxEventRow[]>();
+
+  if (error) {
+    throw new Error("No fue posible sincronizar la bandeja de WhatsApp.");
+  }
+
+  const events: WhatsAppInboxSyncEvent[] = (data ?? []).map((event) => ({
+    id: event.id,
+    type: event.event_type,
+    conversationId: event.conversation_id,
+    messageId: event.message_id,
+    contactName: event.contact_name,
+    contactPhone: event.contact_phone,
+    messagePreview: event.message_preview,
+    isNewConversation: event.is_new_conversation,
+    occurredAt: event.created_at,
+  }));
+
+  return {
+    latestEventId: events.at(-1)?.id ?? safeAfterEventId,
+    events,
+  };
+}
+
+export async function markOwnerWhatsAppConversationRead({
+  conversationId,
+  readThrough,
+}: {
+  conversationId: string;
+  readThrough: string;
+}) {
+  await requireRole(["owner"]);
+
+  if (!isUuid(conversationId) || Number.isNaN(new Date(readThrough).getTime())) {
+    throw new Error("La conversación que quieres marcar como leída no es válida.");
+  }
+
+  const supabase = await getRequiredRlsClient();
+  const { error } = await supabase.rpc("mark_whatsapp_conversation_read", {
+    p_conversation_id: conversationId,
+    p_read_through: readThrough,
+  });
+
+  if (error) {
+    throw new Error("No fue posible marcar la conversación como leída.");
+  }
+
+  revalidatePath("/dashboard/whatsapp");
 }
 
 export async function recordTwilioInboundWhatsAppMessage(input: TwilioInboundMessage) {
@@ -265,27 +387,79 @@ export async function recordTwilioInboundWhatsAppMessage(input: TwilioInboundMes
     throw new Error("No fue posible resolver el canal de WhatsApp entrante.");
   }
 
-  const { data, error } = await adminClient.rpc("record_whatsapp_inbound_message", {
-    p_channel_id: channel.id,
-    p_contact_phone: contactPhone,
-    p_contact_name: input.profileName,
-    p_twilio_message_sid: input.messageSid.trim(),
-    p_from_address: input.from,
-    p_to_address: input.to,
-    p_body: input.body,
-    p_num_media: input.numMedia,
-    p_twilio_status: input.status,
-    p_received_at: input.receivedAt,
-  });
+  const { data, error } = await adminClient
+    .rpc("record_whatsapp_inbound_message", {
+      p_channel_id: channel.id,
+      p_contact_phone: contactPhone,
+      p_contact_name: input.profileName,
+      p_twilio_message_sid: input.messageSid.trim(),
+      p_from_address: input.from,
+      p_to_address: input.to,
+      p_body: input.body,
+      p_num_media: input.numMedia,
+      p_twilio_status: input.status,
+      p_received_at: input.receivedAt,
+    })
+    .returns<InboundRecordRow[]>();
 
   if (error) {
     throw new Error("No fue posible guardar el mensaje entrante de WhatsApp.");
   }
 
+  const records = data as unknown as InboundRecordRow[] | null;
+  const record = records?.[0] ?? null;
+  const inserted = Boolean(record?.inserted);
+  const inboundAlert: InboundWhatsAppSupportAlert | null =
+    inserted && record?.conversation_id && record.message_id
+      ? {
+          conversationId: record.conversation_id,
+          messageId: record.message_id,
+          contactName: input.profileName,
+          contactPhone,
+          body: input.body,
+          numMedia: input.numMedia,
+          receivedAt: input.receivedAt,
+        }
+      : null;
+
   revalidatePath("/dashboard/whatsapp");
   return {
-    inserted: Array.isArray(data) ? Boolean(data[0]?.inserted) : false,
+    inserted,
+    inboundAlert,
   };
+}
+
+export async function recordWhatsAppInboxEventBestEffort({
+  type,
+  conversationId,
+  messageId = null,
+}: {
+  type: "outbound_message" | "message_status_updated";
+  conversationId: string;
+  messageId?: string | null;
+}) {
+  try {
+    const adminClient = getRequiredAdminClient();
+    const { error } = await adminClient.from("whatsapp_inbox_events").insert({
+      event_type: type,
+      conversation_id: conversationId,
+      message_id: messageId,
+    });
+
+    if (error) {
+      logServerError("whatsapp.inbox_event_persistence_failed", error, {
+        eventType: type,
+        conversationId,
+        messageId,
+      });
+    }
+  } catch (error) {
+    logServerError("whatsapp.inbox_event_persistence_failed", error, {
+      eventType: type,
+      conversationId,
+      messageId,
+    });
+  }
 }
 
 async function updateConversationAfterOutboundMessage({
@@ -331,21 +505,30 @@ async function recordFailedOutboundMessage({
   const errorMessage = error instanceof Error ? error.message.slice(0, 1_000) : "Twilio no aceptó el mensaje.";
   const attemptedAt = new Date().toISOString();
 
-  const { error: persistenceError } = await adminClient.from("whatsapp_messages").insert({
-    conversation_id: conversationId,
-    direction: "outbound",
-    twilio_status: "failed",
-    from_address: from,
-    to_address: to,
-    body,
-    num_media: 0,
-    twilio_error_code: errorCode,
-    twilio_error_message: errorMessage,
-    twilio_status_updated_at: attemptedAt,
-  });
+  const { data: persistedMessage, error: persistenceError } = await adminClient
+    .from("whatsapp_messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      twilio_status: "failed",
+      from_address: from,
+      to_address: to,
+      body,
+      num_media: 0,
+      twilio_error_code: errorCode,
+      twilio_error_message: errorMessage,
+      twilio_status_updated_at: attemptedAt,
+    })
+    .select("id")
+    .single<{ id: string }>();
 
-  if (!persistenceError) {
+  if (!persistenceError && persistedMessage) {
     await updateConversationAfterOutboundMessage({ conversationId, sentAt: attemptedAt, body });
+    await recordWhatsAppInboxEventBestEffort({
+      type: "outbound_message",
+      conversationId,
+      messageId: persistedMessage.id,
+    });
   }
 }
 
@@ -430,20 +613,24 @@ export async function sendOwnerWhatsAppReply({
 
   const sentAt = new Date().toISOString();
   const adminClient = getRequiredAdminClient();
-  const { error: messageError } = await adminClient.from("whatsapp_messages").insert({
-    conversation_id: conversation.id,
-    direction: "outbound",
-    twilio_message_sid: sentMessage.sid,
-    twilio_status: sentMessage.status ?? "queued",
-    from_address: sentMessage.from ?? from,
-    to_address: sentMessage.to ?? formatPhoneForWhatsApp(to)!,
-    body: sentMessage.body ?? normalizedBody,
-    num_media: 0,
-    sent_at: sentAt,
-    twilio_status_updated_at: sentAt,
-  });
+  const { data: persistedMessage, error: messageError } = await adminClient
+    .from("whatsapp_messages")
+    .insert({
+      conversation_id: conversation.id,
+      direction: "outbound",
+      twilio_message_sid: sentMessage.sid,
+      twilio_status: sentMessage.status ?? "queued",
+      from_address: sentMessage.from ?? from,
+      to_address: sentMessage.to ?? formatPhoneForWhatsApp(to)!,
+      body: sentMessage.body ?? normalizedBody,
+      num_media: 0,
+      sent_at: sentAt,
+      twilio_status_updated_at: sentAt,
+    })
+    .select("id")
+    .single<{ id: string }>();
 
-  if (messageError) {
+  if (messageError || !persistedMessage) {
     logServerError("whatsapp.outbound_persistence_failed", messageError, {
       conversationId: conversation.id,
       twilioMessageSid: sentMessage.sid,
@@ -455,6 +642,12 @@ export async function sendOwnerWhatsAppReply({
     conversationId: conversation.id,
     sentAt,
     body: sentMessage.body ?? normalizedBody,
+  });
+
+  await recordWhatsAppInboxEventBestEffort({
+    type: "outbound_message",
+    conversationId: conversation.id,
+    messageId: persistedMessage.id,
   });
 
   revalidatePath("/dashboard/whatsapp");

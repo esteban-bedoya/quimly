@@ -41,10 +41,13 @@ La bandeja interna usa las credenciales de Twilio que ya existen en el servidor;
 - `TWILIO_AUTH_TOKEN`
 - `NEXT_PUBLIC_APP_URL` (debe ser la URL pública y canónica, por ejemplo `https://quimly.co`)
 - `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja responde usando el sender que recibió la conversación.
+- `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` son opcionales. Cuando ambos estén configurados, Quimly enviará una alerta de soporte por cada mensaje entrante nuevo; sin ambos valores no se realizan envíos a Telegram.
 
 La bandeja es una herramienta interna exclusiva del rol `owner`; no pertenece a las empresas clientes y sus tablas no usan `company_id`. Un webhook firmado registra automáticamente el sender de Quimly, el contacto por número telefónico y su conversación, incluso si el contacto nunca había escrito antes.
 
 Para una instalación nueva, aplica `supabase/schema.sql`. Si la versión multiempresa de WhatsApp ya fue desplegada, aplica una sola vez `supabase/migrations/2026071301_whatsapp_owner_internal.sql`: la migración conserva los IDs y el historial de canales, conversaciones y mensajes, y elimina únicamente las asociaciones empresariales obsoletas. En producción, ejecuta la migración y despliega esta versión de la aplicación de forma coordinada, porque el nombre de la tabla cambia dentro de la transacción.
+
+Para activar las notificaciones de bandeja, los contadores de no leídos y el cursor de lectura en una base existente, aplica después `supabase/migrations/2026071401_whatsapp_inbox_notifications.sql` antes de desplegar esta versión.
 
 En Twilio, configura el webhook de mensajes entrantes del WhatsApp Sender o del Messaging Service con método `POST`:
 

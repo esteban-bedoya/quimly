@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { WhatsAppConversationReadMarker } from "@/components/dashboard/whatsapp-conversation-read-marker";
 import { WhatsAppReplyForm } from "@/components/dashboard/whatsapp-inbox-forms";
+import { WhatsAppInboxSync } from "@/components/dashboard/whatsapp-inbox-sync";
 import { formatPhoneNumberForDisplay } from "@/lib/phone";
 import { getOwnerWhatsAppInboxData, type WhatsAppMessageSummary } from "@/lib/whatsapp-inbox/service.server";
 
@@ -56,6 +58,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f4efe7_0%,#ebe4d7_100%)] px-5 py-6 sm:px-8 lg:px-10">
+      <WhatsAppInboxSync initialEventId={inbox.latestEventId} />
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <section className="rounded-[2rem] border border-[#12110f]/10 bg-white p-6 shadow-[0_20px_60px_rgba(18,17,15,0.08)] sm:p-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -81,7 +84,9 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
           <aside className="border-b border-[#12110f]/8 bg-[#fcfbf8] lg:border-r lg:border-b-0">
             <div className="border-b border-[#12110f]/8 px-5 py-5 sm:px-6">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2a7f86]">Conversaciones</p>
-              <p className="mt-1 text-sm text-[#686159]">{inbox.conversations.length} recientes</p>
+              <p className="mt-1 text-sm text-[#686159]">
+                {inbox.conversations.length} recientes · {inbox.unreadConversationCount} no leídas
+              </p>
             </div>
             <div className="max-h-[32rem] divide-y divide-[#12110f]/8 overflow-y-auto lg:max-h-[46rem]">
               {inbox.conversations.length ? (
@@ -113,9 +118,16 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-3">
                         <span className="text-xs font-semibold text-[#2a7f86]">WhatsApp Quimly</span>
-                        <span className="rounded-full bg-[#dff3e6] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.12em] text-[#265b38]">
-                          {conversationStatusLabel(conversation.status)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {conversation.isUnread ? (
+                            <span className="rounded-full bg-[#fff0be] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.12em] text-[#805600]">
+                              Nuevo
+                            </span>
+                          ) : null}
+                          <span className="rounded-full bg-[#dff3e6] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.12em] text-[#265b38]">
+                            {conversationStatusLabel(conversation.status)}
+                          </span>
+                        </div>
                       </div>
                     </Link>
                   );
@@ -131,6 +143,13 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
           <section className="flex min-h-[34rem] flex-col">
             {selectedConversation ? (
               <>
+                {selectedConversation.isUnread && selectedConversation.lastInboundAt ? (
+                  <WhatsAppConversationReadMarker
+                    key={selectedConversation.id}
+                    conversationId={selectedConversation.id}
+                    readThrough={selectedConversation.lastInboundAt}
+                  />
+                ) : null}
                 <header className="border-b border-[#12110f]/8 px-5 py-5 sm:px-6">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
