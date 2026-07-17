@@ -333,6 +333,7 @@ create table if not exists public.whatsapp_conversations (
   last_message_preview text,
   last_message_direction public.whatsapp_message_direction,
   last_inbound_at timestamptz,
+  last_ack_template_sent_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint whatsapp_conversations_contact_phone_e164 check (public.is_e164_phone(contact_phone)),

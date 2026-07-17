@@ -21,6 +21,14 @@ export type WhatsAppMessageInput = {
   statusCallback?: string;
 };
 
+export type WhatsAppContentTemplateInput = {
+  to: PhoneNumber;
+  contentSid: string;
+  contentVariables: Record<string, string>;
+  from?: string;
+  statusCallback?: string;
+};
+
 export type OTPCheckResult = {
   to: PhoneNumber;
   sid: string;

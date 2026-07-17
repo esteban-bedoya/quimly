@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { getTwilioAuthToken } from "@/lib/notifications/twilio.client";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { dispatchInboundWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
+import { sendAcknowledgementTemplateIfNeeded } from "@/lib/whatsapp-inbox/acknowledgement-template.dispatcher.server";
 import {
   getCanonicalTwilioWebhookUrl,
   recordTwilioInboundWhatsAppMessage,
@@ -93,7 +94,12 @@ export async function POST(request: Request) {
     const inboundAlert = result.inboundAlert;
 
     if (inboundAlert) {
-      after(() => dispatchInboundWhatsAppSupportAlert(inboundAlert));
+      after(() =>
+        Promise.all([
+          dispatchInboundWhatsAppSupportAlert(inboundAlert),
+          sendAcknowledgementTemplateIfNeeded({ conversationId: inboundAlert.conversationId }),
+        ]),
+      );
     }
 
     return twimlResponse();
