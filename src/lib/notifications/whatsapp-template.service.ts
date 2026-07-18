@@ -13,6 +13,7 @@ export type WhatsAppTemplateVariables = Record<string, string>;
 type SendWhatsAppTemplateInput = {
   to: PhoneNumber;
   variables: WhatsAppTemplateVariables;
+  statusCallback?: string;
 };
 
 function maskPhoneNumber(phone: string) {
@@ -98,7 +99,7 @@ export function getWhatsAppTemplateErrorDetails(error: unknown) {
   };
 }
 
-export async function sendWhatsAppTemplate({ to, variables }: SendWhatsAppTemplateInput) {
+export async function sendWhatsAppTemplate({ to, variables, statusCallback }: SendWhatsAppTemplateInput) {
   const whatsappTo = formatPhoneForWhatsApp(to);
 
   if (!whatsappTo) {
@@ -120,6 +121,7 @@ export async function sendWhatsAppTemplate({ to, variables }: SendWhatsAppTempla
       to: whatsappTo,
       contentSid,
       contentVariables: JSON.stringify(variables),
+      ...(statusCallback ? { statusCallback } : {}),
     });
 
     logServerInfo(`${WHATSAPP_TEMPLATE_LOG_PREFIX} send.response`, {

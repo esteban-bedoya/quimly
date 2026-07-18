@@ -6,6 +6,10 @@ import {
   type WhatsAppTemplateVariables,
 } from "@/lib/notifications/whatsapp-template.service";
 import { logServerError } from "@/lib/server/logging";
+import {
+  getTwilioWhatsAppStatusCallbackUrl,
+  recordWhatsAppTemplateTestMessage,
+} from "@/lib/whatsapp-inbox/service.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,12 +66,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const message = await sendWhatsAppTemplate({ to: phone, variables: body.variables });
+    const message = await sendWhatsAppTemplate({
+      to: phone,
+      variables: body.variables,
+      statusCallback: getTwilioWhatsAppStatusCallbackUrl(),
+    });
+    const conversationId = await recordWhatsAppTemplateTestMessage({ to: phone, message });
 
     return Response.json(
       {
         sid: message.sid,
         status: message.status,
+        conversationId,
       },
       { status: 201 },
     );
