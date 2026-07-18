@@ -4,6 +4,10 @@ import { formatPhoneForWhatsApp, normalizePhoneNumber } from "@/lib/phone";
 import { sendWhatsAppContentTemplate } from "@/lib/notifications/whatsapp.service";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  getTwilioWhatsAppStatusCallbackUrl,
+  recordOutboundWhatsAppMessage,
+} from "@/lib/whatsapp-inbox/service.server";
 
 const ACKNOWLEDGEMENT_TEMPLATE_CONTENT_SID = "HXde19a620325c1cd755fb5f557faeb104";
 const ACKNOWLEDGEMENT_TEMPLATE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -74,6 +78,13 @@ export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { 
       to,
       contentSid: ACKNOWLEDGEMENT_TEMPLATE_CONTENT_SID,
       contentVariables: { "1": contactName },
+      statusCallback: getTwilioWhatsAppStatusCallbackUrl(),
+    });
+
+    await recordOutboundWhatsAppMessage({
+      conversationId: conversation.id,
+      message: sentMessage,
+      fallbackBody: "Plantilla automática de atención enviada.",
     });
 
     const { data: updatedConversation, error: updateError } = await adminClient

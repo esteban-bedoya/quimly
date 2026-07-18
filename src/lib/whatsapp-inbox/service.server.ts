@@ -532,6 +532,63 @@ async function recordFailedOutboundMessage({
   }
 }
 
+type OutboundWhatsAppMessage = {
+  sid: string;
+  status?: string | null;
+  to?: string | null;
+  from?: string | null;
+  body?: string | null;
+};
+
+export async function recordOutboundWhatsAppMessage({
+  conversationId,
+  message,
+  fallbackBody,
+}: {
+  conversationId: string;
+  message: OutboundWhatsAppMessage;
+  fallbackBody: string;
+}) {
+  const sentAt = new Date().toISOString();
+  const body = message.body?.trim() || fallbackBody;
+  const adminClient = getRequiredAdminClient();
+  const { data: persistedMessage, error: messageError } = await adminClient
+    .from("whatsapp_messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      twilio_message_sid: message.sid,
+      twilio_status: message.status ?? "queued",
+      from_address: message.from,
+      to_address: message.to,
+      body,
+      num_media: 0,
+      sent_at: sentAt,
+      twilio_status_updated_at: sentAt,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (messageError || !persistedMessage) {
+    throw new Error("Twilio aceptó el mensaje, pero no fue posible guardarlo. No lo reenvíes; revisa Twilio antes de intentarlo de nuevo.");
+  }
+
+  await updateConversationAfterOutboundMessage({
+    conversationId,
+    sentAt,
+    body,
+  });
+
+  await recordWhatsAppInboxEventBestEffort({
+    type: "outbound_message",
+    conversationId,
+    messageId: persistedMessage.id,
+  });
+
+  revalidatePath("/dashboard/whatsapp");
+  return persistedMessage.id;
+}
+
 export async function sendOwnerWhatsAppReply({
   conversationId,
   body,
@@ -611,46 +668,20 @@ export async function sendOwnerWhatsAppReply({
     throw new Error("Twilio no pudo enviar el mensaje. El intento quedó registrado en el historial.");
   }
 
-  const sentAt = new Date().toISOString();
-  const adminClient = getRequiredAdminClient();
-  const { data: persistedMessage, error: messageError } = await adminClient
-    .from("whatsapp_messages")
-    .insert({
-      conversation_id: conversation.id,
-      direction: "outbound",
-      twilio_message_sid: sentMessage.sid,
-      twilio_status: sentMessage.status ?? "queued",
-      from_address: sentMessage.from ?? from,
-      to_address: sentMessage.to ?? formatPhoneForWhatsApp(to)!,
-      body: sentMessage.body ?? normalizedBody,
-      num_media: 0,
-      sent_at: sentAt,
-      twilio_status_updated_at: sentAt,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (messageError || !persistedMessage) {
-    logServerError("whatsapp.outbound_persistence_failed", messageError, {
+  try {
+    await recordOutboundWhatsAppMessage({
+      conversationId: conversation.id,
+      message: sentMessage,
+      fallbackBody: normalizedBody,
+    });
+  } catch (error) {
+    logServerError("whatsapp.outbound_persistence_failed", error, {
       conversationId: conversation.id,
       twilioMessageSid: sentMessage.sid,
     });
     throw new Error("Twilio aceptó el mensaje, pero no fue posible guardarlo. No lo reenvíes; revisa Twilio antes de intentarlo de nuevo.");
   }
 
-  await updateConversationAfterOutboundMessage({
-    conversationId: conversation.id,
-    sentAt,
-    body: sentMessage.body ?? normalizedBody,
-  });
-
-  await recordWhatsAppInboxEventBestEffort({
-    type: "outbound_message",
-    conversationId: conversation.id,
-    messageId: persistedMessage.id,
-  });
-
-  revalidatePath("/dashboard/whatsapp");
   logServerInfo("whatsapp.outbound_sent", { conversationId: conversation.id, twilioMessageSid: sentMessage.sid });
 }
 

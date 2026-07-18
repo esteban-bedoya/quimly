@@ -51,5 +51,6 @@ export async function sendWhatsAppContentTemplate({
     status: message.status,
     to: message.to,
     from: message.from,
+    body: message.body,
   };
 }
