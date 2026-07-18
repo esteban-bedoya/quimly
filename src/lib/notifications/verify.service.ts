@@ -104,7 +104,7 @@ export async function sendOTP(phone: PhoneNumber) {
   const verifyServiceSid = getTwilioVerifyServiceSid();
   const verificationRequest = {
     to,
-    channel: "whatsapp",
+    channel: "sms",
     locale: "es",
   };
 
@@ -117,8 +117,6 @@ export async function sendOTP(phone: PhoneNumber) {
       twilioAccountSid: process.env.TWILIO_ACCOUNT_SID?.trim() || null,
       verifyServiceSid,
       verifyServiceSidEnvironmentVariableConfigured: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID?.trim()),
-      whatsappFromEnvironmentVariableConfigured: Boolean(process.env.TWILIO_WHATSAPP_FROM?.trim()),
-      whatsappFromUsedByVerify: false,
       requestedChannel: verificationRequest.channel,
       requestedLocale: verificationRequest.locale,
     },

@@ -209,7 +209,7 @@ export async function requestSignupOTP(
   }
 
   return {
-    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+    success: "Te enviamos un código de verificación a tu celular.",
     step: "verify",
     establishmentName,
     adminName,
@@ -348,7 +348,7 @@ export async function requestPasswordReset(
   }
 
   return {
-    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+    success: "Te enviamos un código de verificación a tu celular.",
     step: "verify",
     phone,
   };

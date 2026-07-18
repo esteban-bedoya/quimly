@@ -180,7 +180,7 @@ function SignupContent({
             required
           />
           <p className="text-xs leading-5 text-[#6a665f]">
-            Revisa WhatsApp. Si no lo ves, revisa tus SMS. Enviado a{" "}
+            Revisa los mensajes SMS. Enviado a{" "}
             {formatPhoneNumberForDisplay(activeState?.phone ?? phone)}.
           </p>
         </div>

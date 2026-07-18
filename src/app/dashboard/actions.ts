@@ -440,11 +440,11 @@ function getSupabaseAdminClientOrThrow(context: Record<string, unknown> = {}) {
   return supabase;
 }
 
-async function sendWhatsAppOTP(phone: E164PhoneNumber) {
+async function sendPhoneOTP(phone: E164PhoneNumber) {
   await notificationService.sendOTP(phone);
 }
 
-async function verifyWhatsAppOTP(phone: E164PhoneNumber, code: string) {
+async function verifyPhoneOTP(phone: E164PhoneNumber, code: string) {
   const verification = await notificationService.checkOTP(phone, code);
   return verification.approved;
 }
@@ -1131,7 +1131,7 @@ export async function updateCurrentUserProfile(
       return { error: "Debes ingresar el código de verificación para cambiar el celular." };
     }
 
-    const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
+    const approved = await verifyPhoneOTP(phone, phoneOtpCode);
 
     if (!approved) {
       return { error: "El código de verificación no es válido o expiró." };
@@ -1230,7 +1230,7 @@ export async function sendCurrentUserPhoneChangeOTP(
 
   try {
     await ensurePhoneIsAvailable(phone, context.profile.userId);
-    await sendWhatsAppOTP(phone);
+    await sendPhoneOTP(phone);
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
@@ -1238,7 +1238,7 @@ export async function sendCurrentUserPhoneChangeOTP(
   }
 
   return {
-    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+    success: "Te enviamos un código de verificación a tu celular.",
   };
 }
 
@@ -2505,7 +2505,7 @@ async function createUserRecord({
     throw new Error("Solo un company_admin puede tener empresa asignada.");
   }
 
-  const approved = await verifyWhatsAppOTP(phone, phoneOtpCode);
+  const approved = await verifyPhoneOTP(phone, phoneOtpCode);
 
   if (!approved) {
     throw new Error("El código de verificación no es válido o expiró.");
@@ -2645,7 +2645,7 @@ export async function sendSuperAdminRegistrationOTP(
 
   try {
     await ensurePhoneIsAvailable(phone);
-    await sendWhatsAppOTP(phone);
+    await sendPhoneOTP(phone);
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
@@ -2653,7 +2653,7 @@ export async function sendSuperAdminRegistrationOTP(
   }
 
   return {
-    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+    success: "Te enviamos un código de verificación a tu celular.",
   };
 }
 
@@ -2670,7 +2670,7 @@ export async function sendCompanyAdminRegistrationOTP(
 
   try {
     await ensurePhoneIsAvailable(phone);
-    await sendWhatsAppOTP(phone);
+    await sendPhoneOTP(phone);
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
@@ -2678,7 +2678,7 @@ export async function sendCompanyAdminRegistrationOTP(
   }
 
   return {
-    success: "Te enviamos un código de verificación a tu celular. Revisa WhatsApp; si no lo ves, revisa tus SMS.",
+    success: "Te enviamos un código de verificación a tu celular.",
   };
 }
 
