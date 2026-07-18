@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CompanyAdminDashboard } from "@/components/dashboard/company-admin-dashboard";
+import { WhatsAppTemplateTestForm } from "@/components/dashboard/whatsapp-template-test-form";
 import {
   AssignFounderForm,
   CompanyStatusToggle,
@@ -267,6 +268,8 @@ export default async function DashboardPage() {
             ) : null}
           </div>
         </section>
+
+        {profile.globalRole === "owner" ? <WhatsAppTemplateTestForm /> : null}
 
         <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <article className="rounded-[2rem] border border-[#12110f]/10 bg-white p-6 shadow-[0_20px_60px_rgba(18,17,15,0.08)] sm:p-8">

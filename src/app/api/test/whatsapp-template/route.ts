@@ -1,6 +1,10 @@
 import { getCurrentUserContext } from "@/lib/auth/user-context";
 import { isE164PhoneNumber } from "@/lib/phone";
-import { sendWhatsAppTemplate, type WhatsAppTemplateVariables } from "@/lib/notifications/whatsapp-template.service";
+import {
+  getWhatsAppTemplateErrorDetails,
+  sendWhatsAppTemplate,
+  type WhatsAppTemplateVariables,
+} from "@/lib/notifications/whatsapp-template.service";
 import { logServerError } from "@/lib/server/logging";
 
 export const runtime = "nodejs";
@@ -67,11 +71,20 @@ export async function POST(request: Request) {
       },
       { status: 201 },
     );
-  } catch {
-    logServerError("[WHATSAPP TEMPLATE] test_endpoint.failed", new Error("Twilio could not accept the WhatsApp template message."), {
+  } catch (error) {
+    const twilioError = getWhatsAppTemplateErrorDetails(error);
+
+    logServerError("[WHATSAPP TEMPLATE] test_endpoint.failed", new Error(twilioError.message), {
       requestedBy: context.profile.userId,
+      twilioError,
     });
 
-    return Response.json({ error: "Twilio could not accept the WhatsApp template message." }, { status: 502 });
+    return Response.json(
+      {
+        error: twilioError.message,
+        twilioError,
+      },
+      { status: 502 },
+    );
   }
 }

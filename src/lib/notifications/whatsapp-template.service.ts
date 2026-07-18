@@ -80,7 +80,7 @@ function makeSafeSerializable(value: unknown, seen = new WeakSet<object>()): unk
   return String(value);
 }
 
-function getTwilioErrorDetails(error: unknown) {
+export function getWhatsAppTemplateErrorDetails(error: unknown) {
   const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
   const message = error instanceof Error
     ? error.message
@@ -136,7 +136,7 @@ export async function sendWhatsAppTemplate({ to, variables }: SendWhatsAppTempla
       from: message.from,
     };
   } catch (error) {
-    const twilioError = getTwilioErrorDetails(error);
+    const twilioError = getWhatsAppTemplateErrorDetails(error);
 
     logServerError(`${WHATSAPP_TEMPLATE_LOG_PREFIX} send.failed`, new Error(twilioError.message), {
       destination: maskPhoneNumber(to),
