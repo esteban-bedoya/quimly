@@ -10,6 +10,7 @@ const twilioConfigKeys = {
   accountSid: "TWILIO_ACCOUNT_SID",
   authToken: "TWILIO_AUTH_TOKEN",
   whatsappFrom: "TWILIO_WHATSAPP_FROM",
+  whatsappTemplateSid: "TWILIO_WHATSAPP_TEMPLATE_SID",
   verifyServiceSid: "TWILIO_VERIFY_SERVICE_SID",
 } as const;
 
@@ -45,6 +46,11 @@ export function getTwilioClient() {
 export function getTwilioWhatsAppFrom() {
   requireTwilioConfig(["whatsappFrom"]);
   return readEnv("whatsappFrom")!;
+}
+
+export function getTwilioWhatsAppTemplateSid() {
+  requireTwilioConfig(["whatsappTemplateSid"]);
+  return readEnv("whatsappTemplateSid")!;
 }
 
 export function getTwilioAuthToken() {
