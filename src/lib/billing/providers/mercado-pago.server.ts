@@ -409,6 +409,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
   async updateSubscriptionPaymentMethod(
     providerSubscriptionId: string,
     cardToken: string,
+    reactivatePausedSubscription = false,
   ): Promise<ProviderSubscription> {
     const normalizedCardToken = cardToken.trim();
 
@@ -420,7 +421,10 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
       {
         method: "PUT",
-        body: JSON.stringify({ card_token_id: normalizedCardToken }),
+        body: JSON.stringify({
+          card_token_id: normalizedCardToken,
+          ...(reactivatePausedSubscription ? { status: "authorized" } : {}),
+        }),
       },
     );
 

@@ -21,6 +21,7 @@ type CompanySubscriptionRow = {
   plan_type: string | null;
   trial_ends_at: string | null;
   current_period_ends_at: string | null;
+  payment_grace_ends_at: string | null;
   cancellation_requested_at: string | null;
   cancellation_effective_at: string | null;
   base_monthly_price_cop: number | null;
@@ -88,6 +89,7 @@ function buildPlanPaymentsData({
     planType,
     trialEndsAt: subscription?.trial_ends_at ?? null,
     nextChargeAt: subscription?.cancellation_requested_at ? null : subscription?.current_period_ends_at ?? null,
+    paymentGraceEndsAt: subscription?.payment_grace_ends_at ?? null,
     cancellationRequestedAt: subscription?.cancellation_requested_at ?? null,
     cancellationEffectiveAt: subscription?.cancellation_effective_at ?? null,
     baseMonthlyPriceCop,
@@ -129,7 +131,7 @@ export async function getCompanyAdminPlanPaymentsData(
     supabase
       .from("company_subscriptions")
       .select(
-        "status, plan_type, trial_ends_at, current_period_ends_at, cancellation_requested_at, cancellation_effective_at, base_monthly_price_cop, additional_site_monthly_price_cop, included_active_sites, max_active_locations, payment_method_status, payment_attention_required",
+        "status, plan_type, trial_ends_at, current_period_ends_at, payment_grace_ends_at, cancellation_requested_at, cancellation_effective_at, base_monthly_price_cop, additional_site_monthly_price_cop, included_active_sites, max_active_locations, payment_method_status, payment_attention_required",
       )
       .eq("company_id", companyId)
       .maybeSingle<CompanySubscriptionRow>(),

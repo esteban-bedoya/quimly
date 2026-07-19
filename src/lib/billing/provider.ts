@@ -101,6 +101,7 @@ export type BillingProvider = {
   updateSubscriptionPaymentMethod(
     providerSubscriptionId: string,
     cardToken: string,
+    reactivatePausedSubscription?: boolean,
   ): Promise<ProviderSubscription>;
   updateSubscriptionStatus(
     providerSubscriptionId: string,

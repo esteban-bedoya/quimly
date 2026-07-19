@@ -30,6 +30,8 @@ import { MercadoPagoInfoCard } from "@/components/billing/mercado-pago-info-card
 import {
   calculatePlanMonthlyTotalCop,
   formatCopAmount,
+  getDefaultBaseMonthlyPriceCop,
+  getEffectivePlanType,
   getPlanPaymentsVisualState,
   paymentProviderLabel,
   type PlanPaymentsData,
@@ -819,15 +821,22 @@ function PlanPaymentsDrawerContent({
   const [isQuotePending, startQuoteTransition] = useTransition();
   const [isLifecyclePending, startLifecycleTransition] = useTransition();
   const capacityQuoteRequestRef = useRef(0);
-  const activationPlanName = planPayments.planType === "founder" ? "Plan fundador" : "Plan operativo";
+  const activationPlanType = getEffectivePlanType({
+    planType: planPayments.planType,
+    subscriptionStatus: planPayments.subscriptionStatus,
+  });
+  const activationBaseMonthlyPriceCop = activationPlanType === planPayments.planType
+    ? planPayments.baseMonthlyPriceCop
+    : getDefaultBaseMonthlyPriceCop(activationPlanType);
+  const activationPlanName = activationPlanType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
   const scheduledCapacityChange = planPayments.scheduledCapacityChange;
   const activationMonthlyTotal = planChangeMode === "capacity"
-    ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
+      ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
     : calculatePlanMonthlyTotalCop({
-        planType: planPayments.planType,
+        planType: activationPlanType,
         siteCount: selectedSiteCount,
-        baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
+        baseMonthlyPriceCop: activationBaseMonthlyPriceCop,
         additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
         includedActiveSites: planPayments.includedActiveSites,
       });
@@ -837,11 +846,13 @@ function PlanPaymentsDrawerContent({
   const paymentStatusLabel = isCancellationPending ? "Cancelación programada" : visualState.statusLabel;
   const paymentStatusMessage = isCancellationPending
     ? `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. No se realizarán nuevos cobros.`
+    : planPayments.subscriptionViewState === "payment_issue" && planPayments.paymentGraceEndsAt
+      ? `Tu negocio sigue protegido mientras Mercado Pago reintenta el cobro hasta el ${formatDateLabel(planPayments.paymentGraceEndsAt)}. Actualiza tu método de pago para evitar la suspensión.`
     : visualState.message;
   const isActivationMode = activationStep !== null;
   const isReactivationFlow = isActivationMode && planPayments.subscriptionViewState === "cancelled";
   const isCapacityChangeMode = planChangeMode === "capacity";
-  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Cancelado"
+  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Cancelado" || paymentStatusLabel === "Suspendido"
     ? "border-[#ecd0c8] bg-[#fff6f3] text-[#8a2d1f]"
     : visualState.isActivePlan
     ? "border-[#9edfc1]/70 bg-[#e8f7ef] text-[#21734f]"

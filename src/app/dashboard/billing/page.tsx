@@ -100,7 +100,7 @@ function statusTone(value: string | null | undefined) {
     return "bg-emerald-100 text-emerald-800";
   }
 
-  if (["failed", "rejected", "charged_back", "refunded", "compensation_required", "payment_issue"].includes(normalized)) {
+  if (["failed", "rejected", "charged_back", "refunded", "compensation_required", "payment_issue", "suspended"].includes(normalized)) {
     return "bg-rose-100 text-rose-800";
   }
 

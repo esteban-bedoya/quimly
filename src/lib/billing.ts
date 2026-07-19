@@ -4,7 +4,7 @@ export const additionalSitePriceCop = 9900;
 export const includedSitesInBasePlan = 1;
 export const paymentProviderLabel = "Mercado Pago";
 
-export type SubscriptionStatus = "trial" | "active" | "payment_issue" | "cancelled";
+export type SubscriptionStatus = "trial" | "active" | "payment_issue" | "suspended" | "cancelled";
 export type PlanType = "founder" | "operational";
 export type SiteStatus = "active" | "inactive" | "deleted";
 export type PaymentMethodStatus = "pending" | "configured";
@@ -17,6 +17,7 @@ export type SubscriptionViewState =
   | "founder_active"
   | "operational_active"
   | "payment_issue"
+  | "suspended"
   | "cancelled";
 
 export type AccountCapabilities = {
@@ -47,6 +48,7 @@ export type PlanPaymentsData = {
   planType: PlanType;
   trialEndsAt: string | null;
   nextChargeAt: string | null;
+  paymentGraceEndsAt: string | null;
   cancellationRequestedAt: string | null;
   cancellationEffectiveAt: string | null;
   baseMonthlyPriceCop: number;
@@ -88,6 +90,10 @@ export function normalizeSubscriptionStatus(status: string | null | undefined): 
     return "cancelled";
   }
 
+  if (status === "suspended") {
+    return "suspended";
+  }
+
   if (status === "expired" || status === "past_due" || status === "payment_failed" || status === "payment_issue") {
     return "payment_issue";
   }
@@ -121,6 +127,16 @@ export function formatCopAmount(amount: number) {
 
 export function getDefaultBaseMonthlyPriceCop(planType: PlanType) {
   return planType === "founder" ? founderPlanBasePriceCop : operationalPlanBasePriceCop;
+}
+
+export function getEffectivePlanType({
+  planType,
+  subscriptionStatus,
+}: {
+  planType: PlanType;
+  subscriptionStatus: SubscriptionStatus;
+}): PlanType {
+  return subscriptionStatus === "cancelled" && planType === "founder" ? "operational" : planType;
 }
 
 export function calculatePlanMonthlyTotalCop({
@@ -162,7 +178,11 @@ export function getSubscriptionViewState({
     return planType === "founder" ? "founder_active" : "operational_active";
   }
 
-  return status === "cancelled" ? "cancelled" : "payment_issue";
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+
+  return status === "suspended" ? "suspended" : "payment_issue";
 }
 
 export function getCapacityState({
@@ -189,7 +209,8 @@ export function getAccountCapabilities({
   const canFinanciallyOperate =
     subscriptionViewState === "trial_active" ||
     subscriptionViewState === "founder_active" ||
-    subscriptionViewState === "operational_active";
+    subscriptionViewState === "operational_active" ||
+    subscriptionViewState === "payment_issue";
   const contractedMaxBranches = Math.max(maxActiveLocations, 0);
   const maxBranches = canFinanciallyOperate
     ? subscriptionViewState === "trial_active"
@@ -238,6 +259,10 @@ export function getSubscriptionStatusLabel(status: SubscriptionStatus) {
     return "Pago pendiente";
   }
 
+  if (status === "suspended") {
+    return "Suspendido";
+  }
+
   return "Cancelado";
 }
 
@@ -252,6 +277,10 @@ export function getSubscriptionViewStateLabel(subscriptionViewState: Subscriptio
 
   if (subscriptionViewState === "payment_issue") {
     return "Pago pendiente";
+  }
+
+  if (subscriptionViewState === "suspended") {
+    return "Suspendido";
   }
 
   if (subscriptionViewState === "cancelled") {
@@ -272,7 +301,10 @@ export function getPlanPaymentsVisualState({
 }): PlanPaymentsVisualState {
   const isTrial = subscriptionViewState === "trial_active" || subscriptionViewState === "trial_expired";
   const isActivePlan = subscriptionViewState === "founder_active" || subscriptionViewState === "operational_active";
-  const hasPaymentIssue = subscriptionViewState === "payment_issue" || subscriptionViewState === "cancelled";
+  const hasPaymentIssue =
+    subscriptionViewState === "payment_issue" ||
+    subscriptionViewState === "suspended" ||
+    subscriptionViewState === "cancelled";
 
   if (subscriptionViewState === "trial_active" && planType === "founder") {
     return {
@@ -350,11 +382,23 @@ export function getPlanPaymentsVisualState({
     };
   }
 
+  if (subscriptionViewState === "suspended") {
+    return {
+      title: planType === "founder" ? "Plan fundador" : "Plan operativo",
+      eyebrow: null,
+      statusLabel: getSubscriptionViewStateLabel(subscriptionViewState),
+      message: "Tu acceso está suspendido porque no pudimos procesar el pago. Actualiza tu método de pago para reactivar tu suscripción.",
+      isTrial,
+      isActivePlan,
+      hasPaymentIssue,
+    };
+  }
+
   return {
     title: "Problema con tu pago",
     eyebrow: null,
     statusLabel: getSubscriptionViewStateLabel(subscriptionViewState),
-    message: "No pudimos procesar tu pago. Actualiza tu método de pago para continuar usando Quimly.",
+    message: "Tu negocio sigue protegido mientras Mercado Pago reintenta el cobro. Actualiza tu método de pago para evitar la suspensión.",
     isTrial,
     isActivePlan,
     hasPaymentIssue,
@@ -372,8 +416,16 @@ export function getBranchCreationBlockedMessage(subscriptionViewState: Subscript
 
   if (subscriptionViewState === "payment_issue") {
     return {
-      title: "Has alcanzado el límite operativo de tu cuenta.",
-      description: "Actualiza tu pago para recuperar la capacidad de sedes de tu plan.",
+      title: "Tu pago está pendiente de confirmación.",
+      description: "Actualiza tu método de pago para evitar que se suspenda el acceso a tus sedes.",
+      actionLabel: "Actualizar pago",
+    };
+  }
+
+  if (subscriptionViewState === "suspended") {
+    return {
+      title: "Tu acceso está suspendido.",
+      description: "Actualiza tu método de pago para reactivar las sedes de tu plan.",
       actionLabel: "Actualizar pago",
     };
   }

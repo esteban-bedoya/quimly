@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 
 import {
   getAccountCapabilities,
+  getDefaultBaseMonthlyPriceCop,
+  getEffectivePlanType as getEffectivePlanTypeForSubscription,
   getSubscriptionViewState,
   normalizePlanType,
   normalizeSubscriptionStatus,
@@ -166,9 +168,25 @@ function getProcessingExpiry(now = new Date()) {
 }
 
 function getEffectivePlanType(subscription: CompanySubscriptionBillingRecord): PlanType {
-  const planType = normalizePlanType(subscription.plan_type);
+  return getEffectivePlanTypeForSubscription({
+    planType: normalizePlanType(subscription.plan_type),
+    subscriptionStatus: subscription.status,
+  });
+}
 
-  return subscription.status === "cancelled" && planType === "founder" ? "operational" : planType;
+function createEffectivePriceSnapshot(subscription: CompanySubscriptionBillingRecord) {
+  const originalPlanType = normalizePlanType(subscription.plan_type);
+  const planType = getEffectivePlanType(subscription);
+
+  return createBillingPriceSnapshot({
+    planType,
+    baseMonthlyPriceCop:
+      planType === originalPlanType
+        ? subscription.base_monthly_price_cop
+        : getDefaultBaseMonthlyPriceCop(planType),
+    additionalSiteMonthlyPriceCop: subscription.additional_site_monthly_price_cop,
+    includedActiveSites: subscription.included_active_sites,
+  });
 }
 
 function normalizeProviderPaymentStatus(providerStatus: string): BillingPaymentStatus {
@@ -446,7 +464,8 @@ export class BillingService {
     if (
       account.subscriptionViewState !== "founder_active" &&
       account.subscriptionViewState !== "operational_active" &&
-      account.subscriptionViewState !== "payment_issue"
+      account.subscriptionViewState !== "payment_issue" &&
+      account.subscriptionViewState !== "suspended"
     ) {
       throw new Error("La suscripción no admite actualizar el método de pago.");
     }
@@ -495,6 +514,7 @@ export class BillingService {
       providerState = await provider.updateSubscriptionPaymentMethod(
         providerSubscription.provider_subscription_id,
         cardToken,
+        account.subscriptionViewState === "suspended",
       );
     } catch (error) {
       await this.repository.markIntentFailed(
@@ -508,7 +528,8 @@ export class BillingService {
     if (
       providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
       providerState.currency !== "COP" ||
-      isCanceledProviderStatus(providerState.providerStatus)
+      isCanceledProviderStatus(providerState.providerStatus) ||
+      (account.subscriptionViewState === "suspended" && providerState.providerStatus.trim().toLowerCase() !== "authorized")
     ) {
       await this.repository.markIntentCompensationRequired(
         intent.id,
@@ -1088,6 +1109,7 @@ export class BillingService {
       invoiceId: null,
       debitAt: payment.approvedAt ?? payment.providerCreatedAt,
       expectedAmountCop: null,
+      provider,
     });
 
     if (!result.handled) {
@@ -1371,6 +1393,8 @@ export class BillingService {
       invoiceId: invoice.id,
       debitAt: authorizedPayment.debitAt,
       expectedAmountCop: authorizedPayment.amountCop,
+      retryAttempt: authorizedPayment.retryAttempt,
+      provider,
     });
   }
 
@@ -1669,6 +1693,8 @@ export class BillingService {
     invoiceId,
     debitAt,
     expectedAmountCop,
+    retryAttempt = 0,
+    provider,
   }: {
     payment: ProviderPayment;
     providerSubscription: BillingProviderSubscriptionRecord;
@@ -1676,6 +1702,8 @@ export class BillingService {
     invoiceId: string | null;
     debitAt: string | null;
     expectedAmountCop: number | null;
+    retryAttempt?: number;
+    provider: BillingProvider;
   }): Promise<BillingWebhookProcessingResult> {
     if (payment.currency !== "COP") {
       throw new Error("El pago recurrente no está en COP.");
@@ -1713,7 +1741,34 @@ export class BillingService {
       webhookEventId,
       periodStartedAt,
       periodEndsAt: getPeriodEnd(periodStartedAt, providerSubscription.next_payment_at),
+      retryAttempt,
+      debitAt,
     });
+
+    if (normalizedStatus === "rejected" && retryAttempt >= 4) {
+      const pausedProviderSubscription = await provider.updateSubscriptionStatus(
+        providerSubscription.provider_subscription_id,
+        "paused",
+      );
+
+      if (
+        pausedProviderSubscription.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+        pausedProviderSubscription.currency !== "COP" ||
+        pausedProviderSubscription.providerStatus.trim().toLowerCase() !== "paused"
+      ) {
+        throw new Error("Mercado Pago no confirmó la pausa de la suscripción después de agotar los reintentos.");
+      }
+
+      await this.repository.updateProviderSubscriptionState({
+        providerSubscription,
+        providerStatus: pausedProviderSubscription.providerStatus,
+        providerVersion: pausedProviderSubscription.providerVersion,
+        providerUpdatedAt: pausedProviderSubscription.providerUpdatedAt,
+        recurringAmountCop: pausedProviderSubscription.recurringAmountCop,
+        nextPaymentAt: pausedProviderSubscription.nextPaymentAt,
+        endedAt: null,
+      });
+    }
 
     return {
       handled: true,
@@ -2111,18 +2166,14 @@ export class BillingService {
       maxActiveLocations: context.subscription.max_active_locations,
       activeBranches: context.activeBranches,
     });
-    const price = createBillingPriceSnapshot({
-      planType,
-      baseMonthlyPriceCop: context.subscription.base_monthly_price_cop,
-      additionalSiteMonthlyPriceCop: context.subscription.additional_site_monthly_price_cop,
-      includedActiveSites: context.subscription.included_active_sites,
-    });
+    const price = createEffectivePriceSnapshot(context.subscription);
 
     return {
       subscription: {
         ...context.subscription,
         status: subscriptionStatus,
         plan_type: planType,
+        base_monthly_price_cop: price.baseMonthlyPriceCop,
       },
       subscriptionViewState,
       accountCapabilities,
@@ -2136,12 +2187,7 @@ export class BillingService {
 
   private quoteCapacity(subscription: CompanySubscriptionBillingRecord, maxActiveLocations: number) {
     return quoteCapacity({
-      price: createBillingPriceSnapshot({
-        planType: getEffectivePlanType(subscription),
-        baseMonthlyPriceCop: subscription.base_monthly_price_cop,
-        additionalSiteMonthlyPriceCop: subscription.additional_site_monthly_price_cop,
-        includedActiveSites: subscription.included_active_sites,
-      }),
+      price: createEffectivePriceSnapshot(subscription),
       maxActiveLocations,
     });
   }

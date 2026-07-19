@@ -118,17 +118,34 @@ export function getRecurringPaymentFailureProjection({
   currentPeriodEndsAt,
   cancellationRequested,
   cancellationEffectiveAt,
+  debitAt = null,
+  existingPaymentGraceEndsAt = null,
   now,
 }: {
   currentStatus: SubscriptionStatus;
   currentPeriodEndsAt: string | null;
   cancellationRequested: boolean;
   cancellationEffectiveAt: string | null;
+  debitAt?: string | null;
+  existingPaymentGraceEndsAt?: string | null;
   now: Date;
 }) {
+  if (!cancellationRequested) {
+    const graceEndsAt = existingPaymentGraceEndsAt ?? new Date(
+      getRequiredTimestamp(debitAt ?? currentPeriodEndsAt ?? now.toISOString(), "La fecha de débito") +
+        10 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    return {
+      status: "payment_issue" as const,
+      paymentAttentionRequired: true,
+      paymentGraceEndsAt: graceEndsAt,
+    };
+  }
+
   const protectedAccessUntil = [
     currentPeriodEndsAt,
-    cancellationRequested ? cancellationEffectiveAt : null,
+    cancellationEffectiveAt,
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => getRequiredTimestamp(value, "El fin del acceso pagado"))
@@ -138,7 +155,7 @@ export function getRecurringPaymentFailureProjection({
 
   return {
     status: keepsPaidAccess ? currentStatus : "payment_issue" as const,
-    paymentAttentionRequired: !cancellationRequested,
+    paymentAttentionRequired: false,
     paymentGraceEndsAt: keepsPaidAccess ? new Date(protectedAccessUntil).toISOString() : null,
   };
 }

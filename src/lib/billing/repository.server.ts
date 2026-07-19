@@ -1132,6 +1132,8 @@ export class BillingRepository {
     webhookEventId,
     periodStartedAt,
     periodEndsAt,
+    retryAttempt,
+    debitAt,
   }: {
     providerSubscription: BillingProviderSubscriptionRecord;
     payment: BillingPaymentRecord;
@@ -1139,6 +1141,8 @@ export class BillingRepository {
     webhookEventId: string;
     periodStartedAt: string;
     periodEndsAt: string;
+    retryAttempt: number;
+    debitAt: string | null;
   }) {
     const { error } = await this.supabase.rpc("apply_recurring_billing_payment_state", {
       target_provider_subscription_record_id: providerSubscription.id,
@@ -1148,6 +1152,8 @@ export class BillingRepository {
       target_period_started_at: periodStartedAt,
       target_period_ends_at: periodEndsAt,
       target_occurred_at: payment.approved_at ?? new Date().toISOString(),
+      target_retry_attempt: retryAttempt,
+      target_debit_at: debitAt,
     });
 
     if (error) {
@@ -1185,10 +1191,10 @@ export class BillingRepository {
 
     const { data: currentSubscription, error: currentSubscriptionError } = await this.supabase
       .from("company_subscriptions")
-      .select("status")
+      .select("status, payment_grace_ends_at")
       .eq("id", providerSubscription.subscription_id)
       .eq("company_id", providerSubscription.company_id)
-      .maybeSingle<{ status: SubscriptionStatus }>();
+      .maybeSingle<{ status: SubscriptionStatus; payment_grace_ends_at: string | null }>();
 
     if (currentSubscriptionError || !currentSubscription) {
       throwDatabaseError(
@@ -1205,15 +1211,23 @@ export class BillingRepository {
 
     if (normalizedProviderStatus === "authorized") {
       baseUpdate.payment_method_status = "configured";
-    } else if (
-      normalizedProviderStatus === "paused" &&
-      (currentSubscription.status === "active" || currentSubscription.status === "payment_issue")
-    ) {
-      nextStatus = "payment_issue";
-      reason = "provider_subscription_paused";
-      baseUpdate.status = nextStatus;
-      baseUpdate.payment_attention_required = true;
-      baseUpdate.last_payment_issue_at = providerUpdatedAt ?? new Date().toISOString();
+    } else if (normalizedProviderStatus === "paused") {
+      const graceEndsAt = currentSubscription.payment_grace_ends_at
+        ? new Date(currentSubscription.payment_grace_ends_at).getTime()
+        : Number.NaN;
+      const isWithinPaymentGrace =
+        currentSubscription.status === "payment_issue" &&
+        Number.isFinite(graceEndsAt) &&
+        graceEndsAt > Date.now();
+
+      if (!isWithinPaymentGrace && currentSubscription.status !== "suspended") {
+        nextStatus = "suspended";
+        reason = "provider_subscription_paused";
+        baseUpdate.status = nextStatus;
+        baseUpdate.payment_attention_required = true;
+        baseUpdate.payment_grace_ends_at = null;
+        baseUpdate.last_payment_issue_at = providerUpdatedAt ?? new Date().toISOString();
+      }
     }
 
     const { error: subscriptionError } = await this.supabase

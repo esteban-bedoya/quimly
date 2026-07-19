@@ -19,6 +19,8 @@ import {
   additionalSitePriceCop,
   calculatePlanMonthlyTotalCop,
   founderPlanBasePriceCop,
+  getAccountCapabilities,
+  getEffectivePlanType,
   operationalPlanBasePriceCop,
 } from "../src/lib/billing.ts";
 
@@ -30,6 +32,23 @@ test("pricing mantiene base por plan y cobra 9.900 por sede adicional", () => {
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 1 }), 24900);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 2 }), 34800);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 3 }), 39700);
+});
+
+test("pago pendiente conserva el acceso operativo hasta que venza la ventana de reintentos", () => {
+  const capabilities = getAccountCapabilities({
+    subscriptionViewState: "payment_issue",
+    maxActiveLocations: 2,
+    activeBranches: 1,
+  });
+
+  assert.equal(capabilities.canOperate, true);
+  assert.equal(capabilities.canCreateRecords, true);
+  assert.equal(capabilities.canCreateBranch, true);
+});
+
+test("Founder cancelado se recupera como Plan operativo, pero Founder suspendido conserva su beneficio", () => {
+  assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "cancelled" }), "operational");
+  assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "suspended" }), "founder");
 });
 
 test("Founder permite cerrar solo un checkout de activación vencido, pending y sin pago", () => {
@@ -145,35 +164,38 @@ test("una aprobación histórica nunca reduce un periodo vigente más largo", ()
   assert.equal(projection.cancellationEffectiveAt, "2026-10-12T00:00:00.000Z");
 });
 
-test("renovación rechazada conserva acceso mientras el periodo pagado siga vigente", () => {
+test("renovación rechazada abre una ventana de pago pendiente de diez días", () => {
   const projection = getRecurringPaymentFailureProjection({
     currentStatus: "active",
     currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
     cancellationRequested: false,
     cancellationEffectiveAt: null,
-    now: new Date("2026-07-12T00:00:00.000Z"),
-  });
-
-  assert.deepEqual(projection, {
-    status: "active",
-    paymentAttentionRequired: true,
-    paymentGraceEndsAt: "2026-08-12T00:00:00.000Z",
-  });
-});
-
-test("renovación rechazada marca payment_issue cuando el periodo ya venció", () => {
-  const projection = getRecurringPaymentFailureProjection({
-    currentStatus: "active",
-    currentPeriodEndsAt: "2026-07-11T23:59:59.000Z",
-    cancellationRequested: false,
-    cancellationEffectiveAt: null,
+    debitAt: "2026-08-12T00:00:00.000Z",
     now: new Date("2026-07-12T00:00:00.000Z"),
   });
 
   assert.deepEqual(projection, {
     status: "payment_issue",
     paymentAttentionRequired: true,
-    paymentGraceEndsAt: null,
+    paymentGraceEndsAt: "2026-08-22T00:00:00.000Z",
+  });
+});
+
+test("los reintentos posteriores no extienden la ventana de diez días", () => {
+  const projection = getRecurringPaymentFailureProjection({
+    currentStatus: "payment_issue",
+    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
+    cancellationRequested: false,
+    cancellationEffectiveAt: null,
+    debitAt: "2026-08-15T00:00:00.000Z",
+    existingPaymentGraceEndsAt: "2026-08-22T00:00:00.000Z",
+    now: new Date("2026-08-15T00:00:00.000Z"),
+  });
+
+  assert.deepEqual(projection, {
+    status: "payment_issue",
+    paymentAttentionRequired: true,
+    paymentGraceEndsAt: "2026-08-22T00:00:00.000Z",
   });
 });
 
