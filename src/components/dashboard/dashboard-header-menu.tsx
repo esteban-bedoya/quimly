@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { useFormStatus } from "react-dom";
+import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { createPortal, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import {
@@ -26,6 +26,7 @@ import {
 } from "@/components/dashboard/admin-side-drawer";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
 import { MercadoPagoPaymentMethodForm } from "@/components/billing/mercado-pago-payment-method-form";
+import { MercadoPagoInfoCard } from "@/components/billing/mercado-pago-info-card";
 import {
   calculatePlanMonthlyTotalCop,
   formatCopAmount,
@@ -48,6 +49,7 @@ const logoutItemClass =
 type DashboardMenuPanel = "profile" | "planPayments";
 
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
+const subscribeToHydration = () => () => {};
 
 const panelLabels: Record<DashboardMenuPanel, string> = {
   profile: "Mi perfil",
@@ -126,23 +128,63 @@ function InfoIcon() {
   );
 }
 
-function MonthlyPriceValue({
-  planType,
-  baseMonthlyPriceCop,
-  additionalSiteMonthlyPriceCop,
-  monthlyTotalCop,
+function PlanPaymentsWelcomeModal({ onClose }: { onClose: () => void }) {
+  const isHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
+      <div aria-hidden="true" className="absolute inset-0 bg-[#12110f]/35 backdrop-blur-[2px]" />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Plan y pagos"
+        className="relative z-10 w-full max-w-md"
+      >
+        <MercadoPagoInfoCard
+          title="Plan y pagos"
+          action={
+            <button
+              type="button"
+              aria-label="Cerrar aviso de Plan y pagos"
+              onClick={onClose}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-[#4f5a60] transition hover:scale-105 hover:text-[#12110f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/45"
+            >
+              <XIcon />
+            </button>
+          }
+        />
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function InfoTooltip({
+  message,
+  label,
+  align = "right",
 }: {
-  planType: PlanPaymentsData["planType"];
-  baseMonthlyPriceCop: number;
-  additionalSiteMonthlyPriceCop: number;
-  monthlyTotalCop: number;
+  message: string;
+  label: string;
+  align?: "left" | "right";
 }) {
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const tooltipRef = useRef<HTMLSpanElement>(null);
-  const isFounder = planType === "founder";
-  const message = isFounder
-    ? `Tu sede inicial tiene un costo preferencial de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`
-    : `Tu sede inicial tiene un costo de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`;
 
   useEffect(() => {
     if (!isTooltipOpen) {
@@ -160,24 +202,59 @@ function MonthlyPriceValue({
   }, [isTooltipOpen]);
 
   return (
-    <span className="inline-flex items-center justify-end gap-1.5">
-      <span ref={tooltipRef} className="group relative inline-flex">
-        <button
-          type="button"
-          aria-label={`Ver detalle del valor mensual. ${message}`}
-          aria-expanded={isTooltipOpen}
-          onClick={() => setIsTooltipOpen((isOpen) => !isOpen)}
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9ca3af] transition hover:text-[#6b7280] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/45"
-        >
-          <InfoIcon />
-        </button>
-        <span
-          role="tooltip"
-          className={`pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-64 rounded-xl border border-[#dce4e7] bg-white px-3 py-2.5 text-left text-xs font-normal leading-5 text-[#4e585e] shadow-[0_14px_32px_rgba(18,17,15,0.14)] transition-opacity ${isTooltipOpen ? "visible opacity-100" : "invisible opacity-0 group-hover:visible group-hover:opacity-100"}`}
-        >
-          {message}
-        </span>
+    <span ref={tooltipRef} className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={isTooltipOpen}
+        onClick={() => setIsTooltipOpen((isOpen) => !isOpen)}
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9ca3af] transition hover:text-[#6b7280] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/45"
+      >
+        <InfoIcon />
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full z-50 mb-2 w-64 rounded-xl border border-[#dce4e7] bg-white px-3 py-2.5 text-left text-xs font-normal leading-5 text-[#4e585e] shadow-[0_14px_32px_rgba(18,17,15,0.14)] transition-opacity ${align === "left" ? "left-0" : "right-0"} ${isTooltipOpen ? "visible opacity-100" : "invisible opacity-0 group-hover:visible group-hover:opacity-100"}`}
+      >
+        {message}
       </span>
+    </span>
+  );
+}
+
+function getMonthlyPriceTooltipMessage({
+  planType,
+  baseMonthlyPriceCop,
+  additionalSiteMonthlyPriceCop,
+}: Pick<
+  PlanPaymentsData,
+  "planType" | "baseMonthlyPriceCop" | "additionalSiteMonthlyPriceCop"
+>) {
+  return planType === "founder"
+    ? `Tu sede inicial tiene un costo preferencial de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`
+    : `Tu sede inicial tiene un costo de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`;
+}
+
+function MonthlyPriceValue({
+  planType,
+  baseMonthlyPriceCop,
+  additionalSiteMonthlyPriceCop,
+  monthlyTotalCop,
+}: {
+  planType: PlanPaymentsData["planType"];
+  baseMonthlyPriceCop: number;
+  additionalSiteMonthlyPriceCop: number;
+  monthlyTotalCop: number;
+}) {
+  const message = getMonthlyPriceTooltipMessage({
+    planType,
+    baseMonthlyPriceCop,
+    additionalSiteMonthlyPriceCop,
+  });
+
+  return (
+    <span className="inline-flex items-center justify-end gap-1.5">
+      <InfoTooltip label={`Ver detalle del valor mensual. ${message}`} message={message} />
       <span>{formatCopAmount(monthlyTotalCop)}/mes</span>
     </span>
   );
@@ -866,6 +943,13 @@ function PlanPaymentsDrawerContent({
     setActivationStep("sites");
     requestCapacityQuote(planPayments.maxActiveLocations);
   };
+  const closePlanConfigurationFlow = () => {
+    capacityQuoteRequestRef.current += 1;
+    setActivationStep(null);
+    setCapacityQuote(null);
+    setPendingOperation(null);
+    setActivationError(null);
+  };
   const updateSelectedSiteCount = (nextValue: number) => {
     setSelectedSiteCount(nextValue);
 
@@ -940,18 +1024,21 @@ function PlanPaymentsDrawerContent({
 
   return (
     <>
-      <AdminDrawerSection
-        title={
-          isActivationMode ? (
-            "Plan actual"
-          ) : (
-            <span className="inline-flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Plan actual:</span>
-              <span>{visualState.title}</span>
-            </span>
-          )
-        }
-      >
+      {!isPaymentMethodFormOpen ? (
+        <AdminDrawerSection
+          title={
+            isCapacityChangeMode ? (
+              "Cambiar número de sedes"
+            ) : isActivationMode ? (
+              "Plan actual"
+            ) : (
+              <span className="inline-flex flex-wrap items-baseline gap-2">
+                <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Plan actual:</span>
+                <span>{visualState.title}</span>
+              </span>
+            )
+          }
+        >
         {!isActivationMode ? (
           <>
             <div>
@@ -1036,14 +1123,23 @@ function PlanPaymentsDrawerContent({
                     ? "Programa tu reducción"
                     : "Mercado Pago"
                   : isCapacityChangeMode
-                    ? "Ajusta tu capacidad"
+                    ? "¿Necesitas aumentar o disminuir tus sedes?"
                     : "Configura tu plan"}
               </p>
-              <p className="mt-2 text-sm leading-6 text-[#5e6770]">
-                {activationStep === "sites"
-                  ? "Elige la capacidad de sedes que quieres contratar. Las sedes no se crean ni se eliminan automáticamente."
-                  : "Revisa el resumen antes de continuar con Mercado Pago."}
-              </p>
+              {activationStep === "sites" ? (
+                <div className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-[#5e6770]">
+                  <span className="mt-0.5 shrink-0">
+                    <InfoTooltip
+                      align="left"
+                      label={`Ver valor de cada sede adicional. Cada sede adicional se cobra a ${formatCopAmount(planPayments.additionalSiteMonthlyPriceCop)}/mes.`}
+                      message={`Cada sede adicional se cobra a ${formatCopAmount(planPayments.additionalSiteMonthlyPriceCop)}/mes.`}
+                    />
+                  </span>
+                  <p>Elige la cantidad de sedes que requiere tu negocio.</p>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm leading-6 text-[#5e6770]">Revisa el resumen antes de continuar con Mercado Pago.</p>
+              )}
             </div>
 
             {pendingOperation ? (
@@ -1056,11 +1152,8 @@ function PlanPaymentsDrawerContent({
           {activationStep === "sites" ? (
             <>
               <div>
-                <p className="text-sm font-semibold leading-6 text-[#12110f]">
-                  ¿Cuántas sedes necesita administrar?
-                </p>
-                <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-                  La primera sede está incluida dentro del plan.
+                <p className="text-sm leading-6 text-[#5e6770]">
+                  Actualmente tienes {planPayments.maxActiveLocations} {planPayments.maxActiveLocations === 1 ? "sede contratada" : "sedes contratadas"}.
                 </p>
               </div>
 
@@ -1130,7 +1223,7 @@ function PlanPaymentsDrawerContent({
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-[#d9dfe0] bg-[#f7f8f9] px-4 py-3 text-sm leading-6 text-[#5e6770]">
-                    {isQuotePending ? "Calculando el cambio de capacidad..." : "Elige una cantidad diferente para ver el cambio."}
+                    {isQuotePending ? "Cotizando el cambio de sedes..." : "Elige una cantidad diferente a la contratada para cotizar."}
                   </div>
                 )
               ) : (
@@ -1156,6 +1249,7 @@ function PlanPaymentsDrawerContent({
               >
                 Continuar
               </AdminDrawerButton>
+              <AdminDrawerButton onClick={closePlanConfigurationFlow}>Cancelar</AdminDrawerButton>
             </>
           ) : null}
 
@@ -1293,15 +1387,21 @@ function PlanPaymentsDrawerContent({
           ) : null}
           </>
         )}
-      </AdminDrawerSection>
+        </AdminDrawerSection>
+      ) : null}
 
-      <AdminDrawerSection
-        title={
-          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">
-            Método de pago:
-          </span>
-        }
-      >
+      {!isActivationMode ? (
+        <AdminDrawerSection
+          title={
+            isPaymentMethodFormOpen ? (
+              "Actualizar método de pago"
+            ) : (
+              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">
+                Método de pago:
+              </span>
+            )
+          }
+        >
         {isPaymentMethodFormOpen && planPayments.companySlug ? (
           <MercadoPagoPaymentMethodForm
             companySlug={planPayments.companySlug}
@@ -1367,7 +1467,8 @@ function PlanPaymentsDrawerContent({
           )
         ) : null}
         <AdminDrawerFeedback state={billingLifecycleState} />
-      </AdminDrawerSection>
+        </AdminDrawerSection>
+      ) : null}
     </>
   );
 }
@@ -1386,6 +1487,7 @@ export function DashboardHeaderMenu({
   const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(
     initialPlanPaymentsOpen ? "planPayments" : null,
   );
+  const [isPlanPaymentsWelcomeOpen, setIsPlanPaymentsWelcomeOpen] = useState(initialPlanPaymentsOpen);
 
   useEffect(() => {
     const closeMenu = () => setIsMenuOpen(false);
@@ -1402,6 +1504,7 @@ export function DashboardHeaderMenu({
   const openPanel = useCallback((panel: DashboardMenuPanel) => {
     setIsMenuOpen(false);
     setActivePanel(panel);
+    setIsPlanPaymentsWelcomeOpen(panel === "planPayments");
   }, []);
 
   useEffect(() => {
@@ -1416,6 +1519,10 @@ export function DashboardHeaderMenu({
 
   const closePanel = useCallback(() => {
     setActivePanel(null);
+    setIsPlanPaymentsWelcomeOpen(false);
+  }, []);
+  const closePlanPaymentsWelcome = useCallback(() => {
+    setIsPlanPaymentsWelcomeOpen(false);
   }, []);
 
   const panelTitle = activePanel ? panelLabels[activePanel] : "";
@@ -1474,12 +1581,20 @@ export function DashboardHeaderMenu({
         </div>
       </div>
 
-      <AdminSideDrawer isOpen={Boolean(activePanel)} title={panelTitle} onClose={closePanel}>
+      <AdminSideDrawer
+        isOpen={Boolean(activePanel)}
+        title={panelTitle}
+        closeOnEscape={!isPlanPaymentsWelcomeOpen}
+        onClose={closePanel}
+      >
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "planPayments" ? (
           <PlanPaymentsDrawerContent planPayments={planPayments} />
         ) : null}
       </AdminSideDrawer>
+      {activePanel === "planPayments" && isPlanPaymentsWelcomeOpen ? (
+        <PlanPaymentsWelcomeModal onClose={closePlanPaymentsWelcome} />
+      ) : null}
     </>
   );
 }

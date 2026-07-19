@@ -14,6 +14,7 @@ type AdminSideDrawerProps = {
   title: string;
   eyebrow?: string;
   description?: string;
+  closeOnEscape?: boolean;
   onClose: () => void;
   children: ReactNode;
 };
@@ -23,6 +24,7 @@ export function AdminSideDrawer({
   title,
   eyebrow,
   description,
+  closeOnEscape: shouldCloseOnEscape = true,
   onClose,
   children,
 }: AdminSideDrawerProps) {
@@ -43,13 +45,17 @@ export function AdminSideDrawer({
     };
 
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
+    if (shouldCloseOnEscape) {
+      window.addEventListener("keydown", closeOnEscape);
+    }
 
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
+      if (shouldCloseOnEscape) {
+        window.removeEventListener("keydown", closeOnEscape);
+      }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, shouldCloseOnEscape]);
 
   if (!isOpen || !isHydrated) {
     return null;

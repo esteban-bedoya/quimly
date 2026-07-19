@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { updateCompanyPaymentMethod, type AdminActionState } from "@/app/dashboard/actions";
+import { MercadoPagoInfoCard } from "@/components/billing/mercado-pago-info-card";
 
 type MercadoPagoCardFormData = {
   token?: string;
@@ -31,6 +31,8 @@ const inputClassName =
   "h-11 w-full rounded-[0.9rem] border border-[#dce4e7] bg-[#fbfcfc] px-4 text-sm text-[#12110f] outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_1px_2px_rgba(18,17,15,0.025)] transition duration-200 placeholder:text-[#9aa4a9] hover:border-[#c6d4d8] focus:border-[#3fa8b4] focus:bg-white focus:shadow-[0_0_0_4px_rgba(72,199,210,0.14),0_8px_20px_rgba(18,17,15,0.055)]";
 const secureFieldClassName =
   "h-11 w-full overflow-hidden rounded-[0.9rem] border border-[#dce4e7] bg-[#fbfcfc] px-4 py-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_1px_2px_rgba(18,17,15,0.025)] transition duration-200 hover:border-[#c6d4d8] focus-within:border-[#3fa8b4] focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(72,199,210,0.14),0_8px_20px_rgba(18,17,15,0.055)] [&>iframe]:!block [&>iframe]:!h-full [&>iframe]:!w-full";
+const secondaryButtonClassName =
+  "ui-pill-button-secondary w-full disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55";
 
 function LockIcon() {
   return (
@@ -280,8 +282,8 @@ export function MercadoPagoPaymentMethodForm({
         <p className="text-sm leading-6 text-[#8a2d1f]">
           Falta configurar NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY para mostrar el formulario seguro.
         </p>
-        <button type="button" onClick={onCancel} className={inputClassName}>
-          Volver
+        <button type="button" onClick={onCancel} className={secondaryButtonClassName}>
+          Cancelar
         </button>
       </div>
     );
@@ -300,32 +302,7 @@ export function MercadoPagoPaymentMethodForm({
         }}
       />
 
-      <div className="overflow-hidden rounded-[1.35rem] border border-[#d9e7e9] bg-[linear-gradient(135deg,#f8ffff_0%,#f1fafb_58%,#fbfcf7_100%)] p-4 shadow-[0_12px_30px_rgba(18,17,15,0.045)]">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#ffe600] shadow-[0_5px_12px_rgba(116,101,0,0.14)]">
-              <Image
-                src="/logos/mercado-pago-emblem.png"
-                alt="Mercado Pago"
-                width={126}
-                height={90}
-                className="h-auto w-11"
-              />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold tracking-[-0.015em] text-[#12110f]">Nueva tarjeta</p>
-              <p className="mt-0.5 text-xs leading-5 text-[#5e6770]">Procesado de forma segura con Mercado Pago</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#cbe4e7] bg-white/80 px-2.5 py-1.5 text-[0.67rem] font-semibold text-[#277581]">
-            <LockIcon />
-            <span>Seguro</span>
-          </div>
-        </div>
-        <p className="mt-3 border-t border-[#dce9ea] pt-3 text-xs leading-5 text-[#657078]">
-          Tu información se cifra directamente en Mercado Pago. Quimly nunca recibe los datos de tu tarjeta.
-        </p>
-      </div>
+      <MercadoPagoInfoCard title="Nueva tarjeta" />
 
       <form
         id="quimly-payment-method-form"
@@ -400,9 +377,9 @@ export function MercadoPagoPaymentMethodForm({
           type="button"
           onClick={onCancel}
           disabled={isUpdating}
-          className="inline-flex min-h-[3.25rem] w-full items-center justify-center rounded-2xl border border-[#dce4e7] bg-white px-5 py-3 text-sm font-semibold text-[#4e585e] transition hover:border-[#c6d4d8] hover:bg-[#fbfcfc] disabled:opacity-55"
+          className={secondaryButtonClassName}
         >
-          Volver
+          Cancelar
         </button>
       </form>
     </div>
