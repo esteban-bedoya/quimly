@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 
 import { LoginPanel } from "@/components/auth/login-form";
 import { getCurrentUserContext } from "@/lib/auth/user-context";
-import { QUIMLY_WHATSAPP_URL } from "@/lib/whatsapp";
+import { getQuimlyWhatsAppUrl } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
+const loginWhatsAppUrl = getQuimlyWhatsAppUrl("¡Hola, Quimly! Necesito ayuda para iniciar sesión.");
 
 export default async function LoginPage() {
   const currentUser = await getCurrentUserContext();
@@ -55,7 +56,7 @@ export default async function LoginPage() {
 
           <section className="px-6 py-8 sm:px-8 sm:py-10 lg:flex lg:items-center">
             <div className="mx-auto w-full max-w-md lg:max-w-[30rem]">
-              <LoginPanel whatsappUrl={QUIMLY_WHATSAPP_URL} />
+              <LoginPanel whatsappUrl={loginWhatsAppUrl} />
             </div>
           </section>
         </div>

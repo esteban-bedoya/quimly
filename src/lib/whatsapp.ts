@@ -1,5 +1,9 @@
 const WHATSAPP_NUMBER = "573016143804";
 const WHATSAPP_MESSAGE =
-  "¡Hola, Quimly! Acabo de ver su página web y me gustaría recibir más información sobre cómo funciona su sistema de gestión y los productos que manejan.";
+  "¡Hola, Quimly! Me interesa su sistema para gestionar el cumplimiento INVIMA en mi restaurante. ¿Me podrían contar cómo sería el proceso de implementación?";
 
-export const QUIMLY_WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`;
+export function getQuimlyWhatsAppUrl(message: string) {
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
+export const QUIMLY_WHATSAPP_URL = getQuimlyWhatsAppUrl(WHATSAPP_MESSAGE);

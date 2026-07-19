@@ -52,6 +52,8 @@ type DashboardMenuPanel = "profile" | "planPayments";
 
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
 const subscribeToHydration = () => () => {};
+const billingHelpWhatsAppUrl =
+  "https://wa.me/573016143804?text=%C2%A1Hola%2C%20Quimly!%20Necesito%20ayuda%20con%20mis%20pagos.";
 
 const panelLabels: Record<DashboardMenuPanel, string> = {
   profile: "Mi perfil",
@@ -1498,6 +1500,20 @@ function PlanPaymentsDrawerContent({
         <AdminDrawerFeedback state={billingLifecycleState} />
         </AdminDrawerSection>
       ) : null}
+
+      <div className="border-t border-[#e6eaed] pt-4 text-left">
+        <p className="text-xs leading-6 text-[#6a665f]">
+          ¿Necesitas ayuda con tus pagos? Escríbenos por{" "}
+          <a
+            href={billingHelpWhatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-[#2a7f86] transition hover:text-[#12110f]"
+          >
+            WhatsApp
+          </a>
+        </p>
+      </div>
     </>
   );
 }
