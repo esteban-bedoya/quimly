@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useSyncExternalStore, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
 import type { AdminActionState } from "@/app/dashboard/actions";
 
 export const adminDrawerInputClassName = "ui-form-control";
+const subscribeToHydration = () => () => {};
 
 type AdminSideDrawerProps = {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export function AdminSideDrawer({
 }: AdminSideDrawerProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const isHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -49,7 +51,7 @@ export function AdminSideDrawer({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen || typeof document === "undefined") {
+  if (!isOpen || !isHydrated) {
     return null;
   }
 
@@ -109,7 +111,7 @@ export function AdminDrawerSection({
   description,
   children,
 }: {
-  title?: string;
+  title?: ReactNode;
   description?: string;
   children: ReactNode;
 }) {
@@ -143,11 +145,11 @@ export function AdminDrawerField({
   );
 }
 
-export function AdminDrawerSummaryRow({ label, value }: { label: string; value: string | number }) {
+export function AdminDrawerSummaryRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[#e6eaed] pb-3 last:border-b-0 last:pb-0">
       <p className="text-sm leading-6 text-[#5e6770]">{label}</p>
-      <p className="max-w-[12rem] text-right text-sm font-semibold leading-6 text-[#12110f]">{value}</p>
+      <div className="max-w-[12rem] text-right text-sm font-semibold leading-6 text-[#12110f]">{value}</div>
     </div>
   );
 }

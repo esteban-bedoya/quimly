@@ -331,7 +331,7 @@ export function getPlanPaymentsVisualState({
       title: "Plan operativo",
       eyebrow: null,
       statusLabel: getSubscriptionViewStateLabel(subscriptionViewState),
-      message: "Tu empresa está protegida con Quimly.",
+      message: "Tu negocio está protegido con Quimly.",
       isTrial,
       isActivePlan,
       hasPaymentIssue,

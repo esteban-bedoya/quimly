@@ -116,6 +116,73 @@ function XIcon() {
   );
 }
 
+function InfoIcon() {
+  return (
+    <svg aria-hidden="true" className="h-[1.125rem] w-[1.125rem]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="8.5" />
+      <path strokeLinecap="round" d="M12 10.75v5" />
+      <path strokeLinecap="round" d="M12 7.8h.01" />
+    </svg>
+  );
+}
+
+function MonthlyPriceValue({
+  planType,
+  baseMonthlyPriceCop,
+  additionalSiteMonthlyPriceCop,
+  monthlyTotalCop,
+}: {
+  planType: PlanPaymentsData["planType"];
+  baseMonthlyPriceCop: number;
+  additionalSiteMonthlyPriceCop: number;
+  monthlyTotalCop: number;
+}) {
+  const [isTooltipOpen, setIsTooltipOpen] = useState(false);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const isFounder = planType === "founder";
+  const message = isFounder
+    ? `Tu sede inicial tiene un costo preferencial de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`
+    : `Tu sede inicial tiene un costo de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`;
+
+  useEffect(() => {
+    if (!isTooltipOpen) {
+      return;
+    }
+
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !tooltipRef.current?.contains(event.target)) {
+        setIsTooltipOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [isTooltipOpen]);
+
+  return (
+    <span className="inline-flex items-center justify-end gap-1.5">
+      <span ref={tooltipRef} className="group relative inline-flex">
+        <button
+          type="button"
+          aria-label={`Ver detalle del valor mensual. ${message}`}
+          aria-expanded={isTooltipOpen}
+          onClick={() => setIsTooltipOpen((isOpen) => !isOpen)}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9ca3af] transition hover:text-[#6b7280] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/45"
+        >
+          <InfoIcon />
+        </button>
+        <span
+          role="tooltip"
+          className={`pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-64 rounded-xl border border-[#dce4e7] bg-white px-3 py-2.5 text-left text-xs font-normal leading-5 text-[#4e585e] shadow-[0_14px_32px_rgba(18,17,15,0.14)] transition-opacity ${isTooltipOpen ? "visible opacity-100" : "invisible opacity-0 group-hover:visible group-hover:opacity-100"}`}
+        >
+          {message}
+        </span>
+      </span>
+      <span>{formatCopAmount(monthlyTotalCop)}/mes</span>
+    </span>
+  );
+}
+
 function InlineActionButton({
   label,
   disabled = false,
@@ -687,16 +754,22 @@ function PlanPaymentsDrawerContent({
         additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
         includedActiveSites: planPayments.includedActiveSites,
       });
-  const paymentStatusLabel =
-    planPayments.paymentAttentionRequired
-      ? "Requiere atención"
-      : planPayments.paymentMethodStatus === "configured"
-        ? "Configurado"
-        : "Pendiente de configuración";
   const cancellationEffectiveAt = cancellationEffectiveOverride ?? planPayments.cancellationEffectiveAt;
   const isCancellationScheduled = Boolean(planPayments.cancellationRequestedAt || cancellationEffectiveAt);
+  const isCancellationPending = isCancellationScheduled && visualState.statusLabel !== "Cancelado";
+  const paymentStatusLabel = isCancellationPending ? "Cancelación programada" : visualState.statusLabel;
+  const paymentStatusMessage = isCancellationPending
+    ? `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. No se realizarán nuevos cobros.`
+    : visualState.message;
   const isActivationMode = activationStep !== null;
   const isCapacityChangeMode = planChangeMode === "capacity";
+  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Cancelado"
+    ? "border-[#ecd0c8] bg-[#fff6f3] text-[#8a2d1f]"
+    : visualState.isActivePlan
+    ? "border-[#9edfc1]/70 bg-[#e8f7ef] text-[#21734f]"
+    : paymentStatusLabel === "Pago pendiente"
+      ? "border-[#edcf92] bg-[#fff8e9] text-[#8f5b15]"
+      : "border-[#c8e2e5] bg-[#effafb] text-[#277581]";
   const capacityChangeDirection =
     selectedSiteCount > planPayments.maxActiveLocations
       ? "upgrade"
@@ -867,7 +940,18 @@ function PlanPaymentsDrawerContent({
 
   return (
     <>
-      <AdminDrawerSection title="Plan actual">
+      <AdminDrawerSection
+        title={
+          isActivationMode ? (
+            "Plan actual"
+          ) : (
+            <span className="inline-flex flex-wrap items-baseline gap-2">
+              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Plan actual:</span>
+              <span>{visualState.title}</span>
+            </span>
+          )
+        }
+      >
         {!isActivationMode ? (
           <>
             <div>
@@ -876,55 +960,37 @@ function PlanPaymentsDrawerContent({
                   {visualState.eyebrow}
                 </p>
               ) : null}
-              <p
-                className={
-                  visualState.eyebrow
-                    ? "mt-2 text-lg font-semibold tracking-[-0.04em] text-[#12110f]"
-                    : "text-lg font-semibold tracking-[-0.04em] text-[#12110f]"
-                }
-              >
-                {visualState.title}
+              <p className={`${visualState.eyebrow ? "mt-3" : ""} text-sm leading-6 text-[#5e6770]`}>
+                {paymentStatusMessage}
               </p>
-              {!visualState.isTrial ? (
-                <p className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-[#12110f]">
-                  {formatCopAmount(planPayments.monthlyTotalCop)}/mes
-                </p>
-              ) : null}
-              <p className="mt-2 text-sm leading-6 text-[#5e6770]">{visualState.message}</p>
+              <div className={`mt-2 inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${paymentStatusClassName}`}>
+                <span>Estado: {paymentStatusLabel}</span>
+              </div>
             </div>
 
             {visualState.isActivePlan ? (
               <div className="grid gap-3 border-t border-[#e6eaed] pt-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Detalle</p>
-                <AdminDrawerSummaryRow label="Sedes utilizadas" value={`${planPayments.activeSites} sedes`} />
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Detalles</p>
                 <AdminDrawerSummaryRow
                   label="Capacidad contratada"
                   value={`${planPayments.accountCapabilities.maxBranches} sedes`}
                 />
                 <AdminDrawerSummaryRow
                   label="Valor mensual"
-                  value={`${formatCopAmount(planPayments.monthlyTotalCop)}/mes`}
+                  value={
+                    <MonthlyPriceValue
+                      planType={planPayments.planType}
+                      baseMonthlyPriceCop={planPayments.baseMonthlyPriceCop}
+                      additionalSiteMonthlyPriceCop={planPayments.additionalSiteMonthlyPriceCop}
+                      monthlyTotalCop={planPayments.monthlyTotalCop}
+                    />
+                  }
                 />
                 {isCancellationScheduled ? (
                   <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(cancellationEffectiveAt)} />
                 ) : (
                   <AdminDrawerSummaryRow label="Próximo cobro" value={formatDateLabel(planPayments.nextChargeAt)} />
                 )}
-                <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
-                <AdminDrawerSummaryRow label="Estado de pago" value={paymentStatusLabel} />
-              </div>
-            ) : null}
-
-            {isCancellationScheduled ? (
-              <div className="grid gap-2 rounded-2xl border border-[#ead8b6] bg-[#fff8e9] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8f5b15]">
-                  {planPayments.subscriptionViewState === "cancelled" ? "Suscripción cancelada" : "Cancelación programada"}
-                </p>
-                <p className="text-sm leading-6 text-[#6d5218]">
-                  {planPayments.subscriptionViewState === "cancelled"
-                    ? `Tu acceso operativo finalizó el ${formatDateLabel(cancellationEffectiveAt)}. Mercado Pago no realizará nuevos cobros.`
-                    : `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. Mercado Pago no realizará una nueva renovación.`}
-                </p>
               </div>
             ) : null}
 
@@ -941,7 +1007,6 @@ function PlanPaymentsDrawerContent({
               </div>
             ) : null}
 
-            <AdminDrawerSummaryRow label="Estado" value={visualState.statusLabel} />
             {visualState.isTrial ? (
               <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(planPayments.trialEndsAt)} />
             ) : null}
@@ -958,16 +1023,7 @@ function PlanPaymentsDrawerContent({
             ) : null}
             {visualState.isActivePlan && !scheduledCapacityChange && !isCancellationScheduled ? (
               <AdminDrawerButton variant="secondary" onClick={openCapacityChangeFlow}>
-                Ajustar sedes
-              </AdminDrawerButton>
-            ) : null}
-            {visualState.hasPaymentIssue ? (
-              <AdminDrawerButton
-                variant="primary"
-                onClick={() => setIsPaymentMethodFormOpen(true)}
-                disabled={planPayments.subscriptionViewState === "cancelled" || isCancellationScheduled}
-              >
-                {planPayments.subscriptionViewState === "cancelled" ? "Suscripción cancelada" : "Actualizar método de pago"}
+                Cambiar número de sedes
               </AdminDrawerButton>
             ) : null}
           </>
@@ -1239,7 +1295,13 @@ function PlanPaymentsDrawerContent({
         )}
       </AdminDrawerSection>
 
-      <AdminDrawerSection title="Pago">
+      <AdminDrawerSection
+        title={
+          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">
+            Método de pago:
+          </span>
+        }
+      >
         {isPaymentMethodFormOpen && planPayments.companySlug ? (
           <MercadoPagoPaymentMethodForm
             companySlug={planPayments.companySlug}
@@ -1262,7 +1324,6 @@ function PlanPaymentsDrawerContent({
         ) : (
           <>
             <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
-            <AdminDrawerSummaryRow label="Estado" value={paymentStatusLabel} />
             <AdminDrawerButton
               variant={visualState.hasPaymentIssue ? "primary" : "secondary"}
               onClick={() => {
@@ -1273,40 +1334,39 @@ function PlanPaymentsDrawerContent({
             >
               Actualizar método de pago
             </AdminDrawerButton>
-            {visualState.isActivePlan && !isCancellationScheduled ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setBillingLifecycleState(undefined);
-                  setIsCancellationConfirmationOpen(true);
-                }}
-                className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
-              >
-                Cancelar plan
-              </button>
-            ) : null}
-
-            {isCancellationConfirmationOpen ? (
-              <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
-                <div>
-                  <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
-                  <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
-                    Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
-                  </p>
-                </div>
-                <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
-                <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
-                  {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
-                </AdminDrawerButton>
-                <AdminDrawerButton onClick={() => setIsCancellationConfirmationOpen(false)} disabled={isLifecyclePending}>
-                  Volver
-                </AdminDrawerButton>
-              </div>
-            ) : null}
-
-            <AdminDrawerFeedback state={billingLifecycleState} />
           </>
         )}
+        {visualState.isActivePlan && !isCancellationScheduled && !isPaymentMethodFormOpen ? (
+          isCancellationConfirmationOpen ? (
+            <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
+              <div>
+                <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
+                <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
+                  Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
+                </p>
+              </div>
+              <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
+              <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
+                {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
+              </AdminDrawerButton>
+              <AdminDrawerButton onClick={() => setIsCancellationConfirmationOpen(false)} disabled={isLifecyclePending}>
+                Volver
+              </AdminDrawerButton>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setBillingLifecycleState(undefined);
+                setIsCancellationConfirmationOpen(true);
+              }}
+              className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
+            >
+              Cancelar plan
+            </button>
+          )
+        ) : null}
+        <AdminDrawerFeedback state={billingLifecycleState} />
       </AdminDrawerSection>
     </>
   );

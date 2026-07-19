@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Script from "next/script";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { updateCompanyPaymentMethod, type AdminActionState } from "@/app/dashboard/actions";
 
@@ -25,10 +26,29 @@ declare global {
 }
 
 const mercadoPagoPublicKey = process.env.NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY?.trim() ?? "";
+const fieldLabelClassName = "text-[0.72rem] font-medium tracking-[0.01em] text-[#657078]";
 const inputClassName =
-  "min-h-11 w-full rounded-xl border border-[#d9dfe0] bg-white px-3 text-sm text-[#12110f] outline-none transition focus:border-[#48aeb8]";
+  "h-11 w-full rounded-[0.9rem] border border-[#dce4e7] bg-[#fbfcfc] px-4 text-sm text-[#12110f] outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_1px_2px_rgba(18,17,15,0.025)] transition duration-200 placeholder:text-[#9aa4a9] hover:border-[#c6d4d8] focus:border-[#3fa8b4] focus:bg-white focus:shadow-[0_0_0_4px_rgba(72,199,210,0.14),0_8px_20px_rgba(18,17,15,0.055)]";
 const secureFieldClassName =
-  "min-h-11 w-full rounded-xl border border-[#d9dfe0] bg-white px-3 py-2 transition focus-within:border-[#48aeb8]";
+  "h-11 w-full overflow-hidden rounded-[0.9rem] border border-[#dce4e7] bg-[#fbfcfc] px-4 py-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_1px_2px_rgba(18,17,15,0.025)] transition duration-200 hover:border-[#c6d4d8] focus-within:border-[#3fa8b4] focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(72,199,210,0.14),0_8px_20px_rgba(18,17,15,0.055)] [&>iframe]:!block [&>iframe]:!h-full [&>iframe]:!w-full";
+
+function LockIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4.5" y="10" width="15" height="10" rx="2.5" />
+      <path strokeLinecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
+      <path strokeLinecap="round" d="M12 14v2" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
 
 export function MercadoPagoPaymentMethodForm({
   companySlug,
@@ -44,95 +64,215 @@ export function MercadoPagoPaymentMethodForm({
   const [isSdkReady, setIsSdkReady] = useState(
     () => typeof window !== "undefined" && Boolean(window.MercadoPago),
   );
+  const [isCardFormReady, setIsCardFormReady] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isUpdating, startUpdateTransition] = useTransition();
   const cardFormRef = useRef<MercadoPagoCardFormController | null>(null);
+  const isCardFormMountedRef = useRef(false);
+  const isFormActiveRef = useRef(false);
+  const isSubmittingRef = useRef(false);
+  const unmountTimerRef = useRef<number | null>(null);
+  const disposeWhenMountedRef = useRef(false);
 
-  useEffect(() => {
-    if (!isSdkReady || !mercadoPagoPublicKey || !window.MercadoPago || cardFormRef.current) {
+  const updatePaymentMethod = useCallback((cardToken: string) => {
+    isSubmittingRef.current = true;
+    setFormError(null);
+    startUpdateTransition(async () => {
+      try {
+        const state = await updateCompanyPaymentMethod({ companySlug, cardToken });
+
+        if (!isFormActiveRef.current) {
+          return;
+        }
+
+        if (state.error) {
+          setFormError(state.error);
+          return;
+        }
+
+        onCompleted(state);
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    });
+  }, [companySlug, onCompleted]);
+
+  const unmountCardForm = useCallback(() => {
+    const activeCardForm = cardFormRef.current;
+
+    if (!activeCardForm || !isCardFormMountedRef.current) {
       return;
     }
 
+    try {
+      activeCardForm.unmount?.();
+    } catch {
+      // The SDK can complete an interrupted mount after React has cleaned up the component.
+    }
+
+    isCardFormMountedRef.current = false;
+    if (isFormActiveRef.current) {
+      setIsCardFormReady(false);
+    }
+    if (cardFormRef.current === activeCardForm) {
+      cardFormRef.current = null;
+    }
+  }, []);
+
+  const scheduleCardFormUnmount = useCallback(() => {
+    isFormActiveRef.current = false;
+    disposeWhenMountedRef.current = true;
+    setIsCardFormReady(false);
+
+    unmountTimerRef.current = window.setTimeout(() => {
+      unmountTimerRef.current = null;
+      unmountCardForm();
+    }, 0);
+  }, [unmountCardForm]);
+
+  useEffect(() => {
+    if (!isSdkReady || !mercadoPagoPublicKey || !window.MercadoPago) {
+      return;
+    }
+
+    if (unmountTimerRef.current !== null) {
+      window.clearTimeout(unmountTimerRef.current);
+      unmountTimerRef.current = null;
+    }
+
+    isFormActiveRef.current = true;
+    disposeWhenMountedRef.current = false;
+
+    if (cardFormRef.current) {
+      return scheduleCardFormUnmount;
+    }
+
+    setIsCardFormReady(false);
+    isCardFormMountedRef.current = false;
+
     const mercadoPago = new window.MercadoPago(mercadoPagoPublicKey, { locale: "es-CO" });
-    const cardForm = mercadoPago.cardForm({
-      amount: String(Math.max(monthlyAmountCop, 1)),
-      iframe: true,
-      form: {
-        id: "quimly-payment-method-form",
-        cardNumber: {
-          id: "quimly-payment-method-card-number",
-          placeholder: "Número de tarjeta",
-        },
-        expirationDate: {
-          id: "quimly-payment-method-expiration",
-          placeholder: "MM/AA",
-        },
-        securityCode: {
-          id: "quimly-payment-method-security-code",
-          placeholder: "CVV",
-        },
-        cardholderName: {
-          id: "quimly-payment-method-cardholder-name",
-          placeholder: "Nombre del titular",
-        },
-        issuer: {
-          id: "quimly-payment-method-issuer",
-          placeholder: "Banco emisor",
-        },
-        installments: {
-          id: "quimly-payment-method-installments",
-          placeholder: "Cuotas",
-        },
-        identificationType: {
-          id: "quimly-payment-method-identification-type",
-          placeholder: "Tipo de documento",
-        },
-        identificationNumber: {
-          id: "quimly-payment-method-identification-number",
-          placeholder: "Número de documento",
-        },
-        cardholderEmail: {
-          id: "quimly-payment-method-email",
-          placeholder: "Correo electrónico",
-        },
-      },
-      callbacks: {
-        onFormMounted: (error?: unknown) => {
-          if (error) {
-            setFormError("Mercado Pago no pudo cargar el formulario seguro.");
-          }
-        },
-        onSubmit: (event: Event) => {
-          event.preventDefault();
-          const cardToken = cardForm.getCardFormData().token?.trim();
+    let cardForm: MercadoPagoCardFormController;
 
-          if (!cardToken) {
-            setFormError("Revisa los datos de la tarjeta antes de continuar.");
-            return;
-          }
-
-          setFormError(null);
-          startUpdateTransition(async () => {
-            const state = await updateCompanyPaymentMethod({ companySlug, cardToken });
-
-            if (state.error) {
-              setFormError(state.error);
+    try {
+      cardForm = mercadoPago.cardForm({
+        amount: String(Math.max(monthlyAmountCop, 1)),
+        iframe: true,
+        form: {
+          id: "quimly-payment-method-form",
+          cardNumber: {
+            id: "quimly-payment-method-card-number",
+            placeholder: "Número de tarjeta",
+          },
+          expirationDate: {
+            id: "quimly-payment-method-expiration",
+            placeholder: "MM/AA",
+          },
+          securityCode: {
+            id: "quimly-payment-method-security-code",
+            placeholder: "CVV",
+          },
+          cardholderName: {
+            id: "quimly-payment-method-cardholder-name",
+            placeholder: "Nombre del titular",
+          },
+          issuer: {
+            id: "quimly-payment-method-issuer",
+            placeholder: "Banco emisor",
+          },
+          installments: {
+            id: "quimly-payment-method-installments",
+            placeholder: "Cuotas",
+          },
+          identificationType: {
+            id: "quimly-payment-method-identification-type",
+            placeholder: "Tipo de documento",
+          },
+          identificationNumber: {
+            id: "quimly-payment-method-identification-number",
+            placeholder: "Número de documento",
+          },
+          cardholderEmail: {
+            id: "quimly-payment-method-email",
+            placeholder: "Correo electrónico",
+          },
+        },
+        callbacks: {
+          onFormMounted: (error?: unknown) => {
+            if (error) {
+              isCardFormMountedRef.current = false;
+              if (isFormActiveRef.current) {
+                setIsCardFormReady(false);
+                setFormError("Mercado Pago no pudo cargar el formulario seguro.");
+              }
               return;
             }
 
-            onCompleted(state);
-          });
+            isCardFormMountedRef.current = true;
+
+            if (disposeWhenMountedRef.current) {
+              unmountCardForm();
+              return;
+            }
+
+            setFormError(null);
+          },
+          onReady: () => {
+            if (!isFormActiveRef.current || disposeWhenMountedRef.current) {
+              return;
+            }
+
+            setIsCardFormReady(true);
+          },
+          onSubmit: (event: Event) => {
+            event.preventDefault();
+
+            if (isSubmittingRef.current || !isFormActiveRef.current || !isCardFormMountedRef.current) {
+              return;
+            }
+
+            const activeCardForm = cardFormRef.current;
+            let cardToken: string | undefined;
+
+            try {
+              cardToken = activeCardForm?.getCardFormData().token?.trim();
+            } catch {
+              setFormError("El formulario seguro se reinició. Espera un momento e inténtalo de nuevo.");
+              return;
+            }
+
+            if (!cardToken) {
+              setFormError("Revisa los datos de la tarjeta antes de continuar.");
+              return;
+            }
+
+            updatePaymentMethod(cardToken);
+          },
+          onError: () => {
+            if (isFormActiveRef.current) {
+              setFormError("Mercado Pago no pudo validar los datos de la tarjeta. Revísalos e inténtalo de nuevo.");
+            }
+          },
+          onFormUnmounted: () => {
+            isCardFormMountedRef.current = false;
+            if (isFormActiveRef.current) {
+              setIsCardFormReady(false);
+            }
+          },
         },
-      },
-    });
+      });
+    } catch {
+      window.setTimeout(() => {
+        if (isFormActiveRef.current) {
+          setFormError("Mercado Pago no pudo cargar el formulario seguro. Intenta nuevamente.");
+        }
+      }, 0);
+      return;
+    }
 
     cardFormRef.current = cardForm;
 
-    return () => {
-      cardForm.unmount?.();
-      cardFormRef.current = null;
-    };
-  }, [companySlug, isSdkReady, monthlyAmountCop, onCompleted]);
+    return scheduleCardFormUnmount;
+  }, [isSdkReady, monthlyAmountCop, scheduleCardFormUnmount, unmountCardForm, updatePaymentMethod]);
 
   if (!mercadoPagoPublicKey) {
     return (
@@ -148,77 +288,119 @@ export function MercadoPagoPaymentMethodForm({
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <Script
         src="https://sdk.mercadopago.com/js/v2"
         strategy="afterInteractive"
         onLoad={() => setIsSdkReady(true)}
-        onError={() => setFormError("No fue posible cargar MercadoPago.js.")}
+        onError={() => {
+          isCardFormMountedRef.current = false;
+          setIsCardFormReady(false);
+          setFormError("No fue posible cargar MercadoPago.js.");
+        }}
       />
 
-      <div>
-        <p className="text-sm font-semibold text-[#12110f]">Nueva tarjeta</p>
-        <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-          Los datos sensibles se capturan dentro de campos seguros de Mercado Pago. Quimly recibe únicamente un token temporal.
+      <div className="overflow-hidden rounded-[1.35rem] border border-[#d9e7e9] bg-[linear-gradient(135deg,#f8ffff_0%,#f1fafb_58%,#fbfcf7_100%)] p-4 shadow-[0_12px_30px_rgba(18,17,15,0.045)]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#ffe600] shadow-[0_5px_12px_rgba(116,101,0,0.14)]">
+              <Image
+                src="/logos/mercado-pago-emblem.png"
+                alt="Mercado Pago"
+                width={126}
+                height={90}
+                className="h-auto w-11"
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold tracking-[-0.015em] text-[#12110f]">Nueva tarjeta</p>
+              <p className="mt-0.5 text-xs leading-5 text-[#5e6770]">Procesado de forma segura con Mercado Pago</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[#cbe4e7] bg-white/80 px-2.5 py-1.5 text-[0.67rem] font-semibold text-[#277581]">
+            <LockIcon />
+            <span>Seguro</span>
+          </div>
+        </div>
+        <p className="mt-3 border-t border-[#dce9ea] pt-3 text-xs leading-5 text-[#657078]">
+          Tu información se cifra directamente en Mercado Pago. Quimly nunca recibe los datos de tu tarjeta.
         </p>
       </div>
 
-      <form id="quimly-payment-method-form" className="grid gap-3">
-        <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-          Número de tarjeta
+      <form
+        id="quimly-payment-method-form"
+        className="grid gap-4"
+        aria-busy={isUpdating}
+        noValidate
+      >
+        <label className="grid gap-1.5">
+          <span className={fieldLabelClassName}>Número de tarjeta</span>
           <div id="quimly-payment-method-card-number" className={secureFieldClassName} />
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-            Vencimiento
+        <div className="grid grid-cols-2 gap-3.5">
+          <label className="grid gap-1.5">
+            <span className={fieldLabelClassName}>Vencimiento</span>
             <div id="quimly-payment-method-expiration" className={secureFieldClassName} />
           </label>
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-            Código de seguridad
+          <label className="grid gap-1.5">
+            <span className={fieldLabelClassName}>Código de seguridad</span>
             <div id="quimly-payment-method-security-code" className={secureFieldClassName} />
           </label>
         </div>
 
-        <label htmlFor="quimly-payment-method-cardholder-name" className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-          Titular
+        <label htmlFor="quimly-payment-method-cardholder-name" className="grid gap-1.5">
+          <span className={fieldLabelClassName}>Nombre del titular</span>
           <input id="quimly-payment-method-cardholder-name" className={inputClassName} autoComplete="cc-name" />
         </label>
 
-        <div className="grid grid-cols-[0.8fr_1.2fr] gap-3">
-          <label htmlFor="quimly-payment-method-identification-type" className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-            Documento
-            <select id="quimly-payment-method-identification-type" className={inputClassName} />
+        <div className="grid grid-cols-[0.8fr_1.2fr] gap-3.5">
+          <label htmlFor="quimly-payment-method-identification-type" className="grid gap-1.5">
+            <span className={fieldLabelClassName}>Tipo de documento</span>
+            <div className="relative">
+              <select
+                id="quimly-payment-method-identification-type"
+                className={`${inputClassName} appearance-none pr-10`}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center text-[#718087]">
+                <ChevronDownIcon />
+              </span>
+            </div>
           </label>
-          <label htmlFor="quimly-payment-method-identification-number" className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-            Número
+          <label htmlFor="quimly-payment-method-identification-number" className="grid gap-1.5">
+            <span className={fieldLabelClassName}>Número de documento</span>
             <input id="quimly-payment-method-identification-number" className={inputClassName} inputMode="numeric" />
           </label>
         </div>
 
-        <label htmlFor="quimly-payment-method-email" className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#6f777d]">
-          Correo del titular
+        <label htmlFor="quimly-payment-method-email" className="grid gap-1.5">
+          <span className={fieldLabelClassName}>Correo electrónico del titular</span>
           <input id="quimly-payment-method-email" className={inputClassName} type="email" autoComplete="email" />
         </label>
 
         <select id="quimly-payment-method-issuer" className="hidden" aria-hidden="true" tabIndex={-1} />
         <select id="quimly-payment-method-installments" className="hidden" aria-hidden="true" tabIndex={-1} />
 
-        {formError ? <p role="alert" className="text-sm leading-6 text-[#8a2d1f]">{formError}</p> : null}
+        {formError ? (
+          <p role="alert" className="rounded-xl border border-[#f0d2cb] bg-[#fff7f5] px-3.5 py-3 text-sm leading-5 text-[#8a2d1f]">
+            {formError}
+          </p>
+        ) : null}
 
         <button
           id="quimly-payment-method-submit"
           type="submit"
-          disabled={!isSdkReady || isUpdating}
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#12110f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2a2824] disabled:cursor-not-allowed disabled:opacity-55"
+          disabled={!isSdkReady || !isCardFormReady || isUpdating}
+          className="inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl bg-[#12110f] px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(18,17,15,0.16)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#2a2824] hover:shadow-[0_14px_28px_rgba(18,17,15,0.2)] disabled:cursor-not-allowed disabled:opacity-55"
         >
+          <LockIcon />
           {isUpdating ? "Actualizando..." : "Guardar nueva tarjeta"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           disabled={isUpdating}
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#d9dfe0] bg-white px-5 py-2.5 text-sm font-semibold text-[#12110f] disabled:opacity-55"
+          className="inline-flex min-h-[3.25rem] w-full items-center justify-center rounded-2xl border border-[#dce4e7] bg-white px-5 py-3 text-sm font-semibold text-[#4e585e] transition hover:border-[#c6d4d8] hover:bg-[#fbfcfc] disabled:opacity-55"
         >
           Volver
         </button>
