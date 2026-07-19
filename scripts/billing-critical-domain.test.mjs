@@ -223,6 +223,24 @@ test("C2 recupera una activación legacy terminal cuando el mandato sigue abiert
   }), "apply");
 });
 
+test("C2 aplica la aprobación de una reactivación solo si la suscripción sigue cancelada", () => {
+  assert.equal(decideLateApprovedResolution({
+    intentType: "recovery",
+    intentStatus: "awaiting_payment",
+    subscriptionStatus: "cancelled",
+    providerSubscriptionEnded: false,
+    stateStillMatches: true,
+  }), "apply");
+
+  assert.equal(decideLateApprovedResolution({
+    intentType: "recovery",
+    intentStatus: "compensation_required",
+    subscriptionStatus: "active",
+    providerSubscriptionEnded: false,
+    stateStillMatches: true,
+  }), "refund");
+});
+
 test("C1/C2 devuelve el pago cuando el cierre transaccional del intento ya fue reservado", () => {
   assert.equal(decideLateApprovedResolution({
     intentType: "activation",

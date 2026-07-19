@@ -3357,7 +3357,7 @@ begin
       )
       and (target_company_id is null or company_id = target_company_id)
       and not (
-        intent_type = 'activation'
+        intent_type in ('activation', 'recovery')
         and exists (
           select 1
           from public.billing_provider_subscriptions bps
@@ -3394,7 +3394,7 @@ begin
       from public.company_subscriptions cs
       where cs.id = bps.subscription_id
         and cs.company_id = bps.company_id
-        and cs.status = 'trial'
+        and cs.status in ('trial', 'cancelled')
     );
 
   return expired_count;
@@ -3418,8 +3418,8 @@ begin
   where id = target_intent_id
   for update;
 
-  if not found or intent_row.intent_type <> 'activation' then
-    raise exception 'La activación no está disponible.';
+  if not found or intent_row.intent_type not in ('activation', 'recovery') then
+    raise exception 'La activación o reactivación no está disponible.';
   end if;
 
   if intent_row.status = 'succeeded' then
@@ -3464,8 +3464,8 @@ begin
   where id = target_intent_id
   for update;
 
-  if not found or intent_row.intent_type <> 'activation' then
-    raise exception 'La activación no está disponible.';
+  if not found or intent_row.intent_type not in ('activation', 'recovery') then
+    raise exception 'La activación o reactivación no está disponible.';
   end if;
 
   if intent_row.status = 'succeeded' then
@@ -4166,6 +4166,7 @@ declare
   intent_row public.billing_intents%rowtype;
   payment_row public.billing_payments%rowtype;
   subscription_row public.company_subscriptions%rowtype;
+  provider_subscription_row public.billing_provider_subscriptions%rowtype;
 begin
   select * into intent_row
   from public.billing_intents
@@ -4180,7 +4181,7 @@ begin
     return false;
   end if;
 
-  if intent_row.intent_type <> 'activation'
+  if intent_row.intent_type not in ('activation', 'recovery')
     or intent_row.requested_max_active_locations is null
     or intent_row.expected_immediate_amount_cop is null
     or coalesce((intent_row.metadata ->> 'activationClosureRequested')::boolean, false) then
@@ -4201,14 +4202,26 @@ begin
     raise exception 'El pago aprobado no corresponde a la activación.';
   end if;
 
+  select * into provider_subscription_row
+  from public.billing_provider_subscriptions
+  where billing_intent_id = intent_row.id
+    and company_id = intent_row.company_id
+  for update;
+
+  if not found then
+    raise exception 'La suscripción externa no corresponde a la activación o reactivación.';
+  end if;
+
   select * into subscription_row
   from public.company_subscriptions
   where id = intent_row.subscription_id
     and company_id = intent_row.company_id
   for update;
 
-  if not found or subscription_row.status <> 'trial' then
-    raise exception 'La suscripción interna ya no admite la activación inicial.';
+  if not found
+    or (intent_row.intent_type = 'activation' and subscription_row.status <> 'trial')
+    or (intent_row.intent_type = 'recovery' and subscription_row.status <> 'cancelled') then
+    raise exception 'La suscripción interna ya no admite la activación o reactivación.';
   end if;
 
   update public.company_subscriptions
@@ -4216,10 +4229,13 @@ begin
     status = 'active',
     plan_type = intent_row.plan_type_snapshot,
     max_active_locations = intent_row.requested_max_active_locations,
+    mercado_pago_subscription_id = provider_subscription_row.provider_subscription_id,
     payment_method_status = 'configured',
     current_period_started_at = target_period_started_at,
     current_period_ends_at = target_period_ends_at,
     billing_cycle_anchor_at = target_period_started_at,
+    cancellation_requested_at = null,
+    cancellation_effective_at = null,
     payment_attention_required = false,
     payment_grace_ends_at = null,
     last_successful_payment_at = coalesce(payment_row.approved_at, target_period_started_at)
@@ -4249,15 +4265,25 @@ begin
   ) values (
     intent_row.company_id,
     intent_row.subscription_id,
-    'trial',
+    subscription_row.status,
     'active',
-    'initial_subscription_payment_approved',
+    case
+      when intent_row.intent_type = 'recovery' then 'subscription_reactivation_payment_approved'
+      else 'initial_subscription_payment_approved'
+    end,
     'webhook',
     intent_row.id,
     payment_row.id,
     target_webhook_event_id,
-    'mercado_pago_payment_approved:' || payment_row.provider_payment_id,
-    jsonb_build_object('provider', 'mercado_pago', 'providerPaymentId', payment_row.provider_payment_id),
+    case
+      when intent_row.intent_type = 'recovery' then 'mercado_pago_reactivation_payment_approved:' || payment_row.provider_payment_id
+      else 'mercado_pago_payment_approved:' || payment_row.provider_payment_id
+    end,
+    jsonb_build_object(
+      'provider', 'mercado_pago',
+      'providerPaymentId', payment_row.provider_payment_id,
+      'providerSubscriptionId', provider_subscription_row.provider_subscription_id
+    ),
     coalesce(payment_row.approved_at, now())
   ) on conflict (deduplication_key) do nothing;
 

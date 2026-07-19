@@ -839,6 +839,7 @@ function PlanPaymentsDrawerContent({
     ? `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. No se realizarán nuevos cobros.`
     : visualState.message;
   const isActivationMode = activationStep !== null;
+  const isReactivationFlow = isActivationMode && planPayments.subscriptionViewState === "cancelled";
   const isCapacityChangeMode = planChangeMode === "capacity";
   const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Cancelado"
     ? "border-[#ecd0c8] bg-[#fff6f3] text-[#8a2d1f]"
@@ -961,8 +962,8 @@ function PlanPaymentsDrawerContent({
   const decreaseSites = () =>
     updateSelectedSiteCount(Math.max(minimumSelectableSiteCount, selectedSiteCount - 1));
   const startMercadoPagoCheckout = () => {
-    if (!visualState.isTrial && !isCapacityChangeMode) {
-      setActivationError("La recuperación de pagos se implementará en una siguiente fase.");
+    if (!visualState.isTrial && !isReactivationFlow && !isCapacityChangeMode) {
+      setActivationError("Este flujo de pago no está disponible para el estado actual del plan.");
       return;
     }
 
@@ -984,7 +985,7 @@ function PlanPaymentsDrawerContent({
         success?: string;
         pendingOperation?: PendingPlanOperation;
         error?: string;
-      } = visualState.isTrial
+      } = visualState.isTrial || isReactivationFlow
         ? await startPlanActivation({
             companySlug,
             requestedMaxActiveLocations: selectedSiteCount,
@@ -1027,8 +1028,10 @@ function PlanPaymentsDrawerContent({
       {!isPaymentMethodFormOpen ? (
         <AdminDrawerSection
           title={
-            isCapacityChangeMode ? (
+            isActivationMode && isCapacityChangeMode ? (
               "Cambiar número de sedes"
+            ) : isReactivationFlow ? (
+              "Reactivar plan"
             ) : isActivationMode ? (
               "Plan actual"
             ) : (
@@ -1124,7 +1127,9 @@ function PlanPaymentsDrawerContent({
                     : "Mercado Pago"
                   : isCapacityChangeMode
                     ? "¿Necesitas aumentar o disminuir tus sedes?"
-                    : "Configura tu plan"}
+                    : isReactivationFlow
+                      ? "Reactiva tu plan"
+                      : "Configura tu plan"}
               </p>
               {activationStep === "sites" ? (
                 <div className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-[#5e6770]">
@@ -1340,7 +1345,9 @@ function PlanPaymentsDrawerContent({
                     ? "No habrá cobro ni reducción inmediata. El nuevo valor aplicará en tu próxima renovación."
                     : isCapacityChangeMode
                       ? "La nueva capacidad se habilitará únicamente cuando Mercado Pago confirme el pago proporcional."
-                      : "Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago."}
+                      : isReactivationFlow
+                        ? "Crearás una nueva suscripción. Reactivaremos tu plan únicamente cuando Mercado Pago confirme el pago."
+                        : "Crearás el pago de tu suscripción. Activaremos el plan únicamente cuando Mercado Pago confirme el pago."}
                 </p>
               </div>
               {isCapacityChangeMode && hasCurrentCapacityQuote ? (
@@ -1396,8 +1403,9 @@ function PlanPaymentsDrawerContent({
             isPaymentMethodFormOpen ? (
               "Actualizar método de pago"
             ) : (
-              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">
-                Método de pago:
+              <span className="inline-flex flex-wrap items-baseline gap-2">
+                <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Método de pago:</span>
+                <span>{paymentProviderLabel}</span>
               </span>
             )
           }
@@ -1423,17 +1431,27 @@ function PlanPaymentsDrawerContent({
           </>
         ) : (
           <>
-            <AdminDrawerSummaryRow label="Método de pago" value={paymentProviderLabel} />
-            <AdminDrawerButton
-              variant={visualState.hasPaymentIssue ? "primary" : "secondary"}
-              onClick={() => {
-                setBillingLifecycleState(undefined);
-                setIsPaymentMethodFormOpen(true);
-              }}
-              disabled={isCancellationScheduled || !planPayments.companySlug}
-            >
-              Actualizar método de pago
-            </AdminDrawerButton>
+            <div aria-hidden="true" className="border-t border-[#e6eaed]" />
+            {planPayments.subscriptionViewState === "cancelled" ? (
+              <AdminDrawerButton
+                variant="primary"
+                onClick={openActivationFlow}
+                disabled={!planPayments.companySlug}
+              >
+                Reactivar plan
+              </AdminDrawerButton>
+            ) : (
+              <AdminDrawerButton
+                variant={visualState.hasPaymentIssue ? "primary" : "secondary"}
+                onClick={() => {
+                  setBillingLifecycleState(undefined);
+                  setIsPaymentMethodFormOpen(true);
+                }}
+                disabled={isCancellationScheduled || !planPayments.companySlug}
+              >
+                Actualizar método de pago
+              </AdminDrawerButton>
+            )}
           </>
         )}
         {visualState.isActivePlan && !isCancellationScheduled && !isPaymentMethodFormOpen ? (

@@ -213,6 +213,10 @@ export function decideLateApprovedResolution({
     return "apply";
   }
 
+  if (intentType === "recovery" && subscriptionStatus === "cancelled" && stateStillMatches) {
+    return "apply";
+  }
+
   if (intentType === "upgrade" && subscriptionStatus === "active" && stateStillMatches) {
     return "apply";
   }

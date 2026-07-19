@@ -278,6 +278,10 @@ function isCanceledProviderStatus(status: string) {
   return normalized === "canceled" || normalized === "cancelled";
 }
 
+function isSubscriptionCheckoutIntent(intentType: BillingIntentType | undefined) {
+  return intentType === "activation" || intentType === "recovery";
+}
+
 export class BillingService {
   private readonly repository: BillingRepository;
 
@@ -602,7 +606,7 @@ export class BillingService {
 
     const account = await this.getAccountSnapshot(companyId);
     const isTrial = account.subscriptionViewState === "trial_active" || account.subscriptionViewState === "trial_expired";
-    const isRecoverable = account.subscriptionViewState === "payment_issue" || account.subscriptionViewState === "cancelled";
+    const isRecoverable = account.subscriptionViewState === "cancelled";
 
     if (!isTrial && !isRecoverable) {
       throw new Error("La empresa ya tiene un plan activo. Usa el flujo de cambio de capacidad.");
@@ -656,10 +660,6 @@ export class BillingService {
     await this.ensureNoOpenIntent(companyId);
 
     const preparation = await this.prepareActivation({ companyId, requestedMaxActiveLocations });
-
-    if (preparation.intentType !== "activation") {
-      throw new Error("La recuperación de suscripciones aún no está disponible.");
-    }
 
     const { subscription } = preparation.account;
     const intent = await this.repository.createIntent({
@@ -841,8 +841,8 @@ export class BillingService {
 
     const intent = await this.repository.findIntentByExternalReference(payment.externalReference);
 
-    if (!intent || intent.intent_type !== "activation") {
-      return { handled: false, reason: "El pago no corresponde a una activación inicial." };
+    if (!intent || !isSubscriptionCheckoutIntent(intent.intent_type)) {
+      return { handled: false, reason: "El pago no corresponde a una activación o reactivación." };
     }
 
     const providerSubscription = await this.repository.findProviderSubscriptionForIntent(intent.id);
@@ -941,7 +941,10 @@ export class BillingService {
       intentStatus: intent.status,
       subscriptionStatus,
       providerSubscriptionEnded: Boolean(providerSubscription.ended_at),
-      stateStillMatches: subscriptionStatus === "trial" && amountMatches && !closureRequested,
+      stateStillMatches:
+        (intent.intent_type === "activation" ? subscriptionStatus === "trial" : subscriptionStatus === "cancelled") &&
+        amountMatches &&
+        !closureRequested,
     });
 
     if (lateResolution === "already_applied") {
@@ -1050,13 +1053,16 @@ export class BillingService {
       return { handled: false, reason: "El pago no contiene una referencia interna." };
     }
 
-    if (intent?.intent_type === "activation") {
+    if (isSubscriptionCheckoutIntent(intent?.intent_type)) {
       const subscriptionStatus = await this.repository.getSubscriptionStatus(
         intent.subscription_id,
         intent.company_id,
       );
 
-      if (subscriptionStatus === "trial" || intent.status !== "succeeded") {
+      const canProcessInitialPayment =
+        intent.intent_type === "activation" ? subscriptionStatus === "trial" : subscriptionStatus === "cancelled";
+
+      if (canProcessInitialPayment || intent.status !== "succeeded") {
         return this.processInitialActivationPayment({ payment, webhookEventId, provider });
       }
     }
@@ -1447,7 +1453,7 @@ export class BillingService {
     }
 
     const billingIntentId =
-      intent?.intent_type === "upgrade" || (intent?.intent_type === "activation" && intent.status !== "succeeded")
+      intent?.intent_type === "upgrade" || (isSubscriptionCheckoutIntent(intent?.intent_type) && intent.status !== "succeeded")
         ? intent.id
         : null;
     const normalizedStatus: BillingPaymentStatus =
@@ -1512,7 +1518,7 @@ export class BillingService {
       };
     }
 
-    if (context.intent?.intent_type === "activation" && context.intent.status !== "succeeded") {
+    if (isSubscriptionCheckoutIntent(context.intent?.intent_type) && context.intent.status !== "succeeded") {
       const closureClaimed = await this.repository.claimActivationAttemptClosure(
         context.intent.id,
         "payment_reversed",
@@ -1624,8 +1630,8 @@ export class BillingService {
       let nextSubscriptionStatus: SubscriptionStatus | null = null;
 
       if (currentEntitlement) {
-        const isInitialActivation = context.intent?.intent_type === "activation";
-        const targetProviderStatus = normalizedStatus === "refunded" && isInitialActivation ? "canceled" : "paused";
+        const isInitialSubscription = isSubscriptionCheckoutIntent(context.intent?.intent_type);
+        const targetProviderStatus = normalizedStatus === "refunded" && isInitialSubscription ? "canceled" : "paused";
 
         providerState = providerSubscription.ended_at
           ? await provider.getSubscription(providerSubscription.provider_subscription_id)
@@ -1633,7 +1639,7 @@ export class BillingService {
               providerSubscription.provider_subscription_id,
               targetProviderStatus,
             );
-        nextSubscriptionStatus = normalizedStatus === "refunded" && isInitialActivation ? "cancelled" : "payment_issue";
+        nextSubscriptionStatus = normalizedStatus === "refunded" && isInitialSubscription ? "cancelled" : "payment_issue";
       }
 
       await this.repository.applyPaymentReversal({
@@ -2040,7 +2046,7 @@ export class BillingService {
 
     if (
       !openIntent ||
-      openIntent.intent_type !== "activation" ||
+      !isSubscriptionCheckoutIntent(openIntent.intent_type) ||
       !openIntent.expires_at ||
       new Date(openIntent.expires_at).getTime() > now.getTime()
     ) {
