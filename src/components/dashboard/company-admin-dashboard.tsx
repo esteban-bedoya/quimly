@@ -11,6 +11,7 @@ import {
   calculatePlanMonthlyTotalCop,
   getBranchCreationBlockedMessage,
   getSiteStatusLabel,
+  getSubscriptionViewStateLabel,
   type PlanPaymentsData,
 } from "@/lib/billing";
 import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
@@ -18,12 +19,10 @@ import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
 function PremiumStat({
   label,
   value,
-  description,
   tone = "muted",
 }: {
   label: string;
   value: string | number;
-  description: string;
   tone?: "muted" | "accent" | "gold";
 }) {
   const toneStyles = {
@@ -33,10 +32,9 @@ function PremiumStat({
   } as const;
 
   return (
-    <div className={`min-h-32 rounded-[1.15rem] border px-4 py-4 shadow-[0_20px_50px_rgba(18,17,15,0.08)] ${toneStyles[tone]}`}>
+    <div className={`h-full rounded-[1.15rem] border px-4 py-3 shadow-[0_20px_50px_rgba(18,17,15,0.08)] ${toneStyles[tone]}`}>
       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] opacity-60">{label}</p>
-      <p className="mt-3 text-2xl font-semibold tracking-[-0.04em]">{value}</p>
-      <p className="mt-2 text-xs leading-5 opacity-70">{description}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-[-0.04em]">{value}</p>
     </div>
   );
 }
@@ -101,6 +99,7 @@ export function CompanyAdminDashboard({
   const canCreateBranch = planPayments.accountCapabilities.canCreateBranch;
   const branchCreationBlockedMessage = getBranchCreationBlockedMessage(planPayments.subscriptionViewState);
   const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
+  const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
   const nextMonthlyTotalCop = calculatePlanMonthlyTotalCop({
     planType: planPayments.planType,
     siteCount: planPayments.maxActiveLocations,
@@ -165,18 +164,19 @@ export function CompanyAdminDashboard({
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[26rem]">
-                <PremiumStat label="Sedes" value={branches.length} description="Total de sedes creadas" />
+              <div className="grid auto-rows-fr gap-3 sm:grid-cols-3 lg:min-w-[26rem]">
                 <PremiumStat
-                  label="Activas"
-                  value={activeBranches.length}
-                  description="Sedes actualmente operativas"
+                  label="Sedes activas"
+                  value={`${activeBranches.length}/${planPayments.accountCapabilities.maxBranches}`}
+                />
+                <PremiumStat
+                  label="Sedes contratadas"
+                  value={planPayments.accountCapabilities.maxBranches}
                   tone="accent"
                 />
                 <PremiumStat
-                  label="Capacidad"
-                  value={`${activeBranches.length} / ${planPayments.accountCapabilities.maxBranches}`}
-                  description="Sedes activas utilizadas"
+                  label="Estado"
+                  value={subscriptionStatusLabel}
                   tone="gold"
                 />
               </div>
