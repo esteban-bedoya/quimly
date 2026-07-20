@@ -55,6 +55,7 @@ export type StartCapacityChangeResult = {
 
 export type CancelPlanResult = AdminActionState & {
   effectiveAt?: string;
+  isImmediate?: boolean;
 };
 
 export type PlanCapacityChangeQuoteResult = {
@@ -965,6 +966,7 @@ export async function cancelCompanyPlan({
       actorUserId: context.profile.userId,
       companyId: company.id,
       effectiveAt: result.effectiveAt,
+      isImmediate: result.isImmediate,
       alreadyScheduled: result.alreadyScheduled,
     });
     revalidatePath("/dashboard");
@@ -972,10 +974,17 @@ export async function cancelCompanyPlan({
     return {
       success: result.alreadyScheduled
         ? "La cancelación ya estaba programada."
-        : "La suscripción fue cancelada en Mercado Pago y conservará acceso hasta finalizar el periodo pagado.",
+        : result.isImmediate
+          ? "La suscripción fue cancelada y se detuvieron los reintentos y cobros futuros."
+          : "La suscripción fue cancelada en Mercado Pago y conservará acceso hasta finalizar el periodo pagado.",
       effectiveAt: result.effectiveAt,
+      isImmediate: result.isImmediate,
     };
   } catch (error) {
+    if (error instanceof BillingOperationPendingError) {
+      return { error: "Ya estamos procesando otra operación de pago. Espera unos instantes e inténtalo de nuevo." };
+    }
+
     logAdminActionError("billing.subscription_cancellation_failed", error, { companySlug });
     return {
       error: error instanceof Error ? error.message : "No fue posible cancelar la suscripción.",

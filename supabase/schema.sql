@@ -3520,6 +3520,7 @@ declare
   intent_row public.billing_intents%rowtype;
   subscription_row public.company_subscriptions%rowtype;
   resolved_effective_at timestamptz;
+  is_immediate_cancellation boolean := false;
 begin
   if lower(trim(coalesce(target_provider_status, ''))) not in ('canceled', 'cancelled') then
     raise exception 'Mercado Pago no confirmó la cancelación del preapproval.';
@@ -3548,7 +3549,7 @@ begin
     and company_id = intent_row.company_id
   for update;
 
-  if not found or subscription_row.status not in ('active', 'payment_issue', 'cancelled') then
+  if not found or subscription_row.status not in ('active', 'payment_issue', 'suspended', 'cancelled') then
     raise exception 'La suscripción interna ya no admite cancelación.';
   end if;
 
@@ -3556,11 +3557,20 @@ begin
     raise exception 'El periodo efectivo de cancelación no es válido.';
   end if;
 
-  resolved_effective_at := greatest(
-    target_effective_at,
-    subscription_row.current_period_ends_at,
-    subscription_row.cancellation_effective_at
-  );
+  is_immediate_cancellation := subscription_row.status in ('payment_issue', 'suspended');
+
+  if is_immediate_cancellation and target_effective_at <> target_requested_at then
+    raise exception 'La cancelación de una suscripción con pago pendiente o suspendida debe ser inmediata.';
+  end if;
+
+  resolved_effective_at := case
+    when is_immediate_cancellation then target_requested_at
+    else greatest(
+      target_effective_at,
+      subscription_row.current_period_ends_at,
+      subscription_row.cancellation_effective_at
+    )
+  end;
 
   update public.billing_provider_subscriptions
   set
@@ -3580,10 +3590,11 @@ begin
 
   update public.company_subscriptions
   set
-    status = case when resolved_effective_at <= now() then 'cancelled' else status end,
+    status = case when is_immediate_cancellation or resolved_effective_at <= now() then 'cancelled' else status end,
     cancellation_requested_at = coalesce(cancellation_requested_at, target_requested_at),
     cancellation_effective_at = resolved_effective_at,
-    payment_attention_required = case when resolved_effective_at <= now() then false else payment_attention_required end
+    payment_attention_required = case when is_immediate_cancellation or resolved_effective_at <= now() then false else payment_attention_required end,
+    payment_grace_ends_at = case when is_immediate_cancellation or resolved_effective_at <= now() then null else payment_grace_ends_at end
   where id = subscription_row.id;
 
   update public.subscription_capacity_changes
@@ -3607,7 +3618,7 @@ begin
     )
   where id = intent_row.id;
 
-  if resolved_effective_at <= now() and subscription_row.status <> 'cancelled' then
+  if (is_immediate_cancellation or resolved_effective_at <= now()) and subscription_row.status <> 'cancelled' then
     insert into public.subscription_status_history (
       company_id,
       subscription_id,
@@ -3701,14 +3712,7 @@ begin
     raise exception 'El pago recurrente no corresponde a la suscripción.';
   end if;
 
-  if subscription_row.status = 'trial'
-    or (
-      subscription_row.status = 'cancelled'
-      and not (
-        target_normalized_status = 'approved'
-        and subscription_row.cancellation_requested_at is not null
-      )
-    ) then
+  if subscription_row.status in ('trial', 'cancelled') then
     return false;
   end if;
 
@@ -3896,11 +3900,15 @@ begin
       payment_grace_ends_at = null
     where id = subscription_row.id;
   else
-    protected_effective_at := greatest(
-      cancellation_at,
-      subscription_row.current_period_ends_at,
-      subscription_row.cancellation_effective_at
-    );
+    protected_effective_at := case
+      when subscription_row.status in ('payment_issue', 'suspended', 'cancelled')
+        then coalesce(subscription_row.cancellation_effective_at, cancellation_at)
+      else greatest(
+        cancellation_at,
+        subscription_row.current_period_ends_at,
+        subscription_row.cancellation_effective_at
+      )
+    end;
     next_status := case
       when protected_effective_at <= now() then 'cancelled'
       else subscription_row.status
@@ -4064,7 +4072,7 @@ begin
       cs.status as from_status,
       cs.cancellation_effective_at
     from public.company_subscriptions cs
-    where cs.status in ('active', 'payment_issue')
+    where cs.status in ('active', 'payment_issue', 'suspended')
       and cs.cancellation_requested_at is not null
       and cs.cancellation_effective_at is not null
       and cs.cancellation_effective_at <= now()

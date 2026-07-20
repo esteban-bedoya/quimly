@@ -27,10 +27,13 @@ export function getCancellationProjection({
     };
   }
 
+  const cancelsImmediately = currentStatus === "payment_issue" || currentStatus === "suspended";
   const periodEndTime = currentPeriodEndsAt ? new Date(currentPeriodEndsAt).getTime() : Number.NaN;
-  const effectiveAt = Number.isFinite(periodEndTime) && periodEndTime > cancellationTime
-    ? new Date(periodEndTime).toISOString()
-    : new Date(cancellationTime).toISOString();
+  const effectiveAt = cancelsImmediately
+    ? new Date(cancellationTime).toISOString()
+    : Number.isFinite(periodEndTime) && periodEndTime > cancellationTime
+      ? new Date(periodEndTime).toISOString()
+      : new Date(cancellationTime).toISOString();
 
   return {
     status: new Date(effectiveAt).getTime() <= now.getTime() ? "cancelled" as const : currentStatus,
@@ -40,14 +43,10 @@ export function getCancellationProjection({
 
 export function shouldApplyRecurringPaymentAfterCancellation({
   currentStatus,
-  paymentStatus,
-  cancellationRequested,
 }: {
   currentStatus: SubscriptionStatus;
-  paymentStatus: string;
-  cancellationRequested: boolean;
 }) {
-  return currentStatus !== "cancelled" || (paymentStatus === "approved" && cancellationRequested);
+  return currentStatus !== "cancelled";
 }
 
 function getRequiredTimestamp(value: string, fieldName: string) {

@@ -153,7 +153,7 @@ export async function login(_: LoginFormState | undefined, formData: FormData): 
   });
 
   if (error || !data.session || !data.user) {
-    return { error: error?.message ?? "No fue posible iniciar sesión." };
+    return { error: "El número celular o la contraseña no son correctos." };
   }
 
   await storeSessionTokens({

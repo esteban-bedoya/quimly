@@ -28,6 +28,7 @@ import { InternationalPhoneField } from "@/components/phone/international-phone-
 import { MercadoPagoPaymentMethodForm } from "@/components/billing/mercado-pago-payment-method-form";
 import { MercadoPagoInfoCard } from "@/components/billing/mercado-pago-info-card";
 import {
+  canCancelSubscription,
   calculatePlanMonthlyTotalCop,
   formatCopAmount,
   getDefaultBaseMonthlyPriceCop,
@@ -232,6 +233,14 @@ function InfoTooltip({
   );
 }
 
+function SuspendedPaymentRecoveryNotice() {
+  return (
+    <p className="rounded-xl border border-[#edcf92] bg-[#fff8e9] px-3 py-2.5 text-sm leading-6 text-[#6d5218]">
+      Actualizar tu método de pago no restablece el acceso de inmediato. Mercado Pago volverá a intentar el cobro y reactivaremos tu plan cuando lo confirme.
+    </p>
+  );
+}
+
 function getMonthlyPriceTooltipMessage({
   planType,
   baseMonthlyPriceCop,
@@ -245,6 +254,23 @@ function getMonthlyPriceTooltipMessage({
     : `Tu sede inicial tiene un costo de ${formatCopAmount(baseMonthlyPriceCop)}/mes, y cada sede adicional se cobra a ${formatCopAmount(additionalSiteMonthlyPriceCop)}/mes.`;
 }
 
+function MonthlyPriceInfoTooltip({
+  planType,
+  baseMonthlyPriceCop,
+  additionalSiteMonthlyPriceCop,
+  align,
+}: Pick<PlanPaymentsData, "planType" | "baseMonthlyPriceCop" | "additionalSiteMonthlyPriceCop"> & {
+  align?: "left" | "right";
+}) {
+  const message = getMonthlyPriceTooltipMessage({
+    planType,
+    baseMonthlyPriceCop,
+    additionalSiteMonthlyPriceCop,
+  });
+
+  return <InfoTooltip align={align} label={`Ver detalle del valor mensual. ${message}`} message={message} />;
+}
+
 function MonthlyPriceValue({
   planType,
   baseMonthlyPriceCop,
@@ -256,15 +282,13 @@ function MonthlyPriceValue({
   additionalSiteMonthlyPriceCop: number;
   monthlyTotalCop: number;
 }) {
-  const message = getMonthlyPriceTooltipMessage({
-    planType,
-    baseMonthlyPriceCop,
-    additionalSiteMonthlyPriceCop,
-  });
-
   return (
     <span className="inline-flex items-center justify-end gap-1.5">
-      <InfoTooltip label={`Ver detalle del valor mensual. ${message}`} message={message} />
+      <MonthlyPriceInfoTooltip
+        planType={planType}
+        baseMonthlyPriceCop={baseMonthlyPriceCop}
+        additionalSiteMonthlyPriceCop={additionalSiteMonthlyPriceCop}
+      />
       <span>{formatCopAmount(monthlyTotalCop)}/mes</span>
     </span>
   );
@@ -766,6 +790,18 @@ function formatDateLabel(value: string | null) {
   }).format(date);
 }
 
+function getPlanEndDateLabel(subscriptionViewState: PlanPaymentsData["subscriptionViewState"]) {
+  if (subscriptionViewState === "trial_expired") {
+    return "Finalizada";
+  }
+
+  if (subscriptionViewState === "cancelled") {
+    return "Finalizado";
+  }
+
+  return "Finaliza";
+}
+
 type CapacityChangeQuote = NonNullable<PlanCapacityChangeQuoteResult["quote"]>;
 type PendingPlanOperation = NonNullable<PlanCapacityChangeQuoteResult["pendingOperation"]>;
 
@@ -825,6 +861,7 @@ function PlanPaymentsDrawerContent({
   const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
   const [billingLifecycleState, setBillingLifecycleState] = useState<AdminActionState | undefined>(undefined);
   const [cancellationEffectiveOverride, setCancellationEffectiveOverride] = useState<string | null>(null);
+  const [isImmediateCancellationOverride, setIsImmediateCancellationOverride] = useState(false);
   const [isActivationPending, startActivationTransition] = useTransition();
   const [isQuotePending, startQuoteTransition] = useTransition();
   const [isLifecyclePending, startLifecycleTransition] = useTransition();
@@ -850,17 +887,28 @@ function PlanPaymentsDrawerContent({
       });
   const cancellationEffectiveAt = cancellationEffectiveOverride ?? planPayments.cancellationEffectiveAt;
   const isCancellationScheduled = Boolean(planPayments.cancellationRequestedAt || cancellationEffectiveAt);
-  const isCancellationPending = isCancellationScheduled && visualState.statusLabel !== "Cancelado";
-  const paymentStatusLabel = isCancellationPending ? "Cancelación programada" : visualState.statusLabel;
-  const paymentStatusMessage = isCancellationPending
-    ? `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. No se realizarán nuevos cobros.`
-    : planPayments.subscriptionViewState === "payment_issue" && planPayments.paymentGraceEndsAt
-      ? `Tu negocio sigue protegido mientras Mercado Pago reintenta el cobro hasta el ${formatDateLabel(planPayments.paymentGraceEndsAt)}. Actualiza tu método de pago para evitar la suspensión.`
-    : visualState.message;
+  const isImmediateCancellationEffective =
+    isImmediateCancellationOverride || planPayments.subscriptionViewState === "cancelled";
+  const isCancellationPending = isCancellationScheduled && !isImmediateCancellationEffective && visualState.statusLabel !== "Cancelado";
+  const canCancelPlan = canCancelSubscription(planPayments.subscriptionViewState);
+  const isImmediateCancellation = canCancelPlan && !visualState.isActivePlan;
+  const planEndDateLabel = getPlanEndDateLabel(planPayments.subscriptionViewState);
+  const paymentStatusLabel = isImmediateCancellationEffective
+    ? "Cancelado"
+    : isCancellationPending
+      ? "Cancelación programada"
+      : visualState.statusLabel;
+  const paymentStatusMessage = isImmediateCancellationEffective
+    ? "La suscripción fue cancelada y no se realizarán nuevos cobros."
+    : isCancellationPending
+      ? `Tu plan conserva acceso hasta el ${formatDateLabel(cancellationEffectiveAt)}. No se realizarán nuevos cobros.`
+      : planPayments.subscriptionViewState === "payment_issue" && planPayments.paymentGraceEndsAt
+        ? `Tu negocio sigue protegido mientras Mercado Pago reintenta el cobro hasta el ${formatDateLabel(planPayments.paymentGraceEndsAt)}. Actualiza tu método de pago para evitar la suspensión.`
+        : visualState.message;
   const isActivationMode = activationStep !== null;
   const isReactivationFlow = isActivationMode && planPayments.subscriptionViewState === "cancelled";
   const isCapacityChangeMode = planChangeMode === "capacity";
-  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Cancelado" || paymentStatusLabel === "Suspendido"
+  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Prueba finalizada" || paymentStatusLabel === "Cancelado" || paymentStatusLabel === "Suspendido"
     ? "border-[#ecd0c8] bg-[#fff6f3] text-[#8a2d1f]"
     : visualState.isActivePlan
     ? "border-[#9edfc1]/70 bg-[#e8f7ef] text-[#21734f]"
@@ -899,6 +947,7 @@ function PlanPaymentsDrawerContent({
 
       if (result.success) {
         setCancellationEffectiveOverride(result.effectiveAt ?? planPayments.cancellationEffectiveAt);
+        setIsImmediateCancellationOverride(result.isImmediate === true);
         setIsCancellationConfirmationOpen(false);
         router.refresh();
       }
@@ -1047,10 +1096,20 @@ function PlanPaymentsDrawerContent({
       <div>
         <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
         <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
-          Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
+          {isImmediateCancellation
+            ? "Cancelaremos tu suscripción de inmediato y detendremos los reintentos y cobros futuros. El acceso no se recuperará."
+            : "Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros."}
         </p>
+        {planPayments.planType === "founder" ? (
+          <p className="mt-2 text-sm leading-6 text-[#6d4b45]">
+            Si luego reactiva una suscripción cancelada, aplicará el flujo de reactivación normal; por tanto, podría perder el precio Founder si aplica.
+          </p>
+        ) : null}
       </div>
-      <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
+      <AdminDrawerSummaryRow
+        label={isImmediateCancellation ? "Cancelación efectiva" : "Acceso hasta"}
+        value={isImmediateCancellation ? "Inmediata" : formatDateLabel(planPayments.nextChargeAt)}
+      />
       <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
         {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
       </AdminDrawerButton>
@@ -1112,7 +1171,7 @@ function PlanPaymentsDrawerContent({
                   }
                 />
                 {isCancellationScheduled ? (
-                  <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(cancellationEffectiveAt)} />
+                  <AdminDrawerSummaryRow label={planEndDateLabel} value={formatDateLabel(cancellationEffectiveAt)} />
                 ) : (
                   <AdminDrawerSummaryRow label="Próximo cobro" value={formatDateLabel(planPayments.nextChargeAt)} />
                 )}
@@ -1132,8 +1191,12 @@ function PlanPaymentsDrawerContent({
               </div>
             ) : null}
 
+            {planPayments.subscriptionViewState === "cancelled" && cancellationEffectiveAt ? (
+              <AdminDrawerSummaryRow label={planEndDateLabel} value={formatDateLabel(cancellationEffectiveAt)} />
+            ) : null}
+
             {visualState.isTrial ? (
-              <AdminDrawerSummaryRow label="Finaliza" value={formatDateLabel(planPayments.trialEndsAt)} />
+              <AdminDrawerSummaryRow label={planEndDateLabel} value={formatDateLabel(planPayments.trialEndsAt)} />
             ) : null}
             {visualState.isTrial ? (
               <div className="grid gap-3 pt-1">
@@ -1169,10 +1232,11 @@ function PlanPaymentsDrawerContent({
               {activationStep === "sites" ? (
                 <div className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-[#5e6770]">
                   <span className="mt-0.5 shrink-0">
-                    <InfoTooltip
+                    <MonthlyPriceInfoTooltip
                       align="left"
-                      label={`Ver valor de cada sede adicional. Cada sede adicional se cobra a ${formatCopAmount(planPayments.additionalSiteMonthlyPriceCop)}/mes.`}
-                      message={`Cada sede adicional se cobra a ${formatCopAmount(planPayments.additionalSiteMonthlyPriceCop)}/mes.`}
+                      planType={planPayments.planType}
+                      baseMonthlyPriceCop={planPayments.baseMonthlyPriceCop}
+                      additionalSiteMonthlyPriceCop={planPayments.additionalSiteMonthlyPriceCop}
                     />
                   </span>
                   <p>Elige la cantidad de sedes que requiere tu negocio.</p>
@@ -1241,7 +1305,7 @@ function PlanPaymentsDrawerContent({
                       />
                       {capacityQuote.changeType !== "upgrade" ? (
                         <AdminDrawerSummaryRow
-                          label="Valor mensual"
+                          label="Próximo cobro mensual"
                           value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
                         />
                       ) : null}
@@ -1452,12 +1516,15 @@ function PlanPaymentsDrawerContent({
           }
         >
         {isPaymentMethodFormOpen && planPayments.companySlug ? (
-          <MercadoPagoPaymentMethodForm
-            companySlug={planPayments.companySlug}
-            monthlyAmountCop={planPayments.monthlyTotalCop}
-            onCompleted={handlePaymentMethodCompleted}
-            onCancel={() => setIsPaymentMethodFormOpen(false)}
-          />
+          <>
+            {planPayments.subscriptionViewState === "suspended" ? <SuspendedPaymentRecoveryNotice /> : null}
+            <MercadoPagoPaymentMethodForm
+              companySlug={planPayments.companySlug}
+              monthlyAmountCop={planPayments.monthlyTotalCop}
+              onCompleted={handlePaymentMethodCompleted}
+              onCancel={() => setIsPaymentMethodFormOpen(false)}
+            />
+          </>
         ) : visualState.isTrial ? (
           <>
             <div>
@@ -1472,6 +1539,7 @@ function PlanPaymentsDrawerContent({
           </>
         ) : (
           <>
+            {planPayments.subscriptionViewState === "suspended" ? <SuspendedPaymentRecoveryNotice /> : null}
             <div aria-hidden="true" className="border-t border-[#e6eaed]" />
             {planPayments.subscriptionViewState === "cancelled" ? (
               <AdminDrawerButton
@@ -1495,7 +1563,7 @@ function PlanPaymentsDrawerContent({
             )}
           </>
         )}
-        {visualState.isActivePlan && !isCancellationScheduled && !isPaymentMethodFormOpen ? (
+        {canCancelPlan && !isCancellationScheduled && !isPaymentMethodFormOpen ? (
           <button
             type="button"
             onClick={() => {
@@ -1504,7 +1572,7 @@ function PlanPaymentsDrawerContent({
             }}
             className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
           >
-            Cancelar plan
+            {visualState.isActivePlan ? "Cancelar plan" : "Cancelar suscripción"}
           </button>
         ) : null}
         <AdminDrawerFeedback state={billingLifecycleState} />

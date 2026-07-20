@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import {
+  canCancelSubscription,
   getAccountCapabilities,
   getDefaultBaseMonthlyPriceCop,
   getEffectivePlanType as getEffectivePlanTypeForSubscription,
@@ -24,6 +25,7 @@ import {
 import {
   assertNoScheduledDowngrade,
   decideLateApprovedResolution,
+  getCancellationProjection,
   getUpgradeReversalCapacity,
   isAbandonedActivationCheckoutForFounder,
   isCurrentPaymentEntitlement,
@@ -125,6 +127,7 @@ export type CapacityChangeQuotePreview = {
 export type SubscriptionCancellationResult = {
   effectiveAt: string;
   alreadyScheduled: boolean;
+  isImmediate: boolean;
 };
 
 export class BillingOperationPendingError extends Error {
@@ -330,14 +333,18 @@ export class BillingService {
       return {
         effectiveAt: subscription.cancellation_effective_at,
         alreadyScheduled: true,
+        isImmediate: new Date(subscription.cancellation_effective_at).getTime() <= now.getTime(),
       };
     }
 
-    if (
-      account.subscriptionViewState !== "founder_active" &&
-      account.subscriptionViewState !== "operational_active"
-    ) {
-      throw new Error("Solo puedes cancelar una suscripción activa.");
+    if (!canCancelSubscription(account.subscriptionViewState)) {
+      throw new Error("Solo puedes cancelar una suscripción activa, con pago pendiente o suspendida.");
+    }
+
+    const pendingIntent = await this.repository.findOpenIntent(companyId);
+
+    if (pendingIntent?.intent_type === "cancellation" && pendingIntent.status === "compensation_required") {
+      return this.resumeCompensatingCancellation({ account, intent: pendingIntent, provider, now });
     }
 
     await this.ensureNoOpenIntent(companyId);
@@ -352,36 +359,48 @@ export class BillingService {
     }
 
     const requestedAt = now.toISOString();
-    const periodEndTime = subscription.current_period_ends_at
-      ? new Date(subscription.current_period_ends_at).getTime()
-      : Number.NaN;
-    const effectiveAt = Number.isFinite(periodEndTime) && periodEndTime > now.getTime()
-      ? new Date(periodEndTime).toISOString()
-      : requestedAt;
-    const intent = await this.repository.createIntent({
-      company_id: companyId,
-      subscription_id: subscription.id,
-      capacity_change_id: null,
-      intent_type: "cancellation",
-      plan_type_snapshot: account.currentQuote.planType,
-      previous_max_active_locations: subscription.max_active_locations,
-      requested_max_active_locations: subscription.max_active_locations,
-      monthly_amount_before_cop: account.currentQuote.monthlyTotalCop,
-      monthly_amount_after_cop: 0,
-      expected_immediate_amount_cop: 0,
-      currency: "COP",
-      period_started_at: subscription.current_period_started_at,
-      period_ends_at: effectiveAt,
-      proration_amount_cop: null,
-      proration_calculated_at: null,
-      proration_formula_version: null,
-      external_reference: getIntentReference("cancellation"),
-      requested_by: requestedBy,
-      expires_at: getProcessingExpiry(now),
-      last_error_code: null,
-      last_error_message: null,
-      metadata: { source: "plan_payments" },
-    });
+    const effectiveAt = getCancellationProjection({
+      currentStatus: subscription.status,
+      currentPeriodEndsAt: subscription.current_period_ends_at,
+      cancellationAt: requestedAt,
+      now,
+    }).effectiveAt;
+    let intent: BillingIntentRecord;
+
+    try {
+      intent = await this.repository.createIntent({
+        company_id: companyId,
+        subscription_id: subscription.id,
+        capacity_change_id: null,
+        intent_type: "cancellation",
+        plan_type_snapshot: account.currentQuote.planType,
+        previous_max_active_locations: subscription.max_active_locations,
+        requested_max_active_locations: subscription.max_active_locations,
+        monthly_amount_before_cop: account.currentQuote.monthlyTotalCop,
+        monthly_amount_after_cop: 0,
+        expected_immediate_amount_cop: 0,
+        currency: "COP",
+        period_started_at: subscription.current_period_started_at,
+        period_ends_at: effectiveAt,
+        proration_amount_cop: null,
+        proration_calculated_at: null,
+        proration_formula_version: null,
+        external_reference: getIntentReference("cancellation"),
+        requested_by: requestedBy,
+        expires_at: getProcessingExpiry(now),
+        last_error_code: null,
+        last_error_message: null,
+        metadata: { source: "plan_payments" },
+      });
+    } catch (error) {
+      const pendingOperation = await this.getPendingOperation(companyId, now);
+
+      if (pendingOperation) {
+        throw new BillingOperationPendingError(pendingOperation);
+      }
+
+      throw error;
+    }
 
     await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
 
@@ -435,9 +454,12 @@ export class BillingService {
 
     const updatedAccount = await this.getAccountSnapshot(companyId);
 
+    const resolvedEffectiveAt = updatedAccount.subscription.cancellation_effective_at ?? effectiveAt;
+
     return {
-      effectiveAt: updatedAccount.subscription.cancellation_effective_at ?? effectiveAt,
+      effectiveAt: resolvedEffectiveAt,
       alreadyScheduled: false,
+      isImmediate: new Date(resolvedEffectiveAt).getTime() <= now.getTime(),
     };
   }
 
@@ -1734,7 +1756,7 @@ export class BillingService {
     });
     const periodStartedAt = payment.approvedAt ?? payment.providerUpdatedAt ?? debitAt ?? new Date().toISOString();
 
-    await this.repository.applyRecurringPaymentState({
+    const renewalApplied = await this.repository.applyRecurringPaymentState({
       providerSubscription,
       payment: storedPayment,
       normalizedStatus,
@@ -1744,6 +1766,20 @@ export class BillingService {
       retryAttempt,
       debitAt,
     });
+
+    if (normalizedStatus === "approved" && !renewalApplied) {
+      const subscriptionStatus = await this.repository.getSubscriptionStatus(
+        providerSubscription.subscription_id,
+        providerSubscription.company_id,
+      );
+
+      if (subscriptionStatus === "cancelled") {
+        await provider.refundPayment(
+          payment.providerPaymentId,
+          getRefundIdempotencyKey(payment.providerPaymentId, "late-recurring-cancellation"),
+        );
+      }
+    }
 
     if (normalizedStatus === "rejected" && retryAttempt >= 4) {
       const pausedProviderSubscription = await provider.updateSubscriptionStatus(
@@ -2151,6 +2187,89 @@ export class BillingService {
     if (openIntent) {
       throw new BillingOperationPendingError(openIntent);
     }
+  }
+
+  private async resumeCompensatingCancellation({
+    account,
+    intent,
+    provider,
+    now,
+  }: {
+    account: BillingAccountSnapshot;
+    intent: BillingIntentRecord;
+    provider: BillingProvider;
+    now: Date;
+  }): Promise<SubscriptionCancellationResult> {
+    const providerSubscription = await this.repository.findLatestProviderSubscriptionForSubscription(
+      account.subscription.id,
+      account.subscription.company_id,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("No fue posible retomar la cancelación porque falta la suscripción de Mercado Pago.");
+    }
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
+
+    let terminalProviderState: ProviderSubscription;
+
+    try {
+      const currentProviderState = await provider.getSubscription(
+        providerSubscription.provider_subscription_id,
+      );
+      terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
+        ? currentProviderState
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Mercado Pago no pudo confirmar la cancelación pendiente.",
+        "provider_subscription_cancellation_recovery_failed",
+      );
+      throw error;
+    }
+
+    if (
+      terminalProviderState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      terminalProviderState.currency !== "COP" ||
+      !isCanceledProviderStatus(terminalProviderState.providerStatus)
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago no confirmó de forma consistente la cancelación pendiente.",
+        "provider_subscription_cancellation_recovery_mismatch",
+      );
+      throw new Error("Mercado Pago no confirmó la cancelación pendiente del plan.");
+    }
+
+    const requestedAt = intent.created_at;
+    const effectiveAt = intent.period_ends_at ?? requestedAt;
+
+    try {
+      await this.repository.completeCancellation({
+        intent,
+        providerSubscription,
+        providerState: terminalProviderState,
+        requestedAt,
+        effectiveAt,
+      });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Quimly no pudo registrar la cancelación pendiente.",
+        "cancellation_internal_persistence_failed",
+      );
+      throw error;
+    }
+
+    const updatedAccount = await this.getAccountSnapshot(account.subscription.company_id);
+    const resolvedEffectiveAt = updatedAccount.subscription.cancellation_effective_at ?? effectiveAt;
+
+    return {
+      effectiveAt: resolvedEffectiveAt,
+      alreadyScheduled: false,
+      isImmediate: new Date(resolvedEffectiveAt).getTime() <= now.getTime(),
+    };
   }
 
   private buildAccountSnapshot(context: CompanyBillingContext): BillingAccountSnapshot {

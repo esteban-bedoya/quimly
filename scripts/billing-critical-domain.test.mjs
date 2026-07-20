@@ -17,6 +17,7 @@ import {
 } from "../src/lib/billing/financial-policy.ts";
 import {
   additionalSitePriceCop,
+  canCancelSubscription,
   calculatePlanMonthlyTotalCop,
   founderPlanBasePriceCop,
   getAccountCapabilities,
@@ -49,6 +50,16 @@ test("pago pendiente conserva el acceso operativo hasta que venza la ventana de 
 test("Founder cancelado se recupera como Plan operativo, pero Founder suspendido conserva su beneficio", () => {
   assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "cancelled" }), "operational");
   assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "suspended" }), "founder");
+});
+
+test("cancelación está disponible para planes activos, pago pendiente y suspendidos", () => {
+  assert.equal(canCancelSubscription("founder_active"), true);
+  assert.equal(canCancelSubscription("operational_active"), true);
+  assert.equal(canCancelSubscription("payment_issue"), true);
+  assert.equal(canCancelSubscription("suspended"), true);
+  assert.equal(canCancelSubscription("trial_active"), false);
+  assert.equal(canCancelSubscription("trial_expired"), false);
+  assert.equal(canCancelSubscription("cancelled"), false);
 });
 
 test("Founder permite cerrar solo un checkout de activación vencido, pending y sin pago", () => {
@@ -92,14 +103,25 @@ test("cancelación conserva acceso hasta finalizar el periodo pagado", () => {
   assert.equal(due.status, "cancelled");
   assert.equal(shouldApplyRecurringPaymentAfterCancellation({
     currentStatus: "cancelled",
-    paymentStatus: "approved",
-    cancellationRequested: true,
-  }), true);
-  assert.equal(shouldApplyRecurringPaymentAfterCancellation({
-    currentStatus: "cancelled",
-    paymentStatus: "rejected",
-    cancellationRequested: true,
   }), false);
+});
+
+test("cancelar con pago pendiente o suspensión se hace efectivo de inmediato", () => {
+  const now = new Date("2026-07-20T12:00:00.000Z");
+
+  for (const currentStatus of ["payment_issue", "suspended"]) {
+    const projection = getCancellationProjection({
+      currentStatus,
+      currentPeriodEndsAt: "2026-08-12T12:00:00.000Z",
+      cancellationAt: now.toISOString(),
+      now,
+    });
+
+    assert.deepEqual(projection, {
+      status: "cancelled",
+      effectiveAt: now.toISOString(),
+    });
+  }
 });
 
 test("cancelación solicitada y luego renovación aprobada extiende la fecha efectiva", () => {
@@ -128,25 +150,10 @@ test("renovación aprobada y luego cancelación confirmada conserva el periodo m
   }), "2026-09-12T00:00:00.000Z");
 });
 
-test("cron finalizado y webhook aprobado tardío reactiva hasta el periodo pagado", () => {
+test("un webhook aprobado tardío no reactiva una suscripción ya cancelada", () => {
   assert.equal(shouldApplyRecurringPaymentAfterCancellation({
     currentStatus: "cancelled",
-    paymentStatus: "approved",
-    cancellationRequested: true,
-  }), true);
-
-  const projection = getApprovedRenewalProjection({
-    currentPeriodStartedAt: "2026-07-12T00:00:00.000Z",
-    currentPeriodEndsAt: "2026-08-12T00:00:00.000Z",
-    cancellationRequested: true,
-    cancellationEffectiveAt: "2026-08-12T00:00:00.000Z",
-    approvedPeriodStartedAt: "2026-08-12T00:00:00.000Z",
-    approvedPeriodEndsAt: "2026-09-12T00:00:00.000Z",
-  });
-
-  assert.equal(projection.status, "active");
-  assert.equal(projection.currentPeriodEndsAt, "2026-09-12T00:00:00.000Z");
-  assert.equal(projection.cancellationEffectiveAt, "2026-09-12T00:00:00.000Z");
+  }), false);
 });
 
 test("una aprobación histórica nunca reduce un periodo vigente más largo", () => {

@@ -404,7 +404,7 @@ export class BillingRepository {
         last_error_message: null,
       })
       .eq("id", intentId)
-      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing"])
+      .in("status", ["created", "awaiting_customer", "awaiting_payment", "processing", "compensation_required"])
       .select("id")
       .maybeSingle<{ id: string }>();
 
@@ -548,6 +548,27 @@ export class BillingRepository {
 
     if (error) {
       throwDatabaseError(error, "No fue posible encontrar la suscripción externa activa.");
+    }
+
+    return data;
+  }
+
+  async findLatestProviderSubscriptionForSubscription(
+    subscriptionId: string,
+    companyId: string,
+  ): Promise<BillingProviderSubscriptionRecord | null> {
+    const { data, error } = await this.supabase
+      .from("billing_provider_subscriptions")
+      .select("id, company_id, subscription_id, billing_intent_id, provider, provider_subscription_id, external_reference, provider_status, recurring_amount_cop, currency, next_payment_at, ended_at")
+      .eq("subscription_id", subscriptionId)
+      .eq("company_id", companyId)
+      .eq("provider", "mercado_pago")
+      .order("ended_at", { ascending: false, nullsFirst: true })
+      .limit(1)
+      .maybeSingle<BillingProviderSubscriptionRecord>();
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible encontrar la suscripción externa más reciente.");
     }
 
     return data;
@@ -1144,7 +1165,7 @@ export class BillingRepository {
     retryAttempt: number;
     debitAt: string | null;
   }) {
-    const { error } = await this.supabase.rpc("apply_recurring_billing_payment_state", {
+    const { data, error } = await this.supabase.rpc("apply_recurring_billing_payment_state", {
       target_provider_subscription_record_id: providerSubscription.id,
       target_payment_id: payment.id,
       target_webhook_event_id: webhookEventId,
@@ -1159,6 +1180,8 @@ export class BillingRepository {
     if (error) {
       throwDatabaseError(error, "No fue posible actualizar el estado de la renovación.");
     }
+
+    return data === true;
   }
 
   async applyProviderSubscriptionState({

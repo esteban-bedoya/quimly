@@ -290,6 +290,15 @@ export function getSubscriptionViewStateLabel(subscriptionViewState: Subscriptio
   return "Activo";
 }
 
+export function canCancelSubscription(subscriptionViewState: SubscriptionViewState) {
+  return (
+    subscriptionViewState === "founder_active" ||
+    subscriptionViewState === "operational_active" ||
+    subscriptionViewState === "payment_issue" ||
+    subscriptionViewState === "suspended"
+  );
+}
+
 export function getPlanPaymentsVisualState({
   subscriptionViewState,
   planType,
