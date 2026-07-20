@@ -2,8 +2,7 @@ import Link from "next/link";
 
 import {
   CapacityResolutionForm,
-  CompanyBranchDeleteButton,
-  CompanyBranchStatusToggle,
+  CompanyBranchActionsMenu,
   CreateCompanyBranchForm,
   ScheduledDowngradeSelectionForm,
 } from "@/components/dashboard/admin-forms";
@@ -40,46 +39,57 @@ function PremiumStat({
   );
 }
 
+function AccessIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+    >
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+    </svg>
+  );
+}
+
 function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
-  const isOperative = branch.status === "active";
   const statusLabel = getSiteStatusLabel(branch.status);
 
   return (
     <article className="group rounded-[1.45rem] border border-[#eef1f2] bg-white p-5 shadow-[0_18px_44px_rgba(18,17,15,0.12)] transition duration-300 hover:-translate-y-0.5 hover:border-white hover:shadow-[0_24px_58px_rgba(18,17,15,0.16)]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div>
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] ${
-                branch.status === "active"
-                  ? "border-[#bde5e7] bg-[#effbfb] text-[#1c6a71]"
-                  : "border-[#ecd0c8] bg-[#fff1ee] text-[#8a2d1f]"
-              }`}
-            >
-              {statusLabel}
-            </span>
-          </div>
+          <div className="flex items-start justify-between gap-4 lg:items-center">
+            <div className="min-w-0">
+              <div className="space-y-1">
+                <span
+                  className={`text-[0.68rem] font-semibold uppercase tracking-[0.2em] ${
+                    branch.status === "active" ? "text-[#1c6a71]" : "text-[#8a2d1f]"
+                  }`}
+                >
+                  {statusLabel}
+                </span>
+                <h3 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-[#12110f]">{branch.name}</h3>
+              </div>
+            </div>
 
-          <div>
-            <h3 className="text-2xl font-semibold tracking-[-0.04em] text-[#12110f]">{branch.name}</h3>
-            <p className="mt-2 text-sm leading-7 text-[#5f5750]">{branch.companyName}</p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:items-end">
-          <Link
-            href={`/dashboard/sedes/${branch.companySlug}/${branch.slug}`}
-            className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#12110f] px-5 py-2.5 text-sm font-semibold text-white transition duration-300 hover:-translate-y-0.5 hover:bg-[#1d1b18]"
-          >
-            {isOperative ? "Ver operación" : "Ver historial"}
-          </Link>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <CompanyBranchStatusToggle
-              branchId={branch.id}
-              companySlug={branch.companySlug}
-              isActive={branch.isActive}
-            />
-            {!isOperative ? <CompanyBranchDeleteButton branch={branch} companySlug={branch.companySlug} /> : null}
+            <div className="flex shrink-0 items-center gap-1">
+              <Link
+                href={`/dashboard/sedes/${branch.companySlug}/${branch.slug}`}
+                aria-label={`Acceder a ${branch.name}`}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-2 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
+              >
+                <AccessIcon />
+                Acceder
+              </Link>
+              <CompanyBranchActionsMenu branch={branch} companySlug={branch.companySlug} />
+            </div>
           </div>
         </div>
       </div>

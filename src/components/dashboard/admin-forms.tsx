@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
@@ -658,6 +658,81 @@ export function CompanyBranchStatusToggle({
           Ampliar plan
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function EllipsisIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-6 w-6 shrink-0">
+      <path
+        d="M5 10h.01M10 10h.01M15 10h.01"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.6"
+      />
+    </svg>
+  );
+}
+
+export function CompanyBranchActionsMenu({
+  branch,
+  companySlug,
+}: {
+  branch: CompanyBranchSummary;
+  companySlug?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const closeMenu = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      {isOpen ? (
+        <div className="absolute right-0 top-full z-20 mt-2 grid min-w-52 gap-2 rounded-[1.1rem] border border-gray-200 bg-white/95 p-2 shadow-[0_10px_24px_rgba(18,17,15,0.12)] backdrop-blur-sm">
+          <CompanyBranchStatusToggle
+            branchId={branch.id}
+            companySlug={companySlug}
+            isActive={branch.isActive}
+          />
+          {branch.status !== "active" ? <CompanyBranchDeleteButton branch={branch} companySlug={companySlug} /> : null}
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-label={isOpen ? "Cerrar acciones de sede" : "Abrir acciones de sede"}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((currentValue) => !currentValue)}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-600 transition duration-200 ease-out hover:scale-110 hover:bg-gray-100 hover:text-gray-700"
+      >
+        <EllipsisIcon />
+      </button>
     </div>
   );
 }
