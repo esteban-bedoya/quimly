@@ -54,6 +54,12 @@ const openPlanPaymentsEventName = "quimly:open-plan-payments";
 const subscribeToHydration = () => () => {};
 const billingHelpWhatsAppUrl =
   "https://wa.me/573016143804?text=%C2%A1Hola%2C%20Quimly!%20Necesito%20ayuda%20con%20mis%20pagos.";
+const totalPayableTodayLabel = (
+  <span className="block">
+    <span className="block">Total a pagar hoy</span>
+    <span className="block text-xs leading-4 text-[#8a9298]">Ajuste proporcional por los días restantes</span>
+  </span>
+);
 
 const panelLabels: Record<DashboardMenuPanel, string> = {
   profile: "Mi perfil",
@@ -1036,7 +1042,23 @@ function PlanPaymentsDrawerContent({
     });
   };
 
-  return (
+  return isCancellationConfirmationOpen ? (
+    <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
+      <div>
+        <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
+        <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
+          Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
+        </p>
+      </div>
+      <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
+      <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
+        {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
+      </AdminDrawerButton>
+      <AdminDrawerButton onClick={() => setIsCancellationConfirmationOpen(false)} disabled={isLifecyclePending}>
+        Cancelar
+      </AdminDrawerButton>
+    </div>
+  ) : (
     <>
       {!isPaymentMethodFormOpen ? (
         <AdminDrawerSection
@@ -1217,20 +1239,26 @@ function PlanPaymentsDrawerContent({
                         label="Sedes"
                         value={`${capacityQuote.requestedMaxActiveLocations} ${capacityQuote.requestedMaxActiveLocations === 1 ? "sede" : "sedes"}`}
                       />
-                      <AdminDrawerSummaryRow
-                        label="Valor mensual"
-                        value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
-                      />
+                      {capacityQuote.changeType !== "upgrade" ? (
+                        <AdminDrawerSummaryRow
+                          label="Valor mensual"
+                          value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                        />
+                      ) : null}
                     </div>
                     {capacityQuote.changeType === "upgrade" ? (
                       <div className="grid gap-1 border-t border-[#cfe8d8] pt-3">
                         <AdminDrawerSummaryRow
-                          label="Cobro inmediato"
+                          label={totalPayableTodayLabel}
                           value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
                         />
                         <AdminDrawerSummaryRow
                           label="Próximo cobro mensual"
                           value={`${formatCopAmount(capacityQuote.requestedMonthlyTotalCop)} COP/mes`}
+                        />
+                        <AdminDrawerSummaryRow
+                          label="Próxima fecha de cobro"
+                          value={formatDateLabel(planPayments.nextChargeAt)}
                         />
                       </div>
                     ) : (
@@ -1288,7 +1316,7 @@ function PlanPaymentsDrawerContent({
                 />
                 {capacityQuote.changeType === "upgrade" ? (
                   <AdminDrawerSummaryRow
-                    label="Cobro inmediato"
+                    label={totalPayableTodayLabel}
                     value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
                   />
                 ) : (
@@ -1367,7 +1395,7 @@ function PlanPaymentsDrawerContent({
                 <>
                   {capacityQuote.changeType === "upgrade" ? (
                     <AdminDrawerSummaryRow
-                      label="Cobro inmediato"
+                      label={totalPayableTodayLabel}
                       value={`${formatCopAmount(capacityQuote.immediateChargeCop ?? 0)} COP`}
                     />
                   ) : null}
@@ -1468,34 +1496,16 @@ function PlanPaymentsDrawerContent({
           </>
         )}
         {visualState.isActivePlan && !isCancellationScheduled && !isPaymentMethodFormOpen ? (
-          isCancellationConfirmationOpen ? (
-            <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
-              <div>
-                <p id="cancel-plan-title" className="text-sm font-semibold text-[#6f271d]">Confirmar cancelación</p>
-                <p className="mt-1 text-sm leading-6 text-[#6d4b45]">
-                  Tu plan seguirá activo hasta la fecha de finalización del periodo pagado. Después no se realizarán nuevos cobros.
-                </p>
-              </div>
-              <AdminDrawerSummaryRow label="Acceso hasta" value={formatDateLabel(planPayments.nextChargeAt)} />
-              <AdminDrawerButton variant="primary" onClick={requestCancellation} disabled={isLifecyclePending}>
-                {isLifecyclePending ? "Cancelando..." : "Confirmar cancelación"}
-              </AdminDrawerButton>
-              <AdminDrawerButton onClick={() => setIsCancellationConfirmationOpen(false)} disabled={isLifecyclePending}>
-                Volver
-              </AdminDrawerButton>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setBillingLifecycleState(undefined);
-                setIsCancellationConfirmationOpen(true);
-              }}
-              className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
-            >
-              Cancelar plan
-            </button>
-          )
+          <button
+            type="button"
+            onClick={() => {
+              setBillingLifecycleState(undefined);
+              setIsCancellationConfirmationOpen(true);
+            }}
+            className="w-fit justify-self-center text-xs font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#5f1e15]"
+          >
+            Cancelar plan
+          </button>
         ) : null}
         <AdminDrawerFeedback state={billingLifecycleState} />
         </AdminDrawerSection>

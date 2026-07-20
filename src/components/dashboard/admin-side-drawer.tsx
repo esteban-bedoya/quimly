@@ -151,7 +151,7 @@ export function AdminDrawerField({
   );
 }
 
-export function AdminDrawerSummaryRow({ label, value }: { label: string; value: ReactNode }) {
+export function AdminDrawerSummaryRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[#e6eaed] pb-3 last:border-b-0 last:pb-0">
       <p className="text-sm leading-6 text-[#5e6770]">{label}</p>
