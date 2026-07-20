@@ -35,7 +35,7 @@ function PremiumStat({
   return (
     <div className={`h-full rounded-[1.15rem] border px-4 py-3 shadow-[0_20px_50px_rgba(18,17,15,0.08)] ${toneStyles[tone]}`}>
       <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] opacity-60">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.04em]">{value}</p>
+      <p className="mt-2 text-xl font-semibold tracking-[-0.04em]">{value}</p>
     </div>
   );
 }
@@ -198,9 +198,20 @@ export function CompanyAdminDashboard({
             ) : null}
 
             {companyForBranchCreation ? (
-              <details className="rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-[#12110f]">
-                  Agregar sede
+              <details className="group rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-2 text-sm font-semibold text-[#12110f] [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+                  <span className="inline-flex h-5 w-7 shrink-0 items-center justify-center text-[#5e6770]">
+                    <svg viewBox="0 0 12 12" aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-open:rotate-90">
+                      <path
+                        d="m4.25 2.75 4.25 3.25-4.25 3.25Z"
+                        fill="currentColor"
+                        stroke="currentColor"
+                        strokeLinejoin="round"
+                        strokeWidth="0.6"
+                      />
+                    </svg>
+                  </span>
+                  <span>Agregar sede</span>
                 </summary>
                 <div className="mt-4 border-t border-[#eef1f2] pt-4">
                   {!canCreateBranch ? (
