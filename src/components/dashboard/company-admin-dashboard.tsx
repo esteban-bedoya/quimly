@@ -169,9 +169,8 @@ export function CompanyAdminDashboard({
           <section id="sedes" className="grid gap-6 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div className="max-w-3xl space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Acceso directo</p>
                 <h2 className="text-base font-bold uppercase leading-6 tracking-[0.08em] text-[#2a7f86]">
-                  Sedes asociadas a tu operación
+                  Sedes asociadas a tu negocio
                 </h2>
                 <p className="max-w-2xl text-sm leading-6 text-[#5e6770]">
                   Selecciona una sede para mantener tu establecimiento siempre preparado ante auditorías e inspecciones.
