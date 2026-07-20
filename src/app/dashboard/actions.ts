@@ -19,7 +19,7 @@ import {
 } from "@/lib/billing/billing-service.server";
 import { createMercadoPagoBillingProvider } from "@/lib/billing/providers/mercado-pago.server";
 import { notificationService } from "@/lib/notifications/notification.service";
-import { normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
+import { isValidEmailAddress, normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -557,6 +557,34 @@ function canManageCompanySites(context: Awaited<ReturnType<typeof requireUserCon
   );
 }
 
+async function savePayerEmailToProfile({
+  userId,
+  currentEmail,
+  payerEmail,
+}: {
+  userId: string;
+  currentEmail: string | null;
+  payerEmail: string;
+}) {
+  if (payerEmail === normalizeOptionalEmail(currentEmail ?? "")) {
+    return null;
+  }
+
+  const adminClient = getSupabaseAdminClientOrThrow({ operation: "savePayerEmailToProfile" });
+  const { error } = await adminClient
+    .from("user_profiles")
+    .update({ email: payerEmail })
+    .eq("user_id", userId);
+
+  if (error) {
+    return formatDatabaseError(error, "No fue posible guardar tu correo electrónico.");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/plan-y-pagos");
+  return null;
+}
+
 async function requireCompanyBillingAdmin(companySlug: string) {
   const context = await requireUserContext();
 
@@ -664,9 +692,11 @@ async function requireOperatorAccess() {
 export async function startPlanActivation({
   companySlug,
   requestedMaxActiveLocations,
+  payerEmail: requestedPayerEmail,
 }: {
   companySlug: string;
   requestedMaxActiveLocations: number;
+  payerEmail?: string;
 }): Promise<StartPlanActivationResult> {
   const context = await requireUserContext();
 
@@ -674,10 +704,10 @@ export async function startPlanActivation({
     return { error: "La capacidad seleccionada no es válida." };
   }
 
-  const payerEmail = normalizeOptionalEmail(context.profile.email ?? "");
+  const payerEmail = normalizeOptionalEmail(requestedPayerEmail ?? "") ?? normalizeOptionalEmail(context.profile.email ?? "");
 
-  if (!payerEmail) {
-    return { error: "Agrega un correo electrónico válido en tu perfil antes de configurar el pago." };
+  if (!payerEmail || !isValidEmailAddress(payerEmail)) {
+    return { error: "Ingresa un correo electrónico válido para continuar con Mercado Pago." };
   }
 
   try {
@@ -691,6 +721,16 @@ export async function startPlanActivation({
 
     if (companyError || !company || !canManageCompanySites(context, company.id)) {
       return { error: "No tienes permisos para activar el plan de esta empresa." };
+    }
+
+    const profileEmailError = await savePayerEmailToProfile({
+      userId: context.profile.userId,
+      currentEmail: context.profile.email,
+      payerEmail,
+    });
+
+    if (profileEmailError) {
+      return { error: profileEmailError };
     }
 
     const billingService = createBillingService();
@@ -808,9 +848,11 @@ export async function getPlanCapacityChangeQuote({
 export async function startPlanUpgrade({
   companySlug,
   requestedMaxActiveLocations,
+  payerEmail: requestedPayerEmail,
 }: {
   companySlug: string;
   requestedMaxActiveLocations: number;
+  payerEmail?: string;
 }): Promise<StartCapacityChangeResult> {
   const context = await requireUserContext();
 
@@ -818,10 +860,10 @@ export async function startPlanUpgrade({
     return { error: "La capacidad seleccionada no es válida." };
   }
 
-  const payerEmail = normalizeOptionalEmail(context.profile.email ?? "");
+  const payerEmail = normalizeOptionalEmail(requestedPayerEmail ?? "") ?? normalizeOptionalEmail(context.profile.email ?? "");
 
-  if (!payerEmail) {
-    return { error: "Agrega un correo electrónico válido en tu perfil antes de ampliar el plan." };
+  if (!payerEmail || !isValidEmailAddress(payerEmail)) {
+    return { error: "Ingresa un correo electrónico válido para continuar con Mercado Pago." };
   }
 
   try {
@@ -835,6 +877,16 @@ export async function startPlanUpgrade({
 
     if (companyError || !company || !canManageCompanySites(context, company.id)) {
       return { error: "No tienes permisos para ampliar el plan de esta empresa." };
+    }
+
+    const profileEmailError = await savePayerEmailToProfile({
+      userId: context.profile.userId,
+      currentEmail: context.profile.email,
+      payerEmail,
+    });
+
+    if (profileEmailError) {
+      return { error: profileEmailError };
     }
 
     const billingService = createBillingService();

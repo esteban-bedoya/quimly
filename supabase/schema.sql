@@ -744,7 +744,7 @@ where not exists (
 
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users (id) on delete cascade,
-  email text unique,
+  email text,
   full_name text,
   phone text not null,
   phone_verified boolean not null default false,
@@ -765,6 +765,9 @@ alter column phone set not null;
 
 alter table if exists public.user_profiles
 alter column email drop not null;
+
+alter table if exists public.user_profiles
+drop constraint if exists user_profiles_email_key;
 
 alter table if exists public.user_profiles
 drop constraint if exists user_profiles_email_lowercase;

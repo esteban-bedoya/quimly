@@ -83,6 +83,11 @@ export function normalizeOptionalEmail(value: string) {
   return normalizedEmail || null;
 }
 
+export function isValidEmailAddress(value: string) {
+  const email = normalizeOptionalEmail(value);
+  return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
 export function formatPhoneForWhatsApp(value: string) {
   const phone = normalizePhoneNumber(value);
   return phone ? `whatsapp:${phone}` : null;

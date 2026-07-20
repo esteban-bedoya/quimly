@@ -16,6 +16,7 @@ import {
   updateCurrentUserProfile,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
+import { isValidEmailAddress } from "@/lib/phone";
 import {
   AdminDrawerButton,
   AdminDrawerFeedback,
@@ -834,8 +835,10 @@ function getPendingOperationMessage(operation: PendingPlanOperation) {
 
 function PlanPaymentsDrawerContent({
   planPayments,
+  profileEmail,
 }: {
   planPayments: PlanPaymentsData;
+  profileEmail: string | null;
 }) {
   const router = useRouter();
   const visualState = getPlanPaymentsVisualState({
@@ -854,6 +857,7 @@ function PlanPaymentsDrawerContent({
   const [planChangeMode, setPlanChangeMode] = useState<PlanChangeMode>("activation");
   const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [checkoutEmail, setCheckoutEmail] = useState(profileEmail ?? "");
   const [planChangeSuccess, setPlanChangeSuccess] = useState<string | null>(null);
   const [capacityQuote, setCapacityQuote] = useState<CapacityChangeQuote | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingPlanOperation | null>(null);
@@ -925,6 +929,8 @@ function PlanPaymentsDrawerContent({
       : selectedSiteCount < planPayments.maxActiveLocations
         ? "downgrade"
         : "unchanged";
+  const requiresMercadoPagoCheckout = visualState.isTrial || isReactivationFlow || capacityChangeDirection === "upgrade";
+  const shouldCollectCheckoutEmail = requiresMercadoPagoCheckout && !isValidEmailAddress(profileEmail ?? "");
   const hasCurrentCapacityQuote =
     capacityQuote?.requestedMaxActiveLocations === selectedSiteCount &&
     capacityQuote.changeType === capacityChangeDirection;
@@ -1051,6 +1057,11 @@ function PlanPaymentsDrawerContent({
       return;
     }
 
+    if (requiresMercadoPagoCheckout && !isValidEmailAddress(checkoutEmail)) {
+      setActivationError("Ingresa un correo electrónico válido para continuar con Mercado Pago.");
+      return;
+    }
+
     startActivationTransition(async () => {
       const result: {
         checkoutUrl?: string;
@@ -1061,11 +1072,13 @@ function PlanPaymentsDrawerContent({
         ? await startPlanActivation({
             companySlug,
             requestedMaxActiveLocations: selectedSiteCount,
+            payerEmail: checkoutEmail,
           })
         : capacityChangeDirection === "upgrade"
           ? await startPlanUpgrade({
               companySlug,
               requestedMaxActiveLocations: selectedSiteCount,
+              payerEmail: checkoutEmail,
             })
           : capacityChangeDirection === "downgrade"
             ? await schedulePlanDowngrade({
@@ -1130,14 +1143,12 @@ function PlanPaymentsDrawerContent({
               "Cambiar número de sedes"
             ) : isReactivationFlow ? (
               "Reactivar plan"
-            ) : isActivationMode ? (
-              "Plan actual"
-            ) : (
+            ) : !isActivationMode ? (
               <span className="inline-flex flex-wrap items-baseline gap-2">
                 <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Plan actual:</span>
                 <span>{visualState.title}</span>
               </span>
-            )
+            ) : undefined
           }
         >
         {!isActivationMode ? (
@@ -1483,13 +1494,39 @@ function PlanPaymentsDrawerContent({
                 </>
               ) : (
                 <>
-                  <AdminDrawerSummaryRow label="Plan" value={activationPlanName} />
+                  <AdminDrawerSummaryRow
+                    label="Plan"
+                    value={`${activationPlanName} - ${selectedSiteCount} ${selectedSiteCount === 1 ? "sede" : "sedes"}`}
+                  />
                   <AdminDrawerSummaryRow
                     label="Valor mensual"
                     value={`${formatCopAmount(activationMonthlyTotal)} COP/mes`}
                   />
                 </>
               )}
+              {shouldCollectCheckoutEmail ? (
+                <div className="rounded-2xl border border-[#d9dfe0] bg-[#f7f8f9] px-4 py-3">
+                  <label htmlFor="checkoutEmail" className="ui-form-field">
+                    <span className="ui-form-label">Correo electrónico</span>
+                    <input
+                      id="checkoutEmail"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      value={checkoutEmail}
+                      onChange={(event) => {
+                        setCheckoutEmail(event.target.value);
+                        setActivationError(null);
+                      }}
+                      placeholder="nombre@empresa.com"
+                      className={adminDrawerInputClassName}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs leading-5 text-[#5e6770]">
+                    Lo usaremos para crear tu suscripción con Mercado Pago y también lo guardaremos en tu perfil.
+                  </p>
+                </div>
+              ) : null}
               {activationError ? <AdminDrawerFeedback state={{ error: activationError }} /> : null}
               {planChangeSuccess ? <AdminDrawerFeedback state={{ success: planChangeSuccess }} /> : null}
               <AdminDrawerButton
@@ -1714,7 +1751,7 @@ export function DashboardHeaderMenu({
       >
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "planPayments" ? (
-          <PlanPaymentsDrawerContent planPayments={planPayments} />
+          <PlanPaymentsDrawerContent planPayments={planPayments} profileEmail={profile.email} />
         ) : null}
       </AdminSideDrawer>
       {activePanel === "planPayments" && isPlanPaymentsWelcomeOpen ? (
