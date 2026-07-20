@@ -92,12 +92,10 @@ export function CompanyAdminDashboard({
   profile,
   branches,
   planPayments,
-  initialPlanPaymentsOpen = false,
 }: {
   profile: UserProfile;
   branches: AccessibleBranchSummary[];
   planPayments: PlanPaymentsData;
-  initialPlanPaymentsOpen?: boolean;
 }) {
   const activeBranches = branches.filter((branch) => branch.status === "active");
   const canCreateBranch = planPayments.accountCapabilities.canCreateBranch;
@@ -127,7 +125,6 @@ export function CompanyAdminDashboard({
           <DashboardHeaderMenu
             profile={profile}
             planPayments={planPayments}
-            initialPlanPaymentsOpen={initialPlanPaymentsOpen}
           />
 
           <div className="flex flex-col gap-4 lg:items-start">

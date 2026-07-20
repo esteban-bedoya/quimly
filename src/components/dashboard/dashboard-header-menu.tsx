@@ -875,6 +875,8 @@ function PlanPaymentsDrawerContent({
     : getDefaultBaseMonthlyPriceCop(activationPlanType);
   const activationPlanName = activationPlanType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
+  const selectedAdditionalSitesMonthlyTotal =
+    selectedAdditionalSites * planPayments.additionalSiteMonthlyPriceCop;
   const scheduledCapacityChange = planPayments.scheduledCapacityChange;
   const activationMonthlyTotal = planChangeMode === "capacity"
       ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
@@ -908,13 +910,15 @@ function PlanPaymentsDrawerContent({
   const isActivationMode = activationStep !== null;
   const isReactivationFlow = isActivationMode && planPayments.subscriptionViewState === "cancelled";
   const isCapacityChangeMode = planChangeMode === "capacity";
-  const paymentStatusClassName = paymentStatusLabel === "Cancelación programada" || paymentStatusLabel === "Prueba finalizada" || paymentStatusLabel === "Cancelado" || paymentStatusLabel === "Suspendido"
-    ? "border-[#ecd0c8] bg-[#fff6f3] text-[#8a2d1f]"
-    : visualState.isActivePlan
-    ? "border-[#9edfc1]/70 bg-[#e8f7ef] text-[#21734f]"
-    : paymentStatusLabel === "Pago pendiente"
-      ? "border-[#edcf92] bg-[#fff8e9] text-[#8f5b15]"
-      : "border-[#c8e2e5] bg-[#effafb] text-[#277581]";
+  const paymentStatusDotClassName = paymentStatusLabel === "Cancelación programada"
+    ? "bg-[#c4874f]"
+    : paymentStatusLabel === "Prueba finalizada" || paymentStatusLabel === "Cancelado" || paymentStatusLabel === "Suspendido"
+      ? "bg-[#bc7568]"
+      : visualState.isActivePlan
+        ? "bg-[#5fa57b]"
+        : paymentStatusLabel === "Pago pendiente"
+          ? "bg-[#c99a3f]"
+          : "bg-[#5e9da5]";
   const capacityChangeDirection =
     selectedSiteCount > planPayments.maxActiveLocations
       ? "upgrade"
@@ -1147,7 +1151,8 @@ function PlanPaymentsDrawerContent({
               <p className={`${visualState.eyebrow ? "mt-3" : ""} text-sm leading-6 text-[#5e6770]`}>
                 {paymentStatusMessage}
               </p>
-              <div className={`mt-2 inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${paymentStatusClassName}`}>
+              <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-full border border-[#dfe4e6] bg-[#f7f8f9] px-3 py-1.5 text-sm font-semibold text-[#56616a]">
+                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${paymentStatusDotClassName}`} />
                 <span>Estado: {paymentStatusLabel}</span>
               </div>
             </div>
@@ -1338,14 +1343,22 @@ function PlanPaymentsDrawerContent({
                 )
               ) : (
                 <div className="rounded-2xl border border-[#9edfc1]/40 bg-[#f3fbf6] px-4 py-3">
-                  <p className="text-sm leading-6 text-[#5e6770]">{activationPlanName}</p>
-                  <p className="text-2xl font-semibold tracking-[-0.05em] text-[#21734f]">
-                    {formatCopAmount(activationMonthlyTotal)} COP/mes
-                  </p>
-                  <div className="mt-3 grid gap-1 text-sm leading-6 text-[#315e43]">
-                    <p>{planPayments.includedActiveSites} sede incluida en tu plan</p>
-                    <p>+ {selectedAdditionalSites} sedes adicionales</p>
+                  <div className="grid gap-1 text-sm leading-6 text-[#315e43]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
+                      <span>
+                        {planPayments.includedActiveSites} {planPayments.includedActiveSites === 1 ? "sede base" : "sedes base"}
+                      </span>
+                      <span>{formatCopAmount(activationBaseMonthlyPriceCop)}</span>
+                    </div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
+                      <span>+ {selectedAdditionalSites} sedes adicionales</span>
+                      <span>{formatCopAmount(selectedAdditionalSitesMonthlyTotal)}</span>
+                    </div>
                   </div>
+                  <p className="mt-3 flex items-baseline justify-end gap-1 text-2xl font-semibold tracking-[-0.05em] text-[#21734f]">
+                    <span>{formatCopAmount(activationMonthlyTotal)}</span>
+                    <span className="text-base">COP/mes</span>
+                  </p>
                 </div>
               )}
 
@@ -1526,17 +1539,12 @@ function PlanPaymentsDrawerContent({
             />
           </>
         ) : visualState.isTrial ? (
-          <>
-            <div>
-              <p className="text-sm font-semibold leading-6 text-[#12110f]">Aún no tienes un método de pago configurado.</p>
-              <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-                Configura {paymentProviderLabel} para activar tu plan.
-              </p>
-            </div>
-            <AdminDrawerButton variant="primary" onClick={openActivationFlow}>
-              Configurar pago
-            </AdminDrawerButton>
-          </>
+          <div>
+            <p className="text-sm font-semibold leading-6 text-[#12110f]">Aún no tienes un método de pago configurado.</p>
+            <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+              Activa tu plan para continuar con Mercado Pago.
+            </p>
+          </div>
         ) : (
           <>
             {planPayments.subscriptionViewState === "suspended" ? <SuspendedPaymentRecoveryNotice /> : null}
@@ -1599,18 +1607,13 @@ function PlanPaymentsDrawerContent({
 export function DashboardHeaderMenu({
   profile,
   planPayments,
-  initialPlanPaymentsOpen = false,
 }: {
   profile: UserProfile;
   planPayments: PlanPaymentsData;
-  initialPlanPaymentsOpen?: boolean;
 }) {
-  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(
-    initialPlanPaymentsOpen ? "planPayments" : null,
-  );
-  const [isPlanPaymentsWelcomeOpen, setIsPlanPaymentsWelcomeOpen] = useState(initialPlanPaymentsOpen);
+  const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(null);
+  const [isPlanPaymentsWelcomeOpen, setIsPlanPaymentsWelcomeOpen] = useState(false);
 
   useEffect(() => {
     const closeMenu = () => setIsMenuOpen(false);
@@ -1687,7 +1690,6 @@ export function DashboardHeaderMenu({
                 type="button"
                 onClick={() => {
                   openPanel("planPayments");
-                  router.push("/dashboard/plan-y-pagos");
                 }}
                 className={menuItemClass}
               >
