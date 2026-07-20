@@ -5,6 +5,7 @@ import {
   CompanyBranchDeleteButton,
   CompanyBranchStatusToggle,
   CreateCompanyBranchForm,
+  ScheduledDowngradeSelectionForm,
 } from "@/components/dashboard/admin-forms";
 import { DashboardHeaderMenu } from "@/components/dashboard/dashboard-header-menu";
 import {
@@ -100,6 +101,8 @@ export function CompanyAdminDashboard({
   const branchCreationBlockedMessage = getBranchCreationBlockedMessage(planPayments.subscriptionViewState);
   const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
   const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
+  const scheduledDowngrade =
+    planPayments.scheduledCapacityChange?.changeType === "downgrade" ? planPayments.scheduledCapacityChange : null;
   const nextMonthlyTotalCop = calculatePlanMonthlyTotalCop({
     planType: planPayments.planType,
     siteCount: planPayments.maxActiveLocations,
@@ -124,6 +127,7 @@ export function CompanyAdminDashboard({
           <DashboardHeaderMenu
             profile={profile}
             planPayments={planPayments}
+            branches={branches}
           />
 
           <div className="flex flex-col gap-4 lg:items-start">
@@ -181,6 +185,17 @@ export function CompanyAdminDashboard({
                 />
               </div>
             </div>
+
+            {scheduledDowngrade && planPayments.companySlug ? (
+              <ScheduledDowngradeSelectionForm
+                key={`${scheduledDowngrade.id}:${activeBranches.map((branch) => branch.id).join(":")}`}
+                activeBranches={activeBranches}
+                companySlug={planPayments.companySlug}
+                effectiveAt={scheduledDowngrade.effectiveAt}
+                maxBranches={scheduledDowngrade.requestedMaxActiveLocations}
+                selectedBranchIds={scheduledDowngrade.selectedBranchIds}
+              />
+            ) : null}
 
             {companyForBranchCreation ? (
               <details className="rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">

@@ -946,9 +946,11 @@ export async function startPlanUpgrade({
 export async function schedulePlanDowngrade({
   companySlug,
   requestedMaxActiveLocations,
+  selectedBranchIds,
 }: {
   companySlug: string;
   requestedMaxActiveLocations: number;
+  selectedBranchIds: string[];
 }): Promise<StartCapacityChangeResult> {
   const context = await requireUserContext();
 
@@ -976,6 +978,7 @@ export async function schedulePlanDowngrade({
       requestedMaxActiveLocations,
       requestedBy: context.profile.userId,
       provider,
+      selectedBranchIds,
     });
 
     revalidatePath("/dashboard");
@@ -991,6 +994,36 @@ export async function schedulePlanDowngrade({
     logAdminActionError("billing.downgrade_schedule_failed", error, { companySlug });
     return {
       error: error instanceof Error ? error.message : "No fue posible programar la reducción de capacidad.",
+    };
+  }
+}
+
+export async function updateScheduledDowngradeBranches({
+  companySlug,
+  selectedBranchIds,
+}: {
+  companySlug: string;
+  selectedBranchIds: string[];
+}): Promise<AdminActionState> {
+  if (!companySlug || !Array.isArray(selectedBranchIds)) {
+    return { error: "La selección de sedes no es válida." };
+  }
+
+  try {
+    const { company } = await requireCompanyBillingAdmin(companySlug);
+    const billingService = createBillingService();
+    await billingService.updateScheduledDowngradeSelection({
+      companyId: company.id,
+      selectedBranchIds,
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/plan-y-pagos");
+    return { success: "Las sedes seleccionadas fueron actualizadas." };
+  } catch (error) {
+    logAdminActionError("billing.downgrade_selection_update_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible actualizar las sedes seleccionadas.",
     };
   }
 }

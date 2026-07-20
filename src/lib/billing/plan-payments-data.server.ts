@@ -39,7 +39,18 @@ type SubscriptionCapacityChangeRow = {
   status: "scheduled" | "applied" | "cancelled";
   effective_at: string;
   created_at: string;
+  metadata: Record<string, unknown> | null;
 };
+
+function getScheduledSelection(metadata: Record<string, unknown> | null) {
+  const selectedBranchIds = metadata?.selectedBranchIds;
+
+  if (!Array.isArray(selectedBranchIds)) {
+    return [];
+  }
+
+  return [...new Set(selectedBranchIds.filter((branchId): branchId is string => typeof branchId === "string"))];
+}
 
 function buildPlanPaymentsData({
   branches,
@@ -111,6 +122,7 @@ function buildPlanPaymentsData({
           status: scheduledCapacityChange.status,
           effectiveAt: scheduledCapacityChange.effective_at,
           createdAt: scheduledCapacityChange.created_at,
+          selectedBranchIds: getScheduledSelection(scheduledCapacityChange.metadata),
         } satisfies ScheduledCapacityChange)
       : null,
   };
@@ -137,7 +149,7 @@ export async function getCompanyAdminPlanPaymentsData(
       .maybeSingle<CompanySubscriptionRow>(),
     supabase
       .from("subscription_capacity_changes")
-      .select("id, requested_max_active_locations, change_type, status, effective_at, created_at")
+      .select("id, requested_max_active_locations, change_type, status, effective_at, created_at, metadata")
       .eq("company_id", companyId)
       .eq("status", "scheduled")
       .order("effective_at", { ascending: true })

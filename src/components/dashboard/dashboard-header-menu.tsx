@@ -9,6 +9,7 @@ import {
   getPlanCapacityChangeQuote,
   cancelCompanyPlan,
   schedulePlanDowngrade,
+  updateScheduledDowngradeBranches,
   sendCurrentUserPhoneChangeOTP,
   startPlanActivation,
   startPlanUpgrade,
@@ -43,7 +44,7 @@ import type {
   CurrentUserProfileDetailsState,
   PlanCapacityChangeQuoteResult,
 } from "@/app/dashboard/actions";
-import type { UserProfile } from "@/types/auth";
+import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
 
 const menuItemClass =
   "inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16";
@@ -85,7 +86,7 @@ type PasswordFormData = {
 
 type ProfileFieldKey = keyof ProfileFormData;
 type ProfileEditableFieldKey = ProfileFieldKey | "password";
-type PlanActivationStep = "sites" | "confirm" | "payment";
+type PlanActivationStep = "sites" | "branches" | "confirm" | "payment";
 type PlanChangeMode = "activation" | "capacity";
 
 const emptyPasswordFormData = {
@@ -231,14 +232,6 @@ function InfoTooltip({
         {message}
       </span>
     </span>
-  );
-}
-
-function SuspendedPaymentRecoveryNotice() {
-  return (
-    <p className="rounded-xl border border-[#edcf92] bg-[#fff8e9] px-3 py-2.5 text-sm leading-6 text-[#6d5218]">
-      Actualizar tu método de pago no restablece el acceso de inmediato. Mercado Pago volverá a intentar el cobro y reactivaremos tu plan cuando lo confirme.
-    </p>
   );
 }
 
@@ -836,9 +829,11 @@ function getPendingOperationMessage(operation: PendingPlanOperation) {
 function PlanPaymentsDrawerContent({
   planPayments,
   profileEmail,
+  branches,
 }: {
   planPayments: PlanPaymentsData;
   profileEmail: string | null;
+  branches: AccessibleBranchSummary[];
 }) {
   const router = useRouter();
   const visualState = getPlanPaymentsVisualState({
@@ -847,12 +842,7 @@ function PlanPaymentsDrawerContent({
     baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
   });
   const minimumActivationSiteCount = Math.max(planPayments.includedActiveSites, 1);
-  const minimumRecoverySiteCount = Math.max(
-    planPayments.activeSites,
-    planPayments.includedActiveSites,
-    planPayments.maxActiveLocations,
-  );
-  const minimumSiteCount = visualState.isTrial ? minimumActivationSiteCount : minimumRecoverySiteCount;
+  const minimumSiteCount = minimumActivationSiteCount;
   const [activationStep, setActivationStep] = useState<PlanActivationStep | null>(null);
   const [planChangeMode, setPlanChangeMode] = useState<PlanChangeMode>("activation");
   const [selectedSiteCount, setSelectedSiteCount] = useState(minimumSiteCount);
@@ -866,9 +856,13 @@ function PlanPaymentsDrawerContent({
   const [billingLifecycleState, setBillingLifecycleState] = useState<AdminActionState | undefined>(undefined);
   const [cancellationEffectiveOverride, setCancellationEffectiveOverride] = useState<string | null>(null);
   const [isImmediateCancellationOverride, setIsImmediateCancellationOverride] = useState(false);
+  const [selectedDowngradeBranchIds, setSelectedDowngradeBranchIds] = useState<string[]>([]);
+  const [isEditingScheduledSelection, setIsEditingScheduledSelection] = useState(false);
+  const [scheduledSelectionState, setScheduledSelectionState] = useState<AdminActionState | undefined>(undefined);
   const [isActivationPending, startActivationTransition] = useTransition();
   const [isQuotePending, startQuoteTransition] = useTransition();
   const [isLifecyclePending, startLifecycleTransition] = useTransition();
+  const [isScheduledSelectionPending, startScheduledSelectionTransition] = useTransition();
   const capacityQuoteRequestRef = useRef(0);
   const activationPlanType = getEffectivePlanType({
     planType: planPayments.planType,
@@ -882,6 +876,8 @@ function PlanPaymentsDrawerContent({
   const selectedAdditionalSitesMonthlyTotal =
     selectedAdditionalSites * planPayments.additionalSiteMonthlyPriceCop;
   const scheduledCapacityChange = planPayments.scheduledCapacityChange;
+  const activeBranches = branches.filter((branch) => branch.status === "active");
+  const activeBranchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
   const activationMonthlyTotal = planChangeMode === "capacity"
       ? capacityQuote?.requestedMonthlyTotalCop ?? planPayments.monthlyTotalCop
     : calculatePlanMonthlyTotalCop({
@@ -912,7 +908,9 @@ function PlanPaymentsDrawerContent({
         ? `Tu negocio sigue protegido mientras Mercado Pago reintenta el cobro hasta el ${formatDateLabel(planPayments.paymentGraceEndsAt)}. Actualiza tu método de pago para evitar la suspensión.`
         : visualState.message;
   const isActivationMode = activationStep !== null;
-  const isReactivationFlow = isActivationMode && planPayments.subscriptionViewState === "cancelled";
+  const isReactivationFlow =
+    isActivationMode &&
+    (planPayments.subscriptionViewState === "cancelled" || planPayments.subscriptionViewState === "suspended");
   const isCapacityChangeMode = planChangeMode === "capacity";
   const paymentStatusDotClassName = paymentStatusLabel === "Cancelación programada"
     ? "bg-[#c4874f]"
@@ -937,6 +935,15 @@ function PlanPaymentsDrawerContent({
   const minimumSelectableSiteCount = isCapacityChangeMode
     ? Math.max(planPayments.includedActiveSites, 1)
     : minimumSiteCount;
+
+  const downgradeNeedsBranchSelection =
+    isCapacityChangeMode &&
+    capacityChangeDirection === "downgrade" &&
+    activeBranches.length > 0;
+  const requiredDowngradeSelectionCount = Math.min(activeBranches.length, selectedSiteCount);
+  const scheduledDowngradeNeedsBranchSelection =
+    scheduledCapacityChange?.changeType === "downgrade" &&
+    activeBranches.length > scheduledCapacityChange.requestedMaxActiveLocations;
 
   const handlePaymentMethodCompleted = useCallback((state: AdminActionState) => {
     setBillingLifecycleState(state);
@@ -1019,6 +1026,7 @@ function PlanPaymentsDrawerContent({
     setPlanChangeSuccess(null);
     setCapacityQuote(null);
     setPendingOperation(null);
+    setSelectedDowngradeBranchIds([]);
     setActivationStep("sites");
     requestCapacityQuote(planPayments.maxActiveLocations);
   };
@@ -1028,9 +1036,11 @@ function PlanPaymentsDrawerContent({
     setCapacityQuote(null);
     setPendingOperation(null);
     setActivationError(null);
+    setSelectedDowngradeBranchIds([]);
   };
   const updateSelectedSiteCount = (nextValue: number) => {
     setSelectedSiteCount(nextValue);
+    setSelectedDowngradeBranchIds([]);
 
     if (isCapacityChangeMode) {
       requestCapacityQuote(nextValue);
@@ -1039,6 +1049,55 @@ function PlanPaymentsDrawerContent({
   const increaseSites = () => updateSelectedSiteCount(selectedSiteCount + 1);
   const decreaseSites = () =>
     updateSelectedSiteCount(Math.max(minimumSelectableSiteCount, selectedSiteCount - 1));
+  const toggleDowngradeBranchSelection = (branchId: string) => {
+    const targetCount = isEditingScheduledSelection
+      ? scheduledCapacityChange?.requestedMaxActiveLocations ?? 0
+      : selectedSiteCount;
+
+    setSelectedDowngradeBranchIds((currentBranchIds) => {
+      if (currentBranchIds.includes(branchId)) {
+        return currentBranchIds.filter((currentBranchId) => currentBranchId !== branchId);
+      }
+
+      if (currentBranchIds.length >= targetCount) {
+        return currentBranchIds;
+      }
+
+      return [...currentBranchIds, branchId];
+    });
+  };
+  const openScheduledSelectionEditor = () => {
+    if (!scheduledCapacityChange) {
+      return;
+    }
+
+    setActivationError(null);
+    setScheduledSelectionState(undefined);
+    const activeBranchIdSet = new Set(activeBranches.map((branch) => branch.id));
+    setSelectedDowngradeBranchIds(scheduledCapacityChange.selectedBranchIds.filter((branchId) => activeBranchIdSet.has(branchId)));
+    setIsEditingScheduledSelection(true);
+  };
+  const saveScheduledSelection = () => {
+    const companySlug = planPayments.companySlug;
+
+    if (!companySlug || !scheduledCapacityChange) {
+      setScheduledSelectionState({ error: "No fue posible identificar la reducción programada." });
+      return;
+    }
+
+    startScheduledSelectionTransition(async () => {
+      const result = await updateScheduledDowngradeBranches({
+        companySlug,
+        selectedBranchIds: selectedDowngradeBranchIds,
+      });
+      setScheduledSelectionState(result);
+
+      if (result.success) {
+        setIsEditingScheduledSelection(false);
+        router.refresh();
+      }
+    });
+  };
   const startMercadoPagoCheckout = () => {
     if (!visualState.isTrial && !isReactivationFlow && !isCapacityChangeMode) {
       setActivationError("Este flujo de pago no está disponible para el estado actual del plan.");
@@ -1084,6 +1143,7 @@ function PlanPaymentsDrawerContent({
             ? await schedulePlanDowngrade({
                 companySlug,
                 requestedMaxActiveLocations: selectedSiteCount,
+                selectedBranchIds: selectedDowngradeBranchIds,
               })
             : { error: "Selecciona una capacidad diferente a la actual." };
 
@@ -1107,6 +1167,78 @@ function PlanPaymentsDrawerContent({
       setActivationError(result.error ?? "No fue posible preparar el pago con Mercado Pago.");
     });
   };
+
+  if (isEditingScheduledSelection && scheduledCapacityChange) {
+    const targetCount = scheduledCapacityChange.requestedMaxActiveLocations;
+    const selectedCount = selectedDowngradeBranchIds.length;
+
+    return (
+      <>
+        <AdminDrawerSection title="Sedes que permanecerán activas">
+          <div className="grid gap-4">
+            <div>
+              <p className="text-sm leading-6 text-[#5e6770]">
+                Elige las {targetCount} sede{targetCount === 1 ? "" : "s"} que conservarán la operación cuando Mercado Pago confirme la próxima renovación.
+              </p>
+              <p className="mt-2 text-xs leading-5 text-[#8a9298]">
+                Puedes cambiar esta selección hasta el {formatDateLabel(scheduledCapacityChange.effectiveAt)}. Todas las sedes continúan operando mientras llega esa fecha.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              {activeBranches.map((branch) => {
+                const isSelected = selectedDowngradeBranchIds.includes(branch.id);
+                const isDisabled = !isSelected && selectedCount >= targetCount;
+
+                return (
+                  <label
+                    key={branch.id}
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-[#12110f] transition ${
+                      isSelected ? "border-[#21734f] shadow-[0_10px_28px_rgba(33,115,79,0.12)]" : "border-[#d9dfe0]"
+                    } ${isDisabled ? "opacity-50" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isDisabled || isScheduledSelectionPending}
+                      onChange={() => toggleDowngradeBranchSelection(branch.id)}
+                      className="h-4 w-4 accent-[#21734f]"
+                    />
+                    <span>{branch.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-sm leading-6 text-[#6f5a2f]">Seleccionadas: {selectedCount} / {targetCount}</p>
+            <AdminDrawerFeedback state={scheduledSelectionState} />
+            <AdminDrawerButton
+              variant="primary"
+              onClick={saveScheduledSelection}
+              disabled={isScheduledSelectionPending || selectedCount !== targetCount}
+            >
+              {isScheduledSelectionPending ? "Guardando..." : "Guardar selección"}
+            </AdminDrawerButton>
+            <AdminDrawerButton
+              onClick={() => {
+                setIsEditingScheduledSelection(false);
+                setScheduledSelectionState(undefined);
+              }}
+              disabled={isScheduledSelectionPending}
+            >
+              Volver
+            </AdminDrawerButton>
+          </div>
+        </AdminDrawerSection>
+        <div className="border-t border-[#e6eaed] pt-4 text-left">
+          <p className="text-xs leading-6 text-[#6a665f]">
+            ¿Necesitas ayuda con tus pagos? Escríbenos por{" "}
+            <a href={billingHelpWhatsAppUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2a7f86] transition hover:text-[#12110f]">
+              WhatsApp
+            </a>
+          </p>
+        </div>
+      </>
+    );
+  }
 
   return isCancellationConfirmationOpen ? (
     <div role="group" aria-labelledby="cancel-plan-title" className="grid gap-3 rounded-2xl border border-[#ecd0c8] bg-[#fff6f3] px-4 py-4">
@@ -1204,6 +1336,25 @@ function PlanPaymentsDrawerContent({
                   value={`${scheduledCapacityChange.requestedMaxActiveLocations} sede${scheduledCapacityChange.requestedMaxActiveLocations === 1 ? "" : "s"}`}
                 />
                 <AdminDrawerSummaryRow label="Fecha efectiva" value={formatDateLabel(scheduledCapacityChange.effectiveAt)} />
+                {scheduledCapacityChange.changeType === "downgrade" && scheduledDowngradeNeedsBranchSelection ? (
+                  <>
+                    <div className="grid gap-1 border-t border-[#ead8b6] pt-3 text-sm leading-6 text-[#5f5750]">
+                      <span className="font-semibold text-[#12110f]">Sedes que permanecerán activas</span>
+                      {scheduledCapacityChange.selectedBranchIds.length ? (
+                        <ul className="list-disc pl-5">
+                          {scheduledCapacityChange.selectedBranchIds.map((branchId) => (
+                            <li key={branchId}>{activeBranchNames.get(branchId) ?? "Sede no disponible"}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span>Debes elegir las sedes antes de la fecha efectiva.</span>
+                      )}
+                    </div>
+                    <AdminDrawerButton variant="secondary" onClick={openScheduledSelectionEditor}>
+                      {scheduledCapacityChange.selectedBranchIds.length ? "Modificar sedes seleccionadas" : "Elegir sedes seleccionadas"}
+                    </AdminDrawerButton>
+                  </>
+                ) : null}
               </div>
             ) : null}
 
@@ -1273,7 +1424,9 @@ function PlanPaymentsDrawerContent({
             <>
               <div>
                 <p className="text-sm leading-6 text-[#5e6770]">
-                  Actualmente tienes {planPayments.maxActiveLocations} {planPayments.maxActiveLocations === 1 ? "sede contratada" : "sedes contratadas"}.
+                  {visualState.isTrial || isReactivationFlow
+                    ? "Elige cuántas sedes deseas incluir en tu plan. Podrás activar las sedes después de que Mercado Pago confirme el pago."
+                    : `Actualmente tienes ${planPayments.maxActiveLocations} ${planPayments.maxActiveLocations === 1 ? "sede contratada" : "sedes contratadas"}.`}
                 </p>
               </div>
 
@@ -1375,7 +1528,7 @@ function PlanPaymentsDrawerContent({
 
               <AdminDrawerButton
                 variant="primary"
-                onClick={() => setActivationStep("confirm")}
+                onClick={() => setActivationStep(downgradeNeedsBranchSelection ? "branches" : "confirm")}
                 disabled={
                   isCapacityChangeMode &&
                   (capacityChangeDirection === "unchanged" || !hasCurrentCapacityQuote || Boolean(pendingOperation) || isQuotePending)
@@ -1384,6 +1537,52 @@ function PlanPaymentsDrawerContent({
                 Continuar
               </AdminDrawerButton>
               <AdminDrawerButton onClick={closePlanConfigurationFlow}>Cancelar</AdminDrawerButton>
+            </>
+          ) : null}
+
+          {activationStep === "branches" ? (
+            <>
+              <div>
+                <p className="text-sm leading-6 text-[#5e6770]">
+                  Elige las {requiredDowngradeSelectionCount} sede{requiredDowngradeSelectionCount === 1 ? "" : "s"} activa{requiredDowngradeSelectionCount === 1 ? "" : "s"} que deseas conservar cuando Mercado Pago confirme la próxima renovación.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-[#8a9298]">
+                  La selección se puede modificar desde Plan y pagos hasta la fecha efectiva. Todas las sedes siguen operando durante el periodo actual.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                {activeBranches.map((branch) => {
+                  const isSelected = selectedDowngradeBranchIds.includes(branch.id);
+                  const isDisabled = !isSelected && selectedDowngradeBranchIds.length >= selectedSiteCount;
+
+                  return (
+                    <label
+                      key={branch.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-[#12110f] transition ${
+                        isSelected ? "border-[#21734f] shadow-[0_10px_28px_rgba(33,115,79,0.12)]" : "border-[#d9dfe0]"
+                      } ${isDisabled ? "opacity-50" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={() => toggleDowngradeBranchSelection(branch.id)}
+                        className="h-4 w-4 accent-[#21734f]"
+                      />
+                      <span>{branch.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-sm leading-6 text-[#6f5a2f]">Seleccionadas: {selectedDowngradeBranchIds.length} / {requiredDowngradeSelectionCount}</p>
+              <AdminDrawerButton
+                variant="primary"
+                onClick={() => setActivationStep("confirm")}
+                disabled={selectedDowngradeBranchIds.length !== requiredDowngradeSelectionCount}
+              >
+                Continuar
+              </AdminDrawerButton>
+              <AdminDrawerButton onClick={() => setActivationStep("sites")}>Volver</AdminDrawerButton>
             </>
           ) : null}
 
@@ -1422,9 +1621,15 @@ function PlanPaymentsDrawerContent({
                   value={
                     capacityQuote.changeType === "upgrade"
                       ? "Se habilita cuando Mercado Pago confirme el pago."
-                      : "Se actualiza en la próxima renovación."
+                      : "Se actualiza cuando Mercado Pago confirme la próxima renovación."
                   }
                 />
+                {capacityQuote.changeType === "downgrade" && selectedDowngradeBranchIds.length ? (
+                  <AdminDrawerSummaryRow
+                    label="Sedes seleccionadas"
+                    value={selectedDowngradeBranchIds.map((branchId) => activeBranchNames.get(branchId) ?? "Sede no disponible").join(", ")}
+                  />
+                ) : null}
                 <AdminDrawerButton variant="primary" onClick={() => setActivationStep("payment")}>
                   {capacityQuote.changeType === "downgrade" ? "Programar reducción" : "Continuar con pago"}
                 </AdminDrawerButton>
@@ -1471,7 +1676,7 @@ function PlanPaymentsDrawerContent({
                 </p>
                 <p className="mt-1 text-sm leading-6 text-[#5e6770]">
                   {capacityChangeDirection === "downgrade"
-                    ? "No habrá cobro ni reducción inmediata. El nuevo valor aplicará en tu próxima renovación."
+                    ? "No habrá reducción inmediata. La nueva capacidad y las sedes seleccionadas se aplicarán cuando Mercado Pago confirme la próxima renovación."
                     : isCapacityChangeMode
                       ? "La nueva capacidad se habilitará únicamente cuando Mercado Pago confirme el pago proporcional."
                       : isReactivationFlow
@@ -1567,7 +1772,6 @@ function PlanPaymentsDrawerContent({
         >
         {isPaymentMethodFormOpen && planPayments.companySlug ? (
           <>
-            {planPayments.subscriptionViewState === "suspended" ? <SuspendedPaymentRecoveryNotice /> : null}
             <MercadoPagoPaymentMethodForm
               companySlug={planPayments.companySlug}
               monthlyAmountCop={planPayments.monthlyTotalCop}
@@ -1584,9 +1788,8 @@ function PlanPaymentsDrawerContent({
           </div>
         ) : (
           <>
-            {planPayments.subscriptionViewState === "suspended" ? <SuspendedPaymentRecoveryNotice /> : null}
             <div aria-hidden="true" className="border-t border-[#e6eaed]" />
-            {planPayments.subscriptionViewState === "cancelled" ? (
+            {planPayments.subscriptionViewState === "cancelled" || planPayments.subscriptionViewState === "suspended" ? (
               <AdminDrawerButton
                 variant="primary"
                 onClick={openActivationFlow}
@@ -1644,9 +1847,11 @@ function PlanPaymentsDrawerContent({
 export function DashboardHeaderMenu({
   profile,
   planPayments,
+  branches,
 }: {
   profile: UserProfile;
   planPayments: PlanPaymentsData;
+  branches: AccessibleBranchSummary[];
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(null);
@@ -1751,7 +1956,7 @@ export function DashboardHeaderMenu({
       >
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "planPayments" ? (
-          <PlanPaymentsDrawerContent planPayments={planPayments} profileEmail={profile.email} />
+          <PlanPaymentsDrawerContent planPayments={planPayments} profileEmail={profile.email} branches={branches} />
         ) : null}
       </AdminSideDrawer>
       {activePanel === "planPayments" && isPlanPaymentsWelcomeOpen ? (

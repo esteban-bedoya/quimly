@@ -146,6 +146,44 @@ function ensureRequestedCapacity(requestedMaxActiveLocations: number) {
   }
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeSelectedBranchIds(selectedBranchIds: string[]) {
+  if (!Array.isArray(selectedBranchIds)) {
+    throw new Error("La selección de sedes no es válida.");
+  }
+
+  const normalized = [...new Set(selectedBranchIds.map((branchId) => (typeof branchId === "string" ? branchId.trim() : "")))];
+
+  if (normalized.some((branchId) => !uuidPattern.test(branchId))) {
+    throw new Error("La selección de sedes no es válida.");
+  }
+
+  return normalized;
+}
+
+function assertDowngradeBranchSelection({
+  activeBranchIds,
+  requestedMaxActiveLocations,
+  selectedBranchIds,
+}: {
+  activeBranchIds: string[];
+  requestedMaxActiveLocations: number;
+  selectedBranchIds: string[];
+}) {
+  const activeBranchIdSet = new Set(activeBranchIds);
+
+  if (selectedBranchIds.some((branchId) => !activeBranchIdSet.has(branchId))) {
+    throw new Error("Solo puedes seleccionar sedes que estén activas actualmente.");
+  }
+
+  const requiredSelectedBranches = Math.min(activeBranchIds.length, requestedMaxActiveLocations);
+
+  if (selectedBranchIds.length !== requiredSelectedBranches) {
+    throw new Error(`Selecciona ${requiredSelectedBranches} sede${requiredSelectedBranches === 1 ? "" : "s"} activa${requiredSelectedBranches === 1 ? "" : "s"} para tu reducción programada.`);
+  }
+}
+
 function getIntentReference(intentType: BillingIntentType) {
   return `qly_${intentType}_${crypto.randomUUID()}`;
 }
@@ -649,7 +687,7 @@ export class BillingService {
 
     const account = await this.getAccountSnapshot(companyId);
     const isTrial = account.subscriptionViewState === "trial_active" || account.subscriptionViewState === "trial_expired";
-    const isRecoverable = account.subscriptionViewState === "cancelled";
+    const isRecoverable = account.subscriptionViewState === "cancelled" || account.subscriptionViewState === "suspended";
 
     if (!isTrial && !isRecoverable) {
       throw new Error("La empresa ya tiene un plan activo. Usa el flujo de cambio de capacidad.");
@@ -985,7 +1023,9 @@ export class BillingService {
       subscriptionStatus,
       providerSubscriptionEnded: Boolean(providerSubscription.ended_at),
       stateStillMatches:
-        (intent.intent_type === "activation" ? subscriptionStatus === "trial" : subscriptionStatus === "cancelled") &&
+        (intent.intent_type === "activation"
+          ? subscriptionStatus === "trial"
+          : subscriptionStatus === "cancelled" || subscriptionStatus === "suspended") &&
         amountMatches &&
         !closureRequested,
     });
@@ -1103,7 +1143,9 @@ export class BillingService {
       );
 
       const canProcessInitialPayment =
-        intent.intent_type === "activation" ? subscriptionStatus === "trial" : subscriptionStatus === "cancelled";
+        intent.intent_type === "activation"
+          ? subscriptionStatus === "trial"
+          : subscriptionStatus === "cancelled" || subscriptionStatus === "suspended";
 
       if (canProcessInitialPayment || intent.status !== "succeeded") {
         return this.processInitialActivationPayment({ payment, webhookEventId, provider });
@@ -1395,7 +1437,7 @@ export class BillingService {
       providerSubscription.company_id,
     );
 
-    if (subscriptionStatus === "trial") {
+    if (subscriptionStatus === "trial" || subscriptionStatus === "cancelled" || subscriptionStatus === "suspended") {
       const activationResult = await this.processInitialActivationPayment({
         payment,
         webhookEventId,
@@ -2000,12 +2042,14 @@ export class BillingService {
     companyId,
     requestedMaxActiveLocations,
     requestedBy,
+    selectedBranchIds,
     provider,
     now = new Date(),
   }: {
     companyId: string;
     requestedMaxActiveLocations: number;
     requestedBy: string | null;
+    selectedBranchIds: string[];
     provider: BillingProvider;
     now?: Date;
   }): Promise<{
@@ -2016,6 +2060,13 @@ export class BillingService {
 
     const preparation = await this.prepareDowngrade({ companyId, requestedMaxActiveLocations });
     const { subscription } = preparation.account;
+    const normalizedSelectedBranchIds = normalizeSelectedBranchIds(selectedBranchIds);
+    const activeBranchIds = await this.repository.getActiveBranchIds(companyId);
+    assertDowngradeBranchSelection({
+      activeBranchIds,
+      requestedMaxActiveLocations: preparation.requestedQuote.maxActiveLocations,
+      selectedBranchIds: normalizedSelectedBranchIds,
+    });
     const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
       subscription.id,
       companyId,
@@ -2032,6 +2083,7 @@ export class BillingService {
       requestedMaxActiveLocations: preparation.requestedQuote.maxActiveLocations,
       effectiveAt: preparation.effectiveAt,
       requestedBy,
+      selectedBranchIds: normalizedSelectedBranchIds,
     });
 
     let intent: BillingIntentRecord;
@@ -2126,6 +2178,39 @@ export class BillingService {
     }
 
     return { intent, capacityChange };
+  }
+
+  async updateScheduledDowngradeSelection({
+    companyId,
+    selectedBranchIds,
+    now = new Date(),
+  }: {
+    companyId: string;
+    selectedBranchIds: string[];
+    now?: Date;
+  }) {
+    const capacityChange = await this.repository.findScheduledCapacityChange(companyId);
+
+    if (!capacityChange || capacityChange.change_type !== "downgrade") {
+      throw new Error("No tienes una reducción programada para modificar.");
+    }
+
+    if (new Date(capacityChange.effective_at).getTime() <= now.getTime()) {
+      throw new Error("La reducción ya está en su fecha efectiva y no puede modificarse.");
+    }
+
+    const normalizedSelectedBranchIds = normalizeSelectedBranchIds(selectedBranchIds);
+    const activeBranchIds = await this.repository.getActiveBranchIds(companyId);
+    assertDowngradeBranchSelection({
+      activeBranchIds,
+      requestedMaxActiveLocations: capacityChange.requested_max_active_locations,
+      selectedBranchIds: normalizedSelectedBranchIds,
+    });
+
+    await this.repository.updateScheduledCapacityChangeSelection({
+      capacityChange,
+      selectedBranchIds: normalizedSelectedBranchIds,
+    });
   }
 
   private async closeExpiredActivationAttempt(

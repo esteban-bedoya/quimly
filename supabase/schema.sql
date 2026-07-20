@@ -3242,13 +3242,18 @@ declare
   applied_count integer := 0;
   scheduled_change record;
   changed_count integer := 0;
+  active_branch_count integer := 0;
+  selected_branch_ids uuid[] := '{}'::uuid[];
+  selected_active_branch_count integer := 0;
 begin
   for scheduled_change in
     select
       scc.id,
+      scc.company_id,
       scc.subscription_id,
       scc.requested_max_active_locations,
       scc.current_max_active_locations,
+      scc.metadata,
       bi.id as intent_id,
       bi.monthly_amount_after_cop,
       (
@@ -3265,6 +3270,20 @@ begin
       and bi.status = 'succeeded'
     where scc.status = 'scheduled'
       and scc.effective_at <= now()
+      and exists (
+        select 1
+        from public.billing_provider_subscriptions bps
+        join public.billing_payments bp
+          on bp.provider_subscription_record_id = bps.id
+        where bps.subscription_id = scc.subscription_id
+          and bps.company_id = scc.company_id
+          and bps.ended_at is null
+          and bp.company_id = scc.company_id
+          and bp.normalized_status = 'approved'
+          and bp.currency = 'COP'
+          and bp.amount_cop = bi.monthly_amount_after_cop
+          and coalesce(bp.approved_at, bp.provider_updated_at, bp.created_at) >= scc.effective_at
+      )
     order by scc.effective_at asc, scc.created_at asc
     for update skip locked
   loop
@@ -3278,6 +3297,29 @@ begin
         and status = 'succeeded';
       continue;
     end if;
+
+    select coalesce(array_agg(candidate.branch_id), '{}'::uuid[])
+    into selected_branch_ids
+    from (
+      select distinct selected_branch.selected_branch_id::uuid as branch_id
+      from jsonb_array_elements_text(coalesce(scheduled_change.metadata -> 'selectedBranchIds', '[]'::jsonb)) as selected_branch(selected_branch_id)
+      where selected_branch.selected_branch_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    ) candidate;
+
+    select count(*)::integer
+    into active_branch_count
+    from public.branches b
+    where b.company_id = scheduled_change.company_id
+      and b.status = 'active'
+      and b.is_active = true;
+
+    select count(*)::integer
+    into selected_active_branch_count
+    from public.branches b
+    where b.company_id = scheduled_change.company_id
+      and b.status = 'active'
+      and b.is_active = true
+      and b.id = any(selected_branch_ids);
 
     update public.company_subscriptions
     set max_active_locations = scheduled_change.requested_max_active_locations
@@ -3298,6 +3340,20 @@ begin
       continue;
     end if;
 
+    if active_branch_count > scheduled_change.requested_max_active_locations
+      and cardinality(selected_branch_ids) = scheduled_change.requested_max_active_locations
+      and selected_active_branch_count = scheduled_change.requested_max_active_locations then
+      update public.branches b
+      set
+        status = 'inactive',
+        is_active = false,
+        billing_activation_confirmed_at = null
+      where b.company_id = scheduled_change.company_id
+        and b.status = 'active'
+        and b.is_active = true
+        and not (b.id = any(selected_branch_ids));
+    end if;
+
     update public.subscription_capacity_changes
     set
       status = 'applied',
@@ -3310,7 +3366,21 @@ begin
     if changed_count = 1 then
       update public.billing_intents
       set
-        metadata = metadata || jsonb_build_object('capacityAppliedAt', now()),
+        metadata = metadata || jsonb_build_object(
+          'capacityAppliedAt', now(),
+          'selectionAppliedAt', case
+            when active_branch_count > scheduled_change.requested_max_active_locations
+              and cardinality(selected_branch_ids) = scheduled_change.requested_max_active_locations
+              and selected_active_branch_count = scheduled_change.requested_max_active_locations
+            then now()
+            else null
+          end,
+          'selectionRequiresManualResolution', active_branch_count > scheduled_change.requested_max_active_locations
+            and not (
+              cardinality(selected_branch_ids) = scheduled_change.requested_max_active_locations
+              and selected_active_branch_count = scheduled_change.requested_max_active_locations
+            )
+        ),
         last_error_code = null,
         last_error_message = null
       where id = scheduled_change.intent_id
@@ -3398,7 +3468,7 @@ begin
       from public.company_subscriptions cs
       where cs.id = bps.subscription_id
         and cs.company_id = bps.company_id
-        and cs.status in ('trial', 'cancelled')
+        and cs.status in ('trial', 'cancelled', 'suspended')
     );
 
   return expired_count;
@@ -3835,6 +3905,10 @@ begin
     on conflict (deduplication_key) do nothing;
   end if;
 
+  if target_normalized_status = 'approved' then
+    perform public.apply_due_subscription_capacity_changes();
+  end if;
+
   return true;
 end;
 $$;
@@ -4261,7 +4335,7 @@ begin
 
   if not found
     or (intent_row.intent_type = 'activation' and subscription_row.status <> 'trial')
-    or (intent_row.intent_type = 'recovery' and subscription_row.status <> 'cancelled') then
+    or (intent_row.intent_type = 'recovery' and subscription_row.status not in ('cancelled', 'suspended')) then
     raise exception 'La suscripción interna ya no admite la activación o reactivación.';
   end if;
 
@@ -4281,6 +4355,18 @@ begin
     payment_grace_ends_at = null,
     last_successful_payment_at = coalesce(payment_row.approved_at, target_period_started_at)
   where id = subscription_row.id;
+
+  update public.billing_provider_subscriptions
+  set
+    ended_at = coalesce(ended_at, now()),
+    provider_status = case
+      when id = provider_subscription_row.id then provider_status
+      else 'replaced'
+    end
+  where subscription_id = subscription_row.id
+    and company_id = subscription_row.company_id
+    and id <> provider_subscription_row.id
+    and ended_at is null;
 
   update public.billing_intents
   set
@@ -4880,6 +4966,104 @@ begin
   return next;
 end;
 $$;
+
+create or replace function public.deactivate_company_branches_for_inactive_subscription(target_company_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  deactivated_count integer := 0;
+begin
+  update public.branches b
+  set
+    status = 'inactive',
+    is_active = false,
+    billing_activation_confirmed_at = null
+  where b.company_id = target_company_id
+    and b.status <> 'deleted'
+    and (b.status = 'active' or b.is_active = true);
+
+  get diagnostics deactivated_count = row_count;
+  return deactivated_count;
+end;
+$$;
+
+create or replace function public.deactivate_branches_when_subscription_stops_operating()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status in ('suspended', 'cancelled') and new.status is distinct from old.status then
+    perform public.deactivate_company_branches_for_inactive_subscription(new.company_id);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists company_subscription_deactivate_branches_trigger on public.company_subscriptions;
+create trigger company_subscription_deactivate_branches_trigger
+after update of status on public.company_subscriptions
+for each row
+execute function public.deactivate_branches_when_subscription_stops_operating();
+
+do $$
+declare
+  inactive_subscription record;
+begin
+  for inactive_subscription in
+    select cs.company_id
+    from public.company_subscriptions cs
+    where cs.status in ('suspended', 'cancelled')
+  loop
+    perform public.deactivate_company_branches_for_inactive_subscription(inactive_subscription.company_id);
+  end loop;
+end $$;
+
+create or replace function public.expire_due_trial_branch_access()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  expired_trial record;
+  deactivated_count integer := 0;
+begin
+  for expired_trial in
+    select cs.company_id
+    from public.company_subscriptions cs
+    where cs.status = 'trial'
+      and cs.trial_ends_at is not null
+      and cs.trial_ends_at <= now()
+  loop
+    deactivated_count := deactivated_count + public.deactivate_company_branches_for_inactive_subscription(expired_trial.company_id);
+  end loop;
+
+  return deactivated_count;
+end;
+$$;
+
+select public.expire_due_trial_branch_access();
+
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'cron')
+    and not exists (select 1 from cron.job where jobname = 'expire_due_trial_branch_access') then
+    perform cron.schedule(
+      'expire_due_trial_branch_access',
+      '*/5 * * * *',
+      'select public.expire_due_trial_branch_access();'
+    );
+  end if;
+exception
+  when undefined_table or undefined_function or insufficient_privilege then
+    raise notice 'No se pudo programar el vencimiento de pruebas; configúralo desde Supabase Cron.';
+end $$;
 
 create or replace function public.can_create_active_branch(target_company_id uuid)
 returns boolean
@@ -7039,6 +7223,12 @@ grant execute on function public.delete_branch_permanently(uuid, text) to authen
 revoke all on function public.apply_due_subscription_capacity_changes() from public;
 revoke all on function public.apply_due_subscription_capacity_changes() from anon;
 grant execute on function public.apply_due_subscription_capacity_changes() to service_role;
+
+revoke all on function public.expire_due_trial_branch_access() from public, anon, authenticated;
+grant execute on function public.expire_due_trial_branch_access() to service_role;
+
+revoke all on function public.deactivate_company_branches_for_inactive_subscription(uuid) from public, anon, authenticated;
+revoke all on function public.deactivate_branches_when_subscription_stops_operating() from public, anon, authenticated;
 
 revoke all on function public.expire_stale_billing_intents(uuid) from public;
 revoke all on function public.expire_stale_billing_intents(uuid) from anon;

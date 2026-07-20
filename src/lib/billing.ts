@@ -38,6 +38,7 @@ export type ScheduledCapacityChange = {
   status: CapacityChangeStatus;
   effectiveAt: string;
   createdAt: string;
+  selectedBranchIds: string[];
 };
 
 export type PlanPaymentsData = {
@@ -396,7 +397,7 @@ export function getPlanPaymentsVisualState({
       title: planType === "founder" ? "Plan fundador" : "Plan operativo",
       eyebrow: null,
       statusLabel: getSubscriptionViewStateLabel(subscriptionViewState),
-      message: "Tu acceso está suspendido porque no pudimos procesar el pago. Actualiza tu método de pago para reactivar tu suscripción.",
+      message: "Tu acceso está suspendido porque no pudimos procesar el pago. Reactiva tu plan y elige cuántas sedes deseas incluir.",
       isTrial,
       isActivePlan,
       hasPaymentIssue,
@@ -434,8 +435,8 @@ export function getBranchCreationBlockedMessage(subscriptionViewState: Subscript
   if (subscriptionViewState === "suspended") {
     return {
       title: "Tu acceso está suspendido.",
-      description: "Actualiza tu método de pago para reactivar las sedes de tu plan.",
-      actionLabel: "Actualizar pago",
+      description: "Reactiva tu plan y elige las sedes que contratarás antes de volver a operar.",
+      actionLabel: "Reactivar plan",
     };
   }
 

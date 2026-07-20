@@ -176,6 +176,7 @@ export type SubscriptionCapacityChangeRecord = {
   status: CapacityChangeStatus;
   effective_at: string;
   requested_by: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
 };
 
@@ -1386,6 +1387,7 @@ export class BillingRepository {
     requestedMaxActiveLocations,
     effectiveAt,
     requestedBy,
+    selectedBranchIds,
   }: {
     companyId: string;
     subscriptionId: string;
@@ -1393,6 +1395,7 @@ export class BillingRepository {
     requestedMaxActiveLocations: number;
     effectiveAt: string;
     requestedBy: string | null;
+    selectedBranchIds: string[];
   }): Promise<SubscriptionCapacityChangeRecord> {
     const { data, error } = await this.supabase
       .from("subscription_capacity_changes")
@@ -1405,6 +1408,10 @@ export class BillingRepository {
         status: "scheduled",
         effective_at: effectiveAt,
         requested_by: requestedBy,
+        metadata: {
+          selectedBranchIds,
+          selectionUpdatedAt: new Date().toISOString(),
+        },
       })
       .select("*")
       .single<SubscriptionCapacityChangeRecord>();
@@ -1446,6 +1453,49 @@ export class BillingRepository {
 
     if (error) {
       throwDatabaseError(error, "No fue posible cancelar el cambio de capacidad programado.");
+    }
+  }
+
+  async getActiveBranchIds(companyId: string): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from("branches")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .eq("is_active", true);
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible consultar las sedes activas.");
+    }
+
+    return (data ?? []).map((branch) => branch.id as string);
+  }
+
+  async updateScheduledCapacityChangeSelection({
+    capacityChange,
+    selectedBranchIds,
+  }: {
+    capacityChange: SubscriptionCapacityChangeRecord;
+    selectedBranchIds: string[];
+  }) {
+    const { data, error } = await this.supabase
+      .from("subscription_capacity_changes")
+      .update({
+        metadata: {
+          ...capacityChange.metadata,
+          selectedBranchIds,
+          selectionUpdatedAt: new Date().toISOString(),
+        },
+      })
+      .eq("id", capacityChange.id)
+      .eq("company_id", capacityChange.company_id)
+      .eq("status", "scheduled")
+      .gt("effective_at", new Date().toISOString())
+      .select("id")
+      .maybeSingle<{ id: string }>();
+
+    if (error || !data) {
+      throwDatabaseError(error ?? { message: "La reducción ya no está disponible para modificaciones." }, "No fue posible actualizar las sedes seleccionadas.");
     }
   }
 }

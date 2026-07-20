@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type ReactNode } from "react";
+import { useActionState, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
@@ -19,6 +19,7 @@ import {
   toggleCompanyStatus,
   toggleCompanyBranchStatus,
   toggleUserStatus,
+  updateScheduledDowngradeBranches,
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
@@ -401,6 +402,132 @@ export function CapacityResolutionForm({
       </div>
       <ActionFeedback state={state} />
     </form>
+  );
+}
+
+function formatScheduledDowngradeDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "la fecha programada";
+  }
+
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Bogota",
+  }).format(date);
+}
+
+export function ScheduledDowngradeSelectionForm({
+  activeBranches,
+  companySlug,
+  effectiveAt,
+  maxBranches,
+  selectedBranchIds,
+}: {
+  activeBranches: CompanyBranchSummary[];
+  companySlug: string;
+  effectiveAt: string;
+  maxBranches: number;
+  selectedBranchIds: string[];
+}) {
+  const activeBranchIdSet = new Set(activeBranches.map((branch) => branch.id));
+  const [selectedIds, setSelectedIds] = useState(() => selectedBranchIds.filter((branchId) => activeBranchIdSet.has(branchId)));
+  const [state, setState] = useState<AdminActionState | undefined>(undefined);
+  const [isPending, startTransition] = useTransition();
+  const targetCount = Math.max(maxBranches, 0);
+  const requiredCount = Math.min(activeBranches.length, targetCount);
+  const selectedCount = selectedIds.length;
+  const hasActiveBranches = activeBranches.length > 0;
+
+  const toggleBranch = (branchId: string) => {
+    setSelectedIds((currentBranchIds) => {
+      if (currentBranchIds.includes(branchId)) {
+        return currentBranchIds.filter((currentBranchId) => currentBranchId !== branchId);
+      }
+
+      if (currentBranchIds.length >= targetCount) {
+        return currentBranchIds;
+      }
+
+      return [...currentBranchIds, branchId];
+    });
+  };
+  const saveSelection = () => {
+    startTransition(async () => {
+      const result = await updateScheduledDowngradeBranches({
+        companySlug,
+        selectedBranchIds: selectedIds,
+      });
+      setState(result);
+    });
+  };
+
+  return (
+    <section className="grid gap-5 rounded-[1.45rem] border border-[#e2b35d] bg-[#fff8e9] p-5 shadow-[0_20px_50px_rgba(143,91,21,0.12)]">
+      <div className="grid gap-2">
+        <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8f5b15]">Reducción programada</p>
+        <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">
+          Solicitaste bajar tus sedes contratadas.
+        </h2>
+        <p className="max-w-3xl text-sm leading-6 text-[#5f5750]">
+          Se hará efectivo el día <strong>{formatScheduledDowngradeDate(effectiveAt)}</strong>, cuando Mercado Pago confirme el pago de la próxima renovación.
+        </p>
+        <p className="max-w-3xl text-sm leading-6 text-[#5f5750]">
+          Elige qué sedes mantener activas. Puedes seleccionar hasta {targetCount} sede{targetCount === 1 ? "" : "s"}; las demás se inactivarán al hacerse efectiva la reducción y conservarán toda su información.
+        </p>
+      </div>
+
+      {hasActiveBranches ? (
+        <div className="grid gap-2">
+          {activeBranches.map((branch) => {
+            const isSelected = selectedIds.includes(branch.id);
+            const isDisabled = !isSelected && selectedCount >= targetCount;
+
+            return (
+              <label
+                key={branch.id}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-sm font-semibold text-[#12110f] transition ${
+                  isSelected ? "border-[#21734f] shadow-[0_10px_28px_rgba(33,115,79,0.12)]" : "border-[#ead8b6]"
+                } ${isDisabled ? "opacity-50" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={isDisabled || isPending}
+                  onChange={() => toggleBranch(branch.id)}
+                  className="h-4 w-4 accent-[#21734f]"
+                />
+                <span>{branch.name}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-2xl border border-dashed border-[#d9dfe0] bg-white px-4 py-3 text-sm leading-6 text-[#5f5750]">
+          No tienes sedes activas en este momento. Cuando actives alguna antes de la fecha efectiva, podrás seleccionarla aquí.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm leading-6 text-[#6f5a2f]">
+          Seleccionadas: {selectedCount} de {targetCount} máximo
+        </p>
+        {hasActiveBranches ? (
+          <button
+            type="button"
+            onClick={saveSelection}
+            disabled={isPending || selectedCount !== requiredCount}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#21734f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:bg-[#1d6646] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+          >
+            {isPending ? "Guardando..." : "Guardar sedes seleccionadas"}
+          </button>
+        ) : null}
+      </div>
+      <ActionFeedback state={state} />
+    </section>
   );
 }
 
