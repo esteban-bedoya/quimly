@@ -457,7 +457,7 @@ export function getBranchCreationBlockedMessage(subscriptionViewState: Subscript
 
 export function getSiteStatusLabel(status: SiteStatus) {
   if (status === "active") {
-    return "Operativa";
+    return "Activa";
   }
 
   if (status === "deleted") {
