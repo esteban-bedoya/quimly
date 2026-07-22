@@ -5,6 +5,7 @@ import { Footer } from "@/components/landing/footer";
 import { Header } from "@/components/landing/header";
 import { Hero } from "@/components/landing/hero";
 import { ProductsSection } from "@/components/landing/products-section";
+import { WelcomeDialog } from "@/components/landing/welcome-dialog";
 
 export default function Home() {
   return (
@@ -18,6 +19,7 @@ export default function Home() {
         <CertificatesSection />
       </main>
       <Footer />
+      <WelcomeDialog />
     </div>
   );
 }
