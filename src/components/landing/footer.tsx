@@ -30,8 +30,8 @@ export function Footer() {
           <div>
             <p className="text-[1rem] font-bold uppercase tracking-[0.08em] text-[#12110f] sm:text-[1.1rem]">Contacto</p>
             <div className="mt-3 space-y-2.5 text-[0.95rem] font-medium text-[#4f4b45] sm:mt-4 sm:text-[0.98rem]">
-              <Link href="mailto:contacto.quimly@gmail.com" className="block transition duration-300 hover:text-[#12110f]">
-                contacto.quimly@gmail.com
+              <Link href="mailto:contacto@quimly.co" className="block transition duration-300 hover:text-[#12110f]">
+                contacto@quimly.co
               </Link>
               <a href="tel:+573016143804" className="block transition duration-300 hover:text-[#12110f]">
                 +57 3016143804
