@@ -10,7 +10,8 @@ export function EcosystemSection() {
               ECOSISTEMA QUIMLY
             </p>
             <h2 className="mt-4 max-w-3xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] sm:mt-5 sm:text-4xl lg:text-5xl">
-              Más que productos químicos.
+              Cero estrés en las
+              <br className="hidden lg:block" /> visitas de sanidad.
             </h2>
           </div>
           <p className="max-w-2xl text-base leading-7 text-white/78 sm:text-lg sm:leading-8">

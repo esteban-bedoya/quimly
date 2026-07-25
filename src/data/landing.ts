@@ -24,12 +24,12 @@ export const revenueCards = [
   {
     title: "Amonio Cuaternario 5G",
     description: "Desinfectante residual para pisos, paredes y áreas generales. No es corrosivo.",
-    image: "/images/productos/amonio.svg",
+    image: "/images/soluciones/normalizadas/bitacoras-inteligentes.png",
   },
   {
     title: "Desinfectante Orgánico (Alimentos)",
     description: "Lavado para frutas y verduras. Sin enjuague, no altera el sabor y alarga la frescura.",
-    image: "/images/productos/amonio.svg",
+    image: "/images/soluciones/normalizadas/gestion-documental.png",
   },
   {
     title: "Desengrasante Alcalino",
@@ -45,5 +45,44 @@ export const revenueCards = [
     title: "Jabón Antibacterial de Manos (Sin Aroma)",
     description: "Higiene obligatoria para el personal. Sin fragancias para evitar la transferencia química a los platos.",
     image: "/images/productos/amonio.svg",
+  },
+];
+
+export const softwareModuleCards = [
+  {
+    badge: "MÓDULO DIARIO",
+    title: "Bitácoras Inteligentes",
+    description:
+      "Control de temperaturas (neveras y congeladores), registros de limpieza y desinfección, y recepción de materias primas. Todo en formularios digitales rápidos e intuitivos.",
+    image: "/images/soluciones/bitacoras-inteligentes.svg",
+    icon: "/images/soluciones/bitacoras.png",
+    stickerIconSize: "standard",
+  },
+  {
+    badge: "CENTRALIZACIÓN",
+    title: "Gestión Documental",
+    description:
+      "Almacena carnets de manipulación de alimentos, certificados de control de plagas y análisis de agua potable en un solo lugar, con control de vencimientos.",
+    image: "/images/soluciones/gestion-documental.svg",
+    icon: "/images/soluciones/gestion.png",
+    stickerIconSize: "large",
+  },
+  {
+    badge: "AUTOMATIZACIÓN",
+    title: "Alertas por WhatsApp",
+    description:
+      "Notificaciones periódicas automáticas al personal si olvidan diligenciar un formato y avisos anticipados antes de que tus documentos legales expiren.",
+    image: "/images/soluciones/alertas-whatsapp.svg",
+    icon: "/images/soluciones/alertas.png",
+    stickerIconSize: "large",
+  },
+  {
+    badge: "CUMPLIMIENTO INVIMA",
+    title: "Auditorías sin Estrés",
+    description:
+      "Genera historiales completos y respaldos listos para exportar en segundos. Demuestra trazabilidad inmediata ante cualquier inspección sanitaria.",
+    image: "/images/soluciones/auditorias-sin-estres.svg",
+    icon: "/images/soluciones/auditorias.png",
+    stickerIconSize: "large",
   },
 ];
