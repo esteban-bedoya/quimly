@@ -7,7 +7,7 @@ export function EcosystemSection() {
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-10">
           <div>
             <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-[#48c7d2] sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
-              ECOSISTEMA QUIMLY
+              ECOSISTEMA
             </p>
             <h2 className="mt-4 max-w-3xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] sm:mt-5 sm:text-4xl lg:text-5xl">
               Cero estrés en las

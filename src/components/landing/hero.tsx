@@ -39,7 +39,7 @@ export function Hero() {
               href="#certificados"
               className="min-h-12 w-full rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-3.5 text-center text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] sm:min-w-[190px] sm:w-auto sm:px-6 sm:py-4"
             >
-              Certificados
+              Empezar gratis
             </a>
           </div>
         </div>
