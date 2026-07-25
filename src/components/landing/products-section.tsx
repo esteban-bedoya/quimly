@@ -100,10 +100,10 @@ export function ProductsSection() {
             <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
               SOLUCIONES
             </p>
-            <h2 className="mt-4 max-w-4xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-5xl">
+            <h2 className="mt-4 max-w-4xl text-[2.1rem] font-bold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-5xl">
               Digitaliza tu operación
               <br />
-              <span className="font-normal tracking-[-0.015em]">de punta a punta.</span>
+              <span className="tracking-[-0.015em]">de punta a punta.</span>
             </h2>
           </div>
           <p className="max-w-xl text-base leading-7 text-black sm:text-lg sm:leading-8">
@@ -160,10 +160,10 @@ export function ProductsSection() {
                         />
 
                         <div className="relative pr-24">
-                          <h3 className="text-xl font-semibold leading-tight text-[#12110f] sm:text-2xl">{card.title}</h3>
+                          <p className="text-[0.72rem] font-bold uppercase tracking-[0.24em] text-[#2f98a2]">{card.badge}</p>
+                          <h3 className="mt-3 text-xl font-semibold leading-tight text-[#12110f] sm:text-2xl">{card.title}</h3>
                           <p className="mt-3 max-w-[32ch] text-sm leading-6 text-black">{card.description}</p>
                         </div>
-                        <p className="mt-4 text-[0.72rem] font-bold uppercase tracking-[0.24em] text-[#2f98a2]">{card.badge}</p>
                       </button>
                     </motion.article>
                   );
