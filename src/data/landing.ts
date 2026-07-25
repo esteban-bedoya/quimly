@@ -51,8 +51,8 @@ export const revenueCards = [
 export const softwareModuleCards = [
   {
     badge: "¿Tu equipo sigue llenando formatos en papel?",
-    question: "Bitácoras Inteligentes",
-    title: "Bitácoras Inteligentes",
+    question: "Bitácoras QR",
+    title: "Bitácoras QR",
     description:
       "Digitaliza temperaturas, limpieza y recepción de materias primas con códigos QR. Toda la información queda organizada automáticamente.",
     image: "/images/soluciones/bitacoras-inteligentes.svg",
@@ -71,8 +71,8 @@ export const softwareModuleCards = [
   },
   {
     badge: "¿No sabes cuándo vence un certificado?",
-    question: "Gestión Documental",
-    title: "Gestión Documental",
+    question: "Gestión documental",
+    title: "Gestión documental",
     description:
       "Guarda carnets y certificados en un solo lugar con control automático de vencimientos.",
     image: "/images/soluciones/gestion-documental.svg",
@@ -81,8 +81,8 @@ export const softwareModuleCards = [
   },
   {
     badge: "¿Y si hoy llega una visita del INVIMA?",
-    question: "Auditorías sin Estrés",
-    title: "Auditorías sin Estrés",
+    question: "Auditorías sin estrés",
+    title: "Auditorías sin estrés",
     description:
       "Consulta registros y documentos en segundos para afrontar una inspección con mayor tranquilidad.",
     image: "/images/soluciones/auditorias-sin-estres.svg",
