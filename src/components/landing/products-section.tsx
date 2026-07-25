@@ -152,7 +152,7 @@ export function ProductsSection() {
                           alt=""
                           width={96}
                           height={96}
-                          sizes="96px"
+                          sizes="192px"
                           quality={90}
                           className={`pointer-events-none absolute -right-4 -top-4 z-20 size-24 rounded-full border-2 border-white bg-[#e8f7f8] object-contain shadow-[0_18px_32px_rgba(18,17,15,0.2)] ${
                             card.stickerIconSize === "large" ? "p-1" : "p-2"
