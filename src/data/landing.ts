@@ -50,37 +50,41 @@ export const revenueCards = [
 
 export const softwareModuleCards = [
   {
-    badge: "MÓDULO DIARIO",
+    badge: "¿Tu equipo sigue llenando formatos en papel?",
+    question: "Bitácoras Inteligentes",
     title: "Bitácoras Inteligentes",
     description:
-      "Control de temperaturas (neveras y congeladores), registros de limpieza y desinfección, y recepción de materias primas. Todo en formularios digitales rápidos e intuitivos.",
+      "Digitaliza temperaturas, limpieza y recepción de materias primas con códigos QR. Toda la información queda organizada automáticamente.",
     image: "/images/soluciones/bitacoras-inteligentes.svg",
     icon: "/images/soluciones/bitacoras.png",
     stickerIconSize: "standard",
   },
   {
-    badge: "CENTRALIZACIÓN",
-    title: "Gestión Documental",
-    description:
-      "Almacena carnets de manipulación de alimentos, certificados de control de plagas y análisis de agua potable en un solo lugar, con control de vencimientos.",
-    image: "/images/soluciones/gestion-documental.svg",
-    icon: "/images/soluciones/gestion.png",
-    stickerIconSize: "large",
-  },
-  {
-    badge: "AUTOMATIZACIÓN",
+    badge: "¿Tu equipo olvida hacer los registros?",
+    question: "Alertas por WhatsApp",
     title: "Alertas por WhatsApp",
     description:
-      "Notificaciones periódicas automáticas al personal si olvidan diligenciar un formato y avisos anticipados antes de que tus documentos legales expiren.",
+      "Envía recordatorios automáticos por WhatsApp y recibe avisos antes de que un documento importante venza.",
     image: "/images/soluciones/alertas-whatsapp.svg",
     icon: "/images/soluciones/alertas.png",
     stickerIconSize: "large",
   },
   {
-    badge: "CUMPLIMIENTO INVIMA",
+    badge: "¿No sabes cuándo vence un certificado?",
+    question: "Gestión Documental",
+    title: "Gestión Documental",
+    description:
+      "Guarda carnets y certificados en un solo lugar con control automático de vencimientos.",
+    image: "/images/soluciones/gestion-documental.svg",
+    icon: "/images/soluciones/gestion.png",
+    stickerIconSize: "large",
+  },
+  {
+    badge: "¿Y si hoy llega una visita del INVIMA?",
+    question: "Auditorías sin Estrés",
     title: "Auditorías sin Estrés",
     description:
-      "Genera historiales completos y respaldos listos para exportar en segundos. Demuestra trazabilidad inmediata ante cualquier inspección sanitaria.",
+      "Consulta registros y documentos en segundos para afrontar una inspección con mayor tranquilidad.",
     image: "/images/soluciones/auditorias-sin-estres.svg",
     icon: "/images/soluciones/auditorias.png",
     stickerIconSize: "large",

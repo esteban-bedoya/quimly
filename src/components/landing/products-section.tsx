@@ -107,7 +107,7 @@ export function ProductsSection() {
             </h2>
           </div>
           <p className="max-w-xl text-base leading-7 text-black sm:text-lg sm:leading-8">
-            Los módulos que tu restaurante necesita para cumplir con el INVIMA, sin papeles, sin complicaciones.
+            Todo lo que necesitas para mantener tu restaurante organizado y preparado para cumplir con el INVIMA.
           </p>
         </div>
 
@@ -129,7 +129,7 @@ export function ProductsSection() {
                     <motion.article
                       key={card.title}
                       animate={{
-                        filter: isActive ? "blur(0px)" : "blur(0.8px)",
+                        filter: isActive ? "blur(0px)" : "blur(0.6px)",
                         opacity: isActive ? 1 : isAdjacent ? 0.7 : 0.46,
                         rotate: isActive ? 0 : distance < 0 ? -3.5 : 3.5,
                         scale: isActive ? 1 : isAdjacent ? 0.9 : 0.82,
@@ -141,7 +141,7 @@ export function ProductsSection() {
                       <button
                         type="button"
                         onClick={() => emblaApi?.scrollTo(index)}
-                        className={`relative flex h-full w-full cursor-pointer flex-col overflow-visible rounded-[2rem] border px-4 py-5 text-left backdrop-blur-xl transition duration-500 sm:px-5 sm:py-6 md:px-6 ${
+                        className={`relative flex h-full w-full cursor-pointer flex-col overflow-visible rounded-[2rem] border px-4 pb-5 pt-7 text-left backdrop-blur-xl transition duration-500 sm:px-5 sm:pb-6 sm:pt-8 md:px-6 ${
                           isActive
                             ? "border-white/80 bg-white/74 shadow-[0_28px_70px_rgba(18,17,15,0.14)]"
                             : "border-white/55 bg-white/48 shadow-[0_18px_45px_rgba(18,17,15,0.08)]"
@@ -160,10 +160,10 @@ export function ProductsSection() {
                         />
 
                         <div className="relative pr-24">
-                          <p className="text-[0.72rem] font-bold uppercase tracking-[0.24em] text-[#2f98a2]">{card.badge}</p>
-                          <h3 className="mt-3 text-xl font-semibold leading-tight text-[#12110f] sm:text-2xl">{card.title}</h3>
-                          <p className="mt-3 max-w-[32ch] text-sm leading-6 text-black">{card.description}</p>
+                          <p className="text-[1.1875rem] font-semibold leading-tight text-[#12110f] sm:text-[1.375rem]">{card.question}</p>
                         </div>
+                        <div aria-hidden="true" className="mt-3 h-px w-full bg-[#12110f]/15" />
+                        <p className="mt-3 text-[0.96875rem] leading-6 text-black">{card.description}</p>
                       </button>
                     </motion.article>
                   );
