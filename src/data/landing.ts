@@ -10,6 +10,7 @@ export const legacyProblems = [
   "Preocupación constante por auditorías y cumplimiento.",
   "Supervisión constante y operativa pesada.",
   "Dificultades para mantener consistencia en los procesos.",
+  "Procesos que se quedan atrás ante cambios normativos.",
 ];
 
 export const quimlyAdvantages = [
@@ -18,6 +19,7 @@ export const quimlyAdvantages = [
   "Evidencia organizada en segundos.",
   "Procesos simples y estandarizados.",
   "Técnicas y rutinas más fáciles de ejecutar.",
+  "Actualizaciones constantes para mantener procesos alineados con la normativa sanitaria vigente.",
 ];
 
 export const revenueCards = [

@@ -101,9 +101,9 @@ export function ProductsSection() {
               SOLUCIONES
             </p>
             <h2 className="mt-4 max-w-4xl text-[2.1rem] font-bold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-5xl">
-              Digitaliza tu operación
+              Todo bajo control,
               <br />
-              <span className="tracking-[-0.015em]">de punta a punta.</span>
+              <span className="tracking-[-0.015em]">desde la cocina hasta la auditoría.</span>
             </h2>
           </div>
           <p className="max-w-xl text-base leading-7 text-black sm:text-lg sm:leading-8">

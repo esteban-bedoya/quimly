@@ -15,7 +15,7 @@ export function Hero() {
           </h1>
 
           <p className="mt-6 max-w-xl text-base leading-7 text-black sm:mt-7 sm:text-lg sm:leading-8 lg:text-[1.2rem]">
-            Digitaliza las bitácoras obligatorias de tu restaurante, centraliza tu gestión documental y olvídate de las multas con automatizaciones inteligentes.
+            Simplifica el control sanitario de tu restaurante: digitaliza bitácoras, organiza documentos y mantén tu operación lista para cada inspección.
           </p>
 
           <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-10 sm:flex sm:flex-row">
