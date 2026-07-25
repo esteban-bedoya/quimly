@@ -20,6 +20,7 @@ type InternationalPhoneFieldProps = {
   name?: string;
   countryName?: string;
   nationalName?: string;
+  placeholder?: string;
   defaultValue?: string;
   value?: string;
   onValueChange?: (value: string) => void;
@@ -100,6 +101,7 @@ export function InternationalPhoneField({
   name = "phone",
   countryName = "phoneCountry",
   nationalName = "phoneNational",
+  placeholder = "Número nacional",
   defaultValue,
   value,
   onValueChange,
@@ -354,7 +356,7 @@ export function InternationalPhoneField({
           }}
           onFocus={() => setIsFocused(true)}
           onChange={(event) => handleNationalNumberChange(event.target.value)}
-          placeholder="Número nacional"
+          placeholder={placeholder}
           maxLength={maxPhoneInputLength}
           required={required}
           disabled={disabled}

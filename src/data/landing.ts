@@ -17,7 +17,7 @@ export const quimlyAdvantages = [
   "Operación digital y centralizada.",
   "Trazabilidad inmediata desde cualquier lugar.",
   "Evidencia organizada en segundos.",
-  "Procesos simples y estandarizados.",
+  "Procesos simples y estandarizados para colaboradores.",
   "Técnicas y rutinas más fáciles de ejecutar.",
   "Actualizaciones constantes para mantener procesos alineados con la normativa sanitaria vigente.",
 ];

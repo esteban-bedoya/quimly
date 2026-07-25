@@ -85,7 +85,7 @@ function Feedback({
 function IdentifyContent({ state, action }: { state: IdentifyPhoneFormState | undefined; action: (formData: FormData) => void }) {
   return (
     <form action={action} className="space-y-5">
-      <InternationalPhoneField id="identifyPhone" />
+      <InternationalPhoneField id="identifyPhone" placeholder="Número" />
       <Feedback state={state} />
       <SubmitButton idleLabel="Continuar" pendingLabel="Verificando..." />
     </form>
