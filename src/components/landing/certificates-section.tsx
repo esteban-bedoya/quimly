@@ -48,7 +48,7 @@ export function CertificatesSection() {
               </div>
               <p className="mt-4 text-sm leading-6 text-white/68 sm:text-base">Luego,</p>
               <p className="mt-2 text-sm leading-6 text-white/68 sm:text-base">
-                <span className="font-semibold text-white">$19.900 COP / mes</span> por la primera sede.
+                <span className="font-semibold text-white">$24.900 COP / mes</span> por la primera sede.
               </p>
               <p className="mt-2 text-sm leading-6 text-white/68 sm:text-base">
                 <span className="font-semibold text-white">+$9.900 COP / mes</span> por cada sede adicional.
