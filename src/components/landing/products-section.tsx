@@ -7,7 +7,7 @@ import { startTransition, useEffect, useEffectEvent, useState } from "react";
 
 import { softwareModuleCards } from "@/data/landing";
 
-const AUTOPLAY_DELAY = 3800;
+const AUTOPLAY_DELAY = 7500;
 const EASING = [0.22, 1, 0.36, 1] as const;
 
 function getLoopDistance(index: number, selectedIndex: number, total: number) {

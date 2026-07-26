@@ -53,32 +53,32 @@ export const revenueCards = [
 export const softwareModuleCards = [
   {
     badge: "¿Tu equipo sigue llenando formatos en papel?",
-    question: "Bitácoras QR",
-    title: "Bitácoras QR",
+    question: "Formularios QR",
+    title: "Formularios QR",
     description:
-      "Digitaliza temperaturas, limpieza y recepción de materias primas con códigos QR. Toda la información queda organizada automáticamente.",
+      "Digitaliza los registros de temperaturas, limpieza y desinfección, recepción de materias primas y control de agua potable mediante códigos QR. Toda la información queda organizada y disponible desde cualquier lugar.",
     image: "/images/soluciones/bitacoras-inteligentes.svg",
     icon: "/images/soluciones/bitacoras.png",
     stickerIconSize: "standard",
-  },
-  {
-    badge: "¿Tu equipo olvida hacer los registros?",
-    question: "Alertas por WhatsApp",
-    title: "Alertas por WhatsApp",
-    description:
-      "Envía recordatorios automáticos por WhatsApp y recibe avisos antes de que un documento importante venza.",
-    image: "/images/soluciones/alertas-whatsapp.svg",
-    icon: "/images/soluciones/alertas.png",
-    stickerIconSize: "large",
   },
   {
     badge: "¿No sabes cuándo vence un certificado?",
     question: "Gestión documental",
     title: "Gestión documental",
     description:
-      "Guarda carnets y certificados en un solo lugar con control automático de vencimientos.",
+      "Centraliza tu plan de saneamiento, certificados de plagas, manipulación de alimentos, análisis de agua y demás documentos sanitarios en un solo lugar, con control automático de vencimientos y fácil consulta.",
     image: "/images/soluciones/gestion-documental.svg",
     icon: "/images/soluciones/gestion.png",
+    stickerIconSize: "large",
+  },
+  {
+    badge: "¿Tu equipo olvida hacer los registros?",
+    question: "Alertas por WhatsApp",
+    title: "Alertas por WhatsApp",
+    description:
+      "Recibe recordatorios automáticos por WhatsApp para mantener al día los registros de tu equipo y recibir avisos antes de que un documento sanitario esté próximo a vencer. Nunca pierdas una fecha importante.",
+    image: "/images/soluciones/alertas-whatsapp.svg",
+    icon: "/images/soluciones/alertas.png",
     stickerIconSize: "large",
   },
   {
@@ -86,7 +86,7 @@ export const softwareModuleCards = [
     question: "Auditorías sin estrés",
     title: "Auditorías sin estrés",
     description:
-      "Consulta registros y documentos en segundos para afrontar una inspección con mayor tranquilidad.",
+      "Accede en segundos al historial de registros y documentos de tu restaurante. Mantén toda la información organizada para demostrar la trazabilidad de tus procesos y afrontar una inspección con tranquilidad.",
     image: "/images/soluciones/auditorias-sin-estres.svg",
     icon: "/images/soluciones/auditorias.png",
     stickerIconSize: "large",
