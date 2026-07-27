@@ -1,7 +1,7 @@
 "use client";
 
 import useEmblaCarousel from "embla-carousel-react";
-import { motion } from "framer-motion";
+import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import Image from "next/image";
 import { startTransition, useEffect, useEffectEvent, useState } from "react";
 
@@ -31,6 +31,9 @@ export function ProductsSection() {
       skipSnaps: false,
   });
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const leftArrowMotion = useAnimationControls();
+  const rightArrowMotion = useAnimationControls();
+  const shouldReduceMotion = useReducedMotion();
 
   const syncSelection = useEffectEvent(() => {
     if (!emblaApi || cardCount === 0) {
@@ -59,6 +62,19 @@ export function ProductsSection() {
       emblaApi.off("select", syncSelection);
     };
   }, [emblaApi]);
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      leftArrowMotion.set({ x: 0 });
+      rightArrowMotion.set({ x: 0 });
+      return;
+    }
+
+    const transition = { duration: 1.1, ease: EASING, repeat: Infinity, repeatDelay: 1 };
+
+    void leftArrowMotion.start({ x: [0, -18, 0], transition });
+    void rightArrowMotion.start({ x: [0, 18, 0], transition });
+  }, [leftArrowMotion, rightArrowMotion, selectedIndex, shouldReduceMotion]);
 
   return (
     <section
@@ -143,16 +159,17 @@ export function ProductsSection() {
             {hasMultipleCards ? (
               <div className="mt-6 flex items-center justify-center gap-3 sm:mt-8">
                 {selectedIndex > 0 ? (
-                  <button
+                  <motion.button
                     type="button"
                     onClick={() => emblaApi?.scrollPrev()}
                     aria-label="Ver solución anterior"
-                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition hover:bg-[#12110f]/5"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition-colors hover:bg-[#12110f]/5"
+                    animate={leftArrowMotion}
                   >
                     <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
                       <path d="m15 18-6-6 6-6" />
                     </svg>
-                  </button>
+                  </motion.button>
                 ) : (
                   <span aria-hidden="true" className="size-11 shrink-0" />
                 )}
@@ -177,16 +194,17 @@ export function ProductsSection() {
                 </div>
 
                 {selectedIndex < cardCount - 1 ? (
-                  <button
+                  <motion.button
                     type="button"
                     onClick={() => emblaApi?.scrollNext()}
                     aria-label="Ver siguiente solución"
-                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition hover:bg-[#12110f]/5"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition-colors hover:bg-[#12110f]/5"
+                    animate={rightArrowMotion}
                   >
                     <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
                       <path d="m9 18 6-6-6-6" />
                     </svg>
-                  </button>
+                  </motion.button>
                 ) : (
                   <span aria-hidden="true" className="size-11 shrink-0" />
                 )}
