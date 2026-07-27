@@ -7,7 +7,6 @@ import { startTransition, useEffect, useEffectEvent, useState } from "react";
 
 import { softwareModuleCards } from "@/data/landing";
 
-const AUTOPLAY_DELAY = 7500;
 const EASING = [0.22, 1, 0.36, 1] as const;
 
 function getLoopDistance(index: number, selectedIndex: number, total: number) {
@@ -32,7 +31,6 @@ export function ProductsSection() {
       skipSnaps: false,
   });
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isAutoplayPaused, setIsAutoplayPaused] = useState(false);
 
   const syncSelection = useEffectEvent(() => {
     if (!emblaApi || cardCount === 0) {
@@ -45,19 +43,6 @@ export function ProductsSection() {
     startTransition(() => {
       setSelectedIndex(normalizedIndex);
     });
-  });
-
-  const advanceCarousel = useEffectEvent(() => {
-    if (!emblaApi || !hasMultipleCards) {
-      return;
-    }
-
-    if (!emblaApi.canScrollNext()) {
-      emblaApi.scrollTo(0);
-      return;
-    }
-
-    emblaApi.scrollNext();
   });
 
   useEffect(() => {
@@ -74,20 +59,6 @@ export function ProductsSection() {
       emblaApi.off("select", syncSelection);
     };
   }, [emblaApi]);
-
-  useEffect(() => {
-    if (!hasMultipleCards || isAutoplayPaused) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      advanceCarousel();
-    }, AUTOPLAY_DELAY);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [hasMultipleCards, isAutoplayPaused]);
 
   return (
     <section
@@ -116,8 +87,6 @@ export function ProductsSection() {
             <div
               className="overflow-visible px-5 sm:px-8 lg:px-10"
               ref={emblaRef}
-              onMouseEnter={() => setIsAutoplayPaused(true)}
-              onMouseLeave={() => setIsAutoplayPaused(false)}
             >
               <div className="flex touch-pan-y items-stretch py-6 sm:py-8">
                 {softwareModuleCards.map((card, index) => {
@@ -171,23 +140,58 @@ export function ProductsSection() {
               </div>
             </div>
 
-            <div className="mt-6 flex justify-center gap-2 sm:mt-8">
-              {softwareModuleCards.map((card, index) => {
-                const isActive = index === selectedIndex;
-
-                return (
+            {hasMultipleCards ? (
+              <div className="mt-6 flex items-center justify-center gap-3 sm:mt-8">
+                {selectedIndex > 0 ? (
                   <button
-                    key={card.title}
                     type="button"
-                    onClick={() => emblaApi?.scrollTo(index)}
-                    aria-label={`Ir a ${card.title}`}
-                    className={`h-2.5 rounded-full transition-all duration-500 ${
-                      isActive ? "w-10 bg-[#12110f]" : "w-2.5 bg-[#12110f]/20 hover:bg-[#12110f]/35"
-                    }`}
-                  />
-                );
-              })}
-            </div>
+                    onClick={() => emblaApi?.scrollPrev()}
+                    aria-label="Ver solución anterior"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/15 text-[#12110f] transition hover:border-[#12110f]/35 hover:bg-[#12110f]/5"
+                  >
+                    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                      <path d="m15 18-6-6 6-6" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span aria-hidden="true" className="size-11 shrink-0" />
+                )}
+
+                <div className="flex gap-2" aria-label="Navegación de soluciones">
+                  {softwareModuleCards.map((card, index) => {
+                    const isActive = index === selectedIndex;
+
+                    return (
+                      <button
+                        key={card.title}
+                        type="button"
+                        onClick={() => emblaApi?.scrollTo(index)}
+                        aria-label={`Ir a ${card.title}`}
+                        aria-current={isActive ? "true" : undefined}
+                        className={`h-2.5 rounded-full transition-all duration-500 ${
+                          isActive ? "w-10 bg-[#12110f]" : "w-2.5 bg-[#12110f]/20 hover:bg-[#12110f]/35"
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+
+                {selectedIndex < cardCount - 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => emblaApi?.scrollNext()}
+                    aria-label="Ver siguiente solución"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/15 text-[#12110f] transition hover:border-[#12110f]/35 hover:bg-[#12110f]/5"
+                  >
+                    <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span aria-hidden="true" className="size-11 shrink-0" />
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
