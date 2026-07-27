@@ -147,7 +147,7 @@ export function ProductsSection() {
                     type="button"
                     onClick={() => emblaApi?.scrollPrev()}
                     aria-label="Ver solución anterior"
-                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/15 text-[#12110f] transition hover:border-[#12110f]/35 hover:bg-[#12110f]/5"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition hover:bg-[#12110f]/5"
                   >
                     <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
                       <path d="m15 18-6-6 6-6" />
@@ -181,7 +181,7 @@ export function ProductsSection() {
                     type="button"
                     onClick={() => emblaApi?.scrollNext()}
                     aria-label="Ver siguiente solución"
-                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/15 text-[#12110f] transition hover:border-[#12110f]/35 hover:bg-[#12110f]/5"
+                    className="inline-flex size-11 items-center justify-center rounded-full border border-[#12110f]/55 text-[#12110f] transition hover:bg-[#12110f]/5"
                   >
                     <svg aria-hidden="true" className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
                       <path d="m9 18 6-6-6-6" />
