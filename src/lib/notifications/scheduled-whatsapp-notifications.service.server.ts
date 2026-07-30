@@ -12,7 +12,7 @@ import type { ScheduledWhatsAppTemplateKey } from "@/lib/notifications/types";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { dispatchAutomatedWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getTwilioWhatsAppStatusCallbackUrl, recordAutomatedWhatsAppTemplateMessage } from "@/lib/whatsapp-inbox/service.server";
+import { getTwilioWhatsAppStatusCallbackUrl, recordAutomatedWhatsAppTemplateMessage, recordFailedAutomatedWhatsAppTemplateMessage } from "@/lib/whatsapp-inbox/service.server";
 
 const COLOMBIA_TIME_ZONE = "America/Bogota";
 const documentReminderDays = [1, 7, 15, 30] as const;
@@ -385,6 +385,11 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
     message = await sendWhatsAppTemplate({ to: delivery.recipient_phone, templateKey: delivery.template_key, variables: payload.variables, statusCallback: getTwilioWhatsAppStatusCallbackUrl() });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Twilio no pudo aceptar el mensaje automático.";
+    try {
+      await recordFailedAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, fallbackBody: payload.fallbackBody, error });
+    } catch (persistenceError) {
+      logServerError("whatsapp.scheduled_notification_failure_inbox_persistence_failed", persistenceError, { deliveryId: delivery.id });
+    }
     await scheduleRetryOrFail(delivery, errorMessage, result);
     logServerError("whatsapp.scheduled_notification_attempt_failed", error, { deliveryId: delivery.id, notificationType: delivery.notification_type, attemptCount: delivery.attempt_count });
     return;

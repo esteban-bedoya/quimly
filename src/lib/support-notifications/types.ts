@@ -19,6 +19,15 @@ export type AutomatedWhatsAppSupportAlert = {
   errorMessage?: string | null;
 };
 
+export type ChatWhatsAppSupportAlert = {
+  kind: "acknowledgement" | "manual_reply";
+  recipientName: string | null;
+  recipientPhone: string;
+  body: string;
+  status: "accepted" | "failed";
+  errorMessage?: string | null;
+};
+
 export type TelegramSupportAlertResult =
   | { provider: "telegram"; status: "sent" }
   | { provider: "telegram"; status: "skipped"; reason: "not_configured" };

@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/authorization";
 import { formatPhoneForWhatsApp, normalizePhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppMessage } from "@/lib/notifications/whatsapp.service";
+import { getTwilioWhatsAppFrom } from "@/lib/notifications/twilio.client";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
+import { dispatchChatWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
 import type { InboundWhatsAppSupportAlert } from "@/lib/support-notifications/types";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
@@ -13,6 +15,7 @@ import type { WhatsAppInboxSyncEvent, WhatsAppInboxSyncState } from "@/types/wha
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_OUTBOUND_BODY_LENGTH = 4_096;
+export type WhatsAppMessageOrigin = "scheduled" | "acknowledgement" | "manual" | "template_test";
 
 type ChannelRow = {
   id: string;
@@ -487,17 +490,19 @@ async function updateConversationAfterOutboundMessage({
   }
 }
 
-async function recordFailedOutboundMessage({
+export async function recordFailedOutboundMessage({
   conversationId,
   from,
   to,
   body,
+  origin,
   error,
 }: {
   conversationId: string;
   from: string;
   to: string;
   body: string;
+  origin: WhatsAppMessageOrigin;
   error: unknown;
 }) {
   const adminClient = getRequiredAdminClient();
@@ -514,6 +519,7 @@ async function recordFailedOutboundMessage({
       from_address: from,
       to_address: to,
       body,
+      message_origin: origin,
       num_media: 0,
       twilio_error_code: errorCode,
       twilio_error_message: errorMessage,
@@ -544,10 +550,12 @@ export async function recordOutboundWhatsAppMessage({
   conversationId,
   message,
   fallbackBody,
+  origin,
 }: {
   conversationId: string;
   message: OutboundWhatsAppMessage;
   fallbackBody: string;
+  origin: WhatsAppMessageOrigin;
 }) {
   const sentAt = new Date().toISOString();
   const body = message.body?.trim() || fallbackBody;
@@ -562,6 +570,7 @@ export async function recordOutboundWhatsAppMessage({
       from_address: message.from,
       to_address: message.to,
       body,
+      message_origin: origin,
       num_media: 0,
       sent_at: sentAt,
       twilio_status_updated_at: sentAt,
@@ -635,6 +644,7 @@ export async function recordWhatsAppTemplateTestMessage({
     conversationId: conversation.id,
     message,
     fallbackBody: "Plantilla de prueba de WhatsApp enviada.",
+    origin: "template_test",
   });
 
   return conversation.id;
@@ -644,10 +654,12 @@ export async function recordAutomatedWhatsAppTemplateMessage({
   to,
   message,
   fallbackBody,
+  origin = "scheduled",
 }: {
   to: E164PhoneNumber;
   message: OutboundWhatsAppMessage;
   fallbackBody: string;
+  origin?: "scheduled";
 }) {
   const senderPhone = message.from ? normalizePhoneNumber(message.from) : null;
 
@@ -688,9 +700,59 @@ export async function recordAutomatedWhatsAppTemplateMessage({
     conversationId: conversation.id,
     message,
     fallbackBody,
+    origin,
   });
 
   return { conversationId: conversation.id, messageId };
+}
+
+export async function recordFailedAutomatedWhatsAppTemplateMessage({
+  to,
+  fallbackBody,
+  error,
+}: {
+  to: E164PhoneNumber;
+  fallbackBody: string;
+  error: unknown;
+}) {
+  const senderPhone = normalizePhoneNumber(getTwilioWhatsAppFrom());
+
+  if (!senderPhone) {
+    throw new Error("El WhatsApp Sender configurado no es válido para guardar el fallo automático.");
+  }
+
+  const adminClient = getRequiredAdminClient();
+  const { data: channel, error: channelError } = await adminClient
+    .from("whatsapp_channels")
+    .upsert({ whatsapp_phone: senderPhone }, { onConflict: "whatsapp_phone" })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (channelError || !channel) {
+    throw new Error("No fue posible resolver el sender de WhatsApp para guardar el fallo automático.");
+  }
+
+  const { data: conversation, error: conversationError } = await adminClient
+    .from("whatsapp_conversations")
+    .upsert(
+      { channel_id: channel.id, contact_phone: to, last_message_at: new Date().toISOString(), last_message_direction: "outbound" },
+      { onConflict: "channel_id,contact_phone" },
+    )
+    .select("id")
+    .single<{ id: string }>();
+
+  if (conversationError || !conversation) {
+    throw new Error("No fue posible crear la conversación de WhatsApp para guardar el fallo automático.");
+  }
+
+  await recordFailedOutboundMessage({
+    conversationId: conversation.id,
+    from: getTwilioWhatsAppFrom(),
+    to: `whatsapp:${to}`,
+    body: fallbackBody,
+    origin: "scheduled",
+    error,
+  });
 }
 
 export async function sendOwnerWhatsAppReply({
@@ -719,9 +781,9 @@ export async function sendOwnerWhatsAppReply({
   const rlsClient = await getRequiredRlsClient();
   const { data: conversation, error: conversationError } = await rlsClient
     .from("whatsapp_conversations")
-    .select("id, channel_id, contact_phone")
+    .select("id, channel_id, contact_phone, contact_name")
     .eq("id", conversationId)
-    .maybeSingle<{ id: string; channel_id: string; contact_phone: string }>();
+    .maybeSingle<{ id: string; channel_id: string; contact_phone: string; contact_name: string | null }>();
 
   if (conversationError || !conversation) {
     throw new Error("No tienes acceso a esta conversación.");
@@ -760,6 +822,7 @@ export async function sendOwnerWhatsAppReply({
         from,
         to: formatPhoneForWhatsApp(to)!,
         body: normalizedBody,
+        origin: "manual",
         error,
       });
     } catch (persistenceError) {
@@ -769,6 +832,14 @@ export async function sendOwnerWhatsAppReply({
     }
 
     logServerError("whatsapp.outbound_send_failed", error, { conversationId: conversation.id });
+    await dispatchChatWhatsAppSupportAlert({
+      kind: "manual_reply",
+      recipientName: conversation.contact_name,
+      recipientPhone: to,
+      body: normalizedBody,
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : "Twilio no pudo aceptar la respuesta manual.",
+    });
     throw new Error("Twilio no pudo enviar el mensaje. El intento quedó registrado en el historial.");
   }
 
@@ -777,6 +848,7 @@ export async function sendOwnerWhatsAppReply({
       conversationId: conversation.id,
       message: sentMessage,
       fallbackBody: normalizedBody,
+      origin: "manual",
     });
   } catch (error) {
     logServerError("whatsapp.outbound_persistence_failed", error, {

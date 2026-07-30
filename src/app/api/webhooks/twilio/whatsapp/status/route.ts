@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getTwilioAuthToken } from "@/lib/notifications/twilio.client";
 import { SCHEDULED_WHATSAPP_MAX_ATTEMPTS, getScheduledWhatsAppRetryDelayMinutes } from "@/lib/notifications/scheduled-whatsapp-policy";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
-import { dispatchAutomatedWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
+import { dispatchAutomatedWhatsAppSupportAlert, dispatchChatWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getCanonicalTwilioWebhookUrl,
@@ -36,6 +36,14 @@ type NotificationDeliveryRow = {
   notification_type: string;
   attempt_count: number;
   payload: unknown;
+};
+
+type WhatsAppMessageStatusRow = {
+  id: string;
+  conversation_id: string;
+  message_origin: "scheduled" | "acknowledgement" | "manual" | "template_test" | null;
+  body: string;
+  to_address: string;
 };
 
 function getTelegramAlertPayload(payload: unknown) {
@@ -126,8 +134,8 @@ export async function POST(request: Request) {
     })
     .eq("twilio_message_sid", messageSid)
     .eq("direction", "outbound")
-    .select("id, conversation_id")
-    .returns<{ id: string; conversation_id: string }[]>();
+    .select("id, conversation_id, message_origin, body, to_address")
+    .returns<WhatsAppMessageStatusRow[]>();
 
   if (error) {
     logServerError("whatsapp.status_update_failed", error, { twilioMessageSid: messageSid, messageStatus });
@@ -198,6 +206,23 @@ export async function POST(request: Request) {
     if (notificationDeliveryError) {
       logServerError("whatsapp.notification_delivery_status_update_failed", notificationDeliveryError, { twilioMessageSid: messageSid, messageStatus });
     }
+  }
+
+  if (isFinalFailure) {
+    await Promise.all(
+      (updatedMessages ?? [])
+        .filter((message) => message.message_origin === "manual" || message.message_origin === "acknowledgement")
+        .map((message) =>
+          dispatchChatWhatsAppSupportAlert({
+            kind: message.message_origin === "manual" ? "manual_reply" : "acknowledgement",
+            recipientName: null,
+            recipientPhone: message.to_address,
+            body: message.body,
+            status: "failed",
+            errorMessage: errorMessage ?? `Twilio reportó ${messageStatus}.`,
+          }),
+        ),
+    );
   }
 
   await Promise.all(

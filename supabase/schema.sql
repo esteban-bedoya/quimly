@@ -353,6 +353,7 @@ create table if not exists public.whatsapp_messages (
   from_address text not null,
   to_address text not null,
   body text not null default '',
+  message_origin text check (message_origin is null or message_origin in ('scheduled', 'acknowledgement', 'manual', 'template_test')),
   num_media integer not null default 0,
   twilio_error_code text,
   twilio_error_message text,

@@ -3,9 +3,10 @@ import "server-only";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import {
   sendTelegramAutomatedWhatsAppSupportAlert,
+  sendTelegramChatWhatsAppSupportAlert,
   sendTelegramInboundWhatsAppSupportAlert,
 } from "@/lib/support-notifications/telegram.service.server";
-import type { AutomatedWhatsAppSupportAlert, InboundWhatsAppSupportAlert } from "@/lib/support-notifications/types";
+import type { AutomatedWhatsAppSupportAlert, ChatWhatsAppSupportAlert, InboundWhatsAppSupportAlert } from "@/lib/support-notifications/types";
 
 export async function dispatchInboundWhatsAppSupportAlert(alert: InboundWhatsAppSupportAlert) {
   try {
@@ -40,5 +41,17 @@ export async function dispatchAutomatedWhatsAppSupportAlert(alert: AutomatedWhat
       notificationType: alert.notificationType,
       status: alert.status,
     });
+  }
+}
+
+export async function dispatchChatWhatsAppSupportAlert(alert: ChatWhatsAppSupportAlert) {
+  try {
+    const result = await sendTelegramChatWhatsAppSupportAlert(alert);
+
+    if (result.status === "sent") {
+      logServerInfo("support_alert.telegram_chat_message_sent", { kind: alert.kind, status: alert.status });
+    }
+  } catch (error) {
+    logServerError("support_alert.telegram_chat_message_failed", error, { kind: alert.kind, status: alert.status });
   }
 }

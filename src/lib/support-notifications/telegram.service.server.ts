@@ -3,6 +3,7 @@ import "server-only";
 import { getTelegramSupportAlertConfig } from "@/lib/support-notifications/telegram.config.server";
 import type {
   AutomatedWhatsAppSupportAlert,
+  ChatWhatsAppSupportAlert,
   InboundWhatsAppSupportAlert,
   TelegramSupportAlertResult,
 } from "@/lib/support-notifications/types";
@@ -76,6 +77,27 @@ export async function sendTelegramAutomatedWhatsAppSupportAlert(alert: Automated
     `Teléfono: ${alert.recipientPhone}`,
     `Restaurante: ${alert.restaurantName}`,
     `Sede: ${alert.branchName}`,
+    "",
+    "Mensaje:",
+    alert.body.slice(0, 3_000),
+  ];
+
+  if (alert.errorMessage) {
+    lines.push("", `Error: ${alert.errorMessage.slice(0, 500)}`);
+  }
+
+  return sendTelegramMessage(lines.join("\n"));
+}
+
+export async function sendTelegramChatWhatsAppSupportAlert(alert: ChatWhatsAppSupportAlert) {
+  const recipientName = alert.recipientName?.trim() || "Cliente sin nombre";
+  const kindLabel = alert.kind === "acknowledgement" ? "acuse automático" : "respuesta manual";
+  const statusLabel = alert.status === "accepted" ? "aceptado por Twilio" : "falló";
+  const lines = [
+    `📤 ${kindLabel} de WhatsApp ${statusLabel}`,
+    "",
+    `Cliente: ${recipientName}`,
+    `Teléfono: ${alert.recipientPhone}`,
     "",
     "Mensaje:",
     alert.body.slice(0, 3_000),
