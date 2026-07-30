@@ -98,11 +98,6 @@ function formatDateForMessage(dateKey: string) {
   return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", timeZone: "UTC", year: "numeric" }).format(new Date(`${dateKey}T00:00:00Z`));
 }
 
-function getFirstEightAmDate(date: Date) {
-  const parts = getTimeZoneParts(date);
-  return parts.hour < notificationStartHour || (parts.hour === notificationStartHour && parts.minute === 0) ? parts.dateKey : addDays(parts.dateKey, 1);
-}
-
 function hasReachedNotificationStart(now: Date) {
   return getTimeZoneParts(now).hour >= notificationStartHour;
 }
@@ -156,6 +151,35 @@ function buildWeeklyPeriodLabel(today: string) {
 
 function makeTelegramContext(context: NotificationContext): TelegramAlertContext {
   return { recipientName: context.recipient.name, recipientPhone: context.recipient.phone, restaurantName: context.company.name, branchName: context.branch.name };
+}
+
+function buildTrialWelcomeNotification(subscription: SubscriptionRow, context: NotificationContext, companyBranches: BranchRow[]): PreparedNotification {
+  const endDate = localDateKey(new Date(subscription.trial_ends_at));
+  const greeting = getRecipientGreetingName(context.recipient.name);
+  const branchScope = getBranchScopeName(companyBranches);
+  return {
+    context,
+    templateKey: "trial_welcome",
+    deduplicationKey: `trial_welcome:${subscription.id}`,
+    variables: { "1": greeting, "2": context.company.name, "3": branchScope, "4": formatDateForMessage(endDate) },
+    fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Te damos la bienvenida a Quimly.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", `Tu prueba gratuita está activa hasta el ${formatDateForMessage(endDate)}. Aprovecha la gestión documental y los formularios operativos para conocer Quimly.`, "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"),
+    scopeBranchId: null,
+    priority: 60,
+  };
+}
+
+function buildFounderBenefitNotification(occurredAt: string, context: NotificationContext, companyBranches: BranchRow[]): PreparedNotification {
+  const greeting = getRecipientGreetingName(context.recipient.name);
+  const branchScope = getBranchScopeName(companyBranches);
+  return {
+    context,
+    templateKey: "founder_benefit_assigned",
+    deduplicationKey: `founder_benefit_assigned:${context.company.id}:${occurredAt}`,
+    variables: { "1": greeting, "2": context.company.name, "3": branchScope },
+    fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Tu beneficio Founder fue activado.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", "Ahora cuentas con las condiciones especiales asociadas a Founder. Puedes revisar el detalle de tu plan en Quimly.", "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"),
+    scopeBranchId: null,
+    priority: 50,
+  };
 }
 
 async function loadNotificationData() {
@@ -295,39 +319,14 @@ function prepareTrialNotifications(now: Date, today: string, branchesByCompanyId
     const branchScope = getBranchScopeName(companyBranches);
     const startDate = localDateKey(new Date(subscription.trial_started_at));
     const endDate = localDateKey(new Date(subscription.trial_ends_at));
-    const welcomeDate = getFirstEightAmDate(new Date(subscription.trial_started_at));
     const midpointDate = addDays(startDate, 7);
     const expiryMessageDate = addDays(endDate, 1);
     const greeting = getRecipientGreetingName(context.recipient.name);
 
-    if (welcomeDate <= today) notifications.push({ context, templateKey: "trial_welcome", deduplicationKey: `trial_welcome:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "3": branchScope, "4": formatDateForMessage(endDate) }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Te damos la bienvenida a Quimly.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", `Tu prueba gratuita está activa hasta el ${formatDateForMessage(endDate)}. Aprovecha la gestión documental y los formularios operativos para conocer Quimly.`, "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 60 });
     if (midpointDate <= today) notifications.push({ context, templateKey: "trial_midpoint", deduplicationKey: `trial_midpoint:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "3": branchScope, "4": formatDateForMessage(endDate) }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Ya transcurrió la mitad de tu prueba gratuita.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", `Te recomendamos registrar formularios y cargar tus documentos para aprovechar Quimly antes del ${formatDateForMessage(endDate)}.`, "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 70 });
     if (expiryMessageDate <= today && new Date(subscription.trial_ends_at).getTime() < now.getTime()) notifications.push({ context, templateKey: "trial_expired", deduplicationKey: `trial_expired:${subscription.id}:${endDate}`, variables: { "1": greeting, "2": formatDateForMessage(endDate), "3": context.company.name, "4": branchScope }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", `Tu prueba gratuita finalizó el ${formatDateForMessage(endDate)}.`, "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", "Esperamos que Quimly haya sido útil para tu operación. Puedes suscribirte para continuar usando la plataforma.", "", "Si necesitas ayuda o quieres conocer las opciones disponibles, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 40 });
   }
   return notifications;
-}
-
-async function prepareFounderBenefitNotifications(today: string, branchesByCompanyId: Map<string, BranchRow[]>, contextsByBranchId: Map<string, NotificationContext>) {
-  // The unique delivery key makes this bounded catch-up safe. It prevents a brief
-  // cron or deployment outage from silently losing a Founder confirmation.
-  const recentAssignmentsSince = notificationStartAt(addDays(today, -7)).toISOString();
-  const { data: assignments, error } = await requiredAdminClient()
-    .from("subscription_status_history")
-    .select("company_id, occurred_at")
-    .eq("reason", "founder_assigned")
-    .gte("occurred_at", recentAssignmentsSince)
-    .returns<FounderAssignmentRow[]>();
-  if (error) throw new Error(`No fue posible consultar las asignaciones Founder: ${error.message}`);
-
-  return (assignments ?? []).flatMap((assignment): PreparedNotification[] => {
-    if (getFirstEightAmDate(new Date(assignment.occurred_at)) > today) return [];
-    const companyBranches = branchesByCompanyId.get(assignment.company_id) ?? [];
-    const context = companyBranches.length ? contextsByBranchId.get(companyBranches[0].id) : null;
-    if (!context) return [];
-    const greeting = getRecipientGreetingName(context.recipient.name);
-    const branchScope = getBranchScopeName(companyBranches);
-    return [{ context, templateKey: "founder_benefit_assigned", deduplicationKey: `founder_benefit_assigned:${assignment.company_id}:${assignment.occurred_at}`, variables: { "1": greeting, "2": context.company.name, "3": branchScope }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Tu beneficio Founder fue activado.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", "Ahora cuentas con las condiciones especiales asociadas a Founder. Puedes revisar el detalle de tu plan en Quimly.", "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 50 }];
-  });
 }
 
 async function enqueueNotifications(notifications: PreparedNotification[], now: Date, today: string, result: ScheduledWhatsAppNotificationRunResult) {
@@ -357,6 +356,160 @@ function parseDeliveryPayload(payload: unknown): StoredDeliveryPayload | null {
   const value = payload as Partial<StoredDeliveryPayload>;
   if (!value.variables || !value.fallbackBody || !value.telegram) return null;
   return value as StoredDeliveryPayload;
+}
+
+type PendingDeliveryRow = ClaimedDelivery & {
+  status: "pending" | "processing" | "sent" | "delivered" | "failed";
+  deduplication_key: string;
+};
+
+const immediateDeliveryFields = "id, recipient_phone, notification_type, template_key, payload, attempt_count, status, deduplication_key";
+
+async function loadImmediateNotificationContext(companyId: string) {
+  const supabase = requiredAdminClient();
+  const [companyResult, branchesResult, subscriptionResult] = await Promise.all([
+    supabase.from("companies").select("id, name, is_active, company_admin_user_id").eq("id", companyId).eq("is_active", true).maybeSingle<CompanyRow>(),
+    supabase.from("branches").select("id, company_id, name, status, is_active").eq("company_id", companyId).neq("status", "deleted").order("name", { ascending: true }).returns<BranchRow[]>(),
+    supabase.from("company_subscriptions").select("id, company_id, status, trial_started_at, trial_ends_at").eq("company_id", companyId).maybeSingle<SubscriptionRow>(),
+  ]);
+
+  const firstError = companyResult.error ?? branchesResult.error ?? subscriptionResult.error;
+  if (firstError) {
+    throw new Error(`No fue posible preparar la notificación inmediata: ${firstError.message}`);
+  }
+
+  const company = companyResult.data;
+  const companyBranches = branchesResult.data ?? [];
+  const subscription = subscriptionResult.data;
+  const primaryBranch = companyBranches.find((branch) => branch.status === "active" && branch.is_active) ?? companyBranches[0];
+
+  if (!company || !subscription || !primaryBranch || !company.company_admin_user_id) {
+    throw new Error("La empresa no tiene la información necesaria para enviar una notificación inmediata.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("user_id, full_name, phone, phone_verified, is_active")
+    .eq("user_id", company.company_admin_user_id)
+    .maybeSingle<ProfileRow>();
+
+  if (profileError) {
+    throw new Error(`No fue posible consultar el destinatario: ${profileError.message}`);
+  }
+
+  const context = profile ? createNotificationContext(primaryBranch, new Map([[company.id, company]]), new Map([[profile.user_id, profile]])) : null;
+  if (!context) {
+    throw new Error("La empresa no tiene un número de WhatsApp verificado y válido para la notificación inmediata.");
+  }
+
+  return { context, companyBranches, subscription };
+}
+
+async function dispatchImmediateNotification(notification: PreparedNotification) {
+  const supabase = requiredAdminClient();
+  const result: ScheduledWhatsAppNotificationRunResult = { enqueued: 0, attempted: 0, accepted: 0, retryScheduled: 0, skipped: 0, failed: 0 };
+  const now = new Date().toISOString();
+  const payload: StoredDeliveryPayload = {
+    variables: notification.variables,
+    fallbackBody: notification.fallbackBody,
+    telegram: makeTelegramContext(notification.context),
+  };
+  const deliveryValues = {
+    company_id: notification.context.company.id,
+    branch_id: notification.scopeBranchId,
+    recipient_user_id: notification.context.recipient.userId,
+    recipient_phone: notification.context.recipient.phone,
+    notification_type: notification.templateKey,
+    template_key: notification.templateKey,
+    deduplication_key: notification.deduplicationKey,
+    payload,
+    status: "pending",
+    scheduled_for: now,
+    next_attempt_at: now,
+  };
+  const { data: insertedDelivery, error: insertError } = await supabase
+    .from("whatsapp_notification_deliveries")
+    .upsert(deliveryValues, { onConflict: "deduplication_key", ignoreDuplicates: true })
+    .select(immediateDeliveryFields)
+    .maybeSingle<PendingDeliveryRow>();
+
+  if (insertError) {
+    throw new Error(`No fue posible encolar la notificación inmediata: ${insertError.message}`);
+  }
+
+  const { data: existingDelivery, error: existingError } = insertedDelivery
+    ? { data: insertedDelivery, error: null }
+    : await supabase
+        .from("whatsapp_notification_deliveries")
+        .select(immediateDeliveryFields)
+        .eq("deduplication_key", notification.deduplicationKey)
+        .maybeSingle<PendingDeliveryRow>();
+
+  if (existingError || !existingDelivery) {
+    throw new Error(existingError?.message ?? "No fue posible recuperar la notificación inmediata.");
+  }
+
+  if (!insertedDelivery) {
+    result.skipped += 1;
+  } else {
+    result.enqueued += 1;
+  }
+
+  if (existingDelivery.status !== "pending") {
+    return result;
+  }
+
+  const { data: claimedDelivery, error: claimError } = await supabase
+    .from("whatsapp_notification_deliveries")
+    .update({
+      status: "processing",
+      attempt_count: existingDelivery.attempt_count + 1,
+      last_attempt_at: now,
+      processing_started_at: now,
+      error_message: null,
+    })
+    .eq("id", existingDelivery.id)
+    .eq("status", "pending")
+    .eq("attempt_count", existingDelivery.attempt_count)
+    .select("id, recipient_phone, notification_type, template_key, payload, attempt_count")
+    .maybeSingle<ClaimedDelivery>();
+
+  if (claimError) {
+    throw new Error(`No fue posible reclamar la notificación inmediata: ${claimError.message}`);
+  }
+
+  if (claimedDelivery) {
+    await dispatchClaimedDelivery(claimedDelivery, result);
+  }
+
+  return result;
+}
+
+export async function sendTrialWelcomeWhatsAppImmediately({ companyId }: { companyId: string }) {
+  const { context, companyBranches, subscription } = await loadImmediateNotificationContext(companyId);
+  if (subscription.status !== "trial") {
+    return null;
+  }
+
+  return dispatchImmediateNotification(buildTrialWelcomeNotification(subscription, context, companyBranches));
+}
+
+export async function sendFounderBenefitWhatsAppImmediately({ companyId }: { companyId: string }) {
+  const { context, companyBranches } = await loadImmediateNotificationContext(companyId);
+  const { data: assignment, error } = await requiredAdminClient()
+    .from("subscription_status_history")
+    .select("company_id, occurred_at")
+    .eq("company_id", companyId)
+    .eq("reason", "founder_assigned")
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<FounderAssignmentRow>();
+
+  if (error || !assignment) {
+    throw new Error(error?.message ?? "No fue posible encontrar la asignación Founder recién creada.");
+  }
+
+  return dispatchImmediateNotification(buildFounderBenefitNotification(assignment.occurred_at, context, companyBranches));
 }
 
 async function scheduleRetryOrFail(delivery: ClaimedDelivery, errorMessage: string, result: ScheduledWhatsAppNotificationRunResult) {
@@ -439,7 +592,14 @@ async function dispatchDueDeliveries(result: ScheduledWhatsAppNotificationRunRes
 
 export async function runScheduledWhatsAppNotifications(now = new Date()): Promise<ScheduledWhatsAppNotificationRunResult> {
   const result: ScheduledWhatsAppNotificationRunResult = { enqueued: 0, attempted: 0, accepted: 0, retryScheduled: 0, skipped: 0, failed: 0 };
-  if (!hasReachedNotificationStart(now)) return result;
+  if (!hasReachedNotificationStart(now)) {
+    // Welcome and Founder messages are sent immediately. If Twilio is briefly
+    // unavailable, their retry must not wait for the next 8:00 a. m. run.
+    // New scheduled reminders are still generated only after 8:00 a. m.
+    await dispatchDueDeliveries(result);
+    logServerInfo("whatsapp.immediate_notification_retries_completed", { ...result });
+    return result;
+  }
   const today = localDateKey(now);
   const data = await loadNotificationData();
   const companiesById = new Map(data.companies.map((company) => [company.id, company]));
@@ -458,7 +618,6 @@ export async function runScheduledWhatsAppNotifications(now = new Date()): Promi
   const notifications = (await Promise.all([
     prepareDocumentExpiryNotifications(today, activeContextsByBranchId),
     prepareWeeklyOperationalSummaries(today, activeContextsByBranchId),
-    prepareFounderBenefitNotifications(today, branchesByCompanyId, allContextsByBranchId),
   ])).flat();
   notifications.push(...prepareTrialNotifications(now, today, branchesByCompanyId, allContextsByBranchId, data.subscriptions));
   await enqueueNotifications(notifications, now, today, result);

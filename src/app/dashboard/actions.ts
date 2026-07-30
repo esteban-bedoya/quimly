@@ -19,6 +19,7 @@ import {
 } from "@/lib/billing/billing-service.server";
 import { createMercadoPagoBillingProvider } from "@/lib/billing/providers/mercado-pago.server";
 import { notificationService } from "@/lib/notifications/notification.service";
+import { sendFounderBenefitWhatsAppImmediately } from "@/lib/notifications/scheduled-whatsapp-notifications.service.server";
 import { isValidEmailAddress, normalizeInternationalPhoneInput, normalizeOptionalEmail, type E164PhoneNumber } from "@/lib/phone";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { getMissingSupabaseAdminConfigKeys } from "@/lib/supabase/config";
@@ -1182,6 +1183,14 @@ export async function assignCompanyFounder(
       companyId,
     });
     return { error: formatDatabaseError(error, "No fue posible asignar Founder.") };
+  }
+
+  try {
+    await sendFounderBenefitWhatsAppImmediately({ companyId });
+  } catch (error) {
+    // Founder assignment is already committed. The delivery remains observable
+    // through server logs and must not be rolled back because WhatsApp is down.
+    logServerError("whatsapp.founder_benefit_immediate_dispatch_failed", error, { companyId });
   }
 
   logServerInfo("billing.founder_assigned", {

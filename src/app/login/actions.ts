@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 
 import { clearSessionTokens, storeSessionTokens } from "@/lib/auth/session";
 import { notificationService } from "@/lib/notifications/notification.service";
+import { sendTrialWelcomeWhatsAppImmediately } from "@/lib/notifications/scheduled-whatsapp-notifications.service.server";
 import { normalizeInternationalPhoneInput, type E164PhoneNumber } from "@/lib/phone";
+import { logServerError } from "@/lib/server/logging";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseAuthClient } from "@/lib/supabase/auth";
 
@@ -271,7 +273,7 @@ export async function completeSignupWithOTP(
     createdUserId = createdUser.user.id;
     shouldCompensateAuthUser = true;
 
-    const { error: onboardingError } = await adminClient.rpc("onboard_company_trial", {
+    const { data: onboardedCompanyId, error: onboardingError } = await adminClient.rpc("onboard_company_trial", {
       target_user_id: createdUserId,
       target_phone: phone,
       target_admin_name: adminName,
@@ -283,6 +285,17 @@ export async function completeSignupWithOTP(
     }
 
     shouldCompensateAuthUser = false;
+
+    if (typeof onboardedCompanyId === "string") {
+      try {
+        await sendTrialWelcomeWhatsAppImmediately({ companyId: onboardedCompanyId });
+      } catch (error) {
+        // A WhatsApp outage must never undo a successfully created customer account.
+        logServerError("whatsapp.trial_welcome_immediate_dispatch_failed", error, { companyId: onboardedCompanyId });
+      }
+    } else {
+      logServerError("whatsapp.trial_welcome_company_id_missing", new Error("onboard_company_trial no devolvió una empresa."));
+    }
 
     const supabase = getSupabaseAuthClient();
 
