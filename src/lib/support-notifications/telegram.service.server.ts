@@ -66,6 +66,7 @@ export async function sendTelegramAutomatedWhatsAppSupportAlert(alert: Automated
   const recipientName = alert.recipientName?.trim() || "Cliente sin nombre";
   const statusLabel = {
     accepted: "aceptado por Twilio (pendiente de entrega)",
+    delivered: "entregado correctamente",
     retry_scheduled: "pendiente de reintento",
     failed: "falló definitivamente",
   }[alert.status];
@@ -92,7 +93,7 @@ export async function sendTelegramAutomatedWhatsAppSupportAlert(alert: Automated
 export async function sendTelegramChatWhatsAppSupportAlert(alert: ChatWhatsAppSupportAlert) {
   const recipientName = alert.recipientName?.trim() || "Cliente sin nombre";
   const kindLabel = alert.kind === "acknowledgement" ? "acuse automático" : "respuesta manual";
-  const statusLabel = alert.status === "accepted" ? "aceptado por Twilio" : "falló";
+  const statusLabel = alert.status === "accepted" ? "aceptado por Twilio" : alert.status === "delivered" ? "entregado correctamente" : "falló";
   const lines = [
     `📤 ${kindLabel} de WhatsApp ${statusLabel}`,
     "",

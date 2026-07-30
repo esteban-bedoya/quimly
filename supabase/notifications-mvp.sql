@@ -42,6 +42,7 @@ create table if not exists public.whatsapp_notification_deliveries (
   sent_at timestamptz,
   delivered_at timestamptz,
   telegram_failure_notified_for_sid text,
+  telegram_delivery_notified_for_sid text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint whatsapp_notification_deliveries_recipient_phone_e164 check (public.is_e164_phone(recipient_phone))
@@ -71,7 +72,7 @@ alter table public.whatsapp_notification_deliveries enable row level security;
 revoke all on table public.whatsapp_notification_deliveries from public, anon, authenticated;
 grant select, insert, update, delete on table public.whatsapp_notification_deliveries to service_role;
 
-create or replace function public.claim_due_whatsapp_notification_deliveries(p_limit integer default 12)
+create or replace function public.claim_due_whatsapp_notification_deliveries(p_limit integer default 6)
 returns setof public.whatsapp_notification_deliveries
 language sql
 security definer
@@ -89,7 +90,7 @@ as $$
       and processing_started_at <= now() - interval '15 minutes'
     )
     order by scheduled_for asc, created_at asc
-    limit least(greatest(coalesce(p_limit, 12), 1), 50)
+    limit least(greatest(coalesce(p_limit, 6), 1), 50)
     for update skip locked
   ), claimed as (
     update public.whatsapp_notification_deliveries deliveries

@@ -308,12 +308,14 @@ function prepareTrialNotifications(now: Date, today: string, branchesByCompanyId
 }
 
 async function prepareFounderBenefitNotifications(today: string, branchesByCompanyId: Map<string, BranchRow[]>, contextsByBranchId: Map<string, NotificationContext>) {
-  const yesterdayAtEight = notificationStartAt(addDays(today, -1)).toISOString();
+  // The unique delivery key makes this bounded catch-up safe. It prevents a brief
+  // cron or deployment outage from silently losing a Founder confirmation.
+  const recentAssignmentsSince = notificationStartAt(addDays(today, -7)).toISOString();
   const { data: assignments, error } = await requiredAdminClient()
     .from("subscription_status_history")
     .select("company_id, occurred_at")
     .eq("reason", "founder_assigned")
-    .gte("occurred_at", yesterdayAtEight)
+    .gte("occurred_at", recentAssignmentsSince)
     .returns<FounderAssignmentRow[]>();
   if (error) throw new Error(`No fue posible consultar las asignaciones Founder: ${error.message}`);
 
@@ -386,7 +388,12 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Twilio no pudo aceptar el mensaje automático.";
     try {
-      await recordFailedAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, fallbackBody: payload.fallbackBody, error });
+      await recordFailedAutomatedWhatsAppTemplateMessage({
+        to: delivery.recipient_phone,
+        fallbackBody: payload.fallbackBody,
+        origin: delivery.notification_type,
+        error,
+      });
     } catch (persistenceError) {
       logServerError("whatsapp.scheduled_notification_failure_inbox_persistence_failed", persistenceError, { deliveryId: delivery.id });
     }
@@ -402,7 +409,7 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
   }
 
   try {
-    const inboxMessage = await recordAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, message, fallbackBody: payload.fallbackBody });
+    const inboxMessage = await recordAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, message, fallbackBody: payload.fallbackBody, origin: delivery.notification_type });
     const { error: inboxReferenceError } = await requiredAdminClient().from("whatsapp_notification_deliveries").update({ whatsapp_message_id: inboxMessage.messageId }).eq("id", delivery.id);
     if (inboxReferenceError) logServerError("whatsapp.scheduled_notification_inbox_reference_failed", inboxReferenceError, { deliveryId: delivery.id });
   } catch (error) {

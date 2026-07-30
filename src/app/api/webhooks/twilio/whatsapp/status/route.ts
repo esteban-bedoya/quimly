@@ -41,7 +41,7 @@ type NotificationDeliveryRow = {
 type WhatsAppMessageStatusRow = {
   id: string;
   conversation_id: string;
-  message_origin: "scheduled" | "acknowledgement" | "manual" | "template_test" | null;
+  message_origin: string | null;
   body: string;
   to_address: string;
 };
@@ -208,20 +208,85 @@ export async function POST(request: Request) {
     }
   }
 
-  if (isFinalFailure) {
+  if (isDelivered && !notificationDeliveryLookupError) {
+    await Promise.all(
+      (notificationDeliveries ?? []).map(async (delivery) => {
+        const { data: notifiedDelivery, error: updateError } = await adminClient
+          .from("whatsapp_notification_deliveries")
+          .update({ telegram_delivery_notified_for_sid: messageSid })
+          .eq("id", delivery.id)
+          .is("telegram_delivery_notified_for_sid", null)
+          .select("id")
+          .maybeSingle<{ id: string }>();
+
+        if (updateError) {
+          logServerError("whatsapp.notification_delivery_delivered_notification_update_failed", updateError, {
+            deliveryId: delivery.id,
+            twilioMessageSid: messageSid,
+          });
+          return;
+        }
+
+        if (!notifiedDelivery) {
+          return;
+        }
+
+        const alert = getTelegramAlertPayload(delivery.payload);
+        if (alert) {
+          await dispatchAutomatedWhatsAppSupportAlert({
+            notificationType: delivery.notification_type,
+            ...alert,
+            status: "delivered",
+          });
+        }
+      }),
+    );
+  }
+
+  if (isDelivered || isFinalFailure) {
     await Promise.all(
       (updatedMessages ?? [])
         .filter((message) => message.message_origin === "manual" || message.message_origin === "acknowledgement")
-        .map((message) =>
-          dispatchChatWhatsAppSupportAlert({
+        .map(async (message) => {
+          // Successful manual messages stay in the inbox only. Automatic acknowledgements
+          // are also surfaced in Telegram once Twilio confirms delivery.
+          if (isDelivered && message.message_origin === "manual") {
+            return;
+          }
+
+          const markerColumn = isDelivered
+            ? "telegram_delivery_notified_for_sid"
+            : "telegram_failure_notified_for_sid";
+          const { data: notifiedMessage, error: updateError } = await adminClient
+            .from("whatsapp_messages")
+            .update({ [markerColumn]: messageSid })
+            .eq("id", message.id)
+            .is(markerColumn, null)
+            .select("id")
+            .maybeSingle<{ id: string }>();
+
+          if (updateError) {
+            logServerError("whatsapp.message_status_telegram_marker_update_failed", updateError, {
+              messageId: message.id,
+              twilioMessageSid: messageSid,
+              messageStatus,
+            });
+            return;
+          }
+
+          if (!notifiedMessage) {
+            return;
+          }
+
+          await dispatchChatWhatsAppSupportAlert({
             kind: message.message_origin === "manual" ? "manual_reply" : "acknowledgement",
             recipientName: null,
             recipientPhone: message.to_address,
             body: message.body,
-            status: "failed",
-            errorMessage: errorMessage ?? `Twilio reportó ${messageStatus}.`,
-          }),
-        ),
+            status: isDelivered ? "delivered" : "failed",
+            ...(isFinalFailure ? { errorMessage: errorMessage ?? `Twilio reportó ${messageStatus}.` } : {}),
+          });
+        }),
     );
   }
 

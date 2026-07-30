@@ -42,6 +42,27 @@ function messageStatusLabel(status: string) {
   return labels[normalized] ?? status;
 }
 
+function messageOriginLabel(message: WhatsAppMessageSummary) {
+  if (message.direction === "inbound") {
+    return "Cliente";
+  }
+
+  const labels: Record<string, string> = {
+    document_expiry_reminder: "Vencimiento documental",
+    weekly_operational_summary: "Resumen semanal",
+    trial_welcome: "Bienvenida a prueba",
+    trial_midpoint: "Mitad de prueba",
+    trial_expired: "Prueba finalizada",
+    founder_benefit_assigned: "Beneficio Founder",
+    acknowledgement: "Acuse automático",
+    manual: "Respuesta manual",
+    template_test: "Prueba de plantilla",
+    scheduled: "Mensaje automático",
+  };
+
+  return message.origin ? labels[message.origin] ?? "Mensaje automático" : "Mensaje enviado por Quimly";
+}
+
 function messageText(message: WhatsAppMessageSummary) {
   if (message.body.trim()) {
     return message.body;
@@ -182,6 +203,8 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                             <p className="whitespace-pre-wrap break-words text-sm leading-6">{messageText(message)}</p>
                             <div className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.68rem] ${isOutbound ? "text-white/65" : "text-[#756e65]"}`}>
                               <time dateTime={message.occurredAt}>{formatDate(message.occurredAt)}</time>
+                              <span>·</span>
+                              <span>{messageOriginLabel(message)}</span>
                               <span>·</span>
                               <span>{messageStatusLabel(message.twilioStatus)}</span>
                               {message.errorCode ? <span>· Error {message.errorCode}</span> : null}

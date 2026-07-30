@@ -42,7 +42,7 @@ La bandeja interna usa las credenciales de Twilio que ya existen en el servidor;
 - `NEXT_PUBLIC_APP_URL` (debe ser la URL pública y canónica, por ejemplo `https://quimly.co`)
 - `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja responde usando el sender que recibió la conversación.
 - `TWILIO_WHATSAPP_TEMPLATE_SID` identifica la plantilla de WhatsApp aprobada que usa el endpoint interno de prueba `POST /api/test/whatsapp-template`.
-- `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` son opcionales. Cuando ambos estén configurados, Quimly enviará una alerta de soporte por cada mensaje entrante nuevo; sin ambos valores no se realizan envíos a Telegram.
+- `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` son opcionales. Cuando ambos estén configurados, Quimly enviará una alerta por cada mensaje entrante, por los mensajes automáticos y acuses (aceptación, entrega o fallo), y por los fallos de respuestas manuales. Sin ambos valores no se realizan envíos a Telegram.
 
 La bandeja es una herramienta interna exclusiva del rol `owner`; no pertenece a las empresas clientes y sus tablas no usan `company_id`. Un webhook firmado registra automáticamente el sender de Quimly, el contacto por número telefónico y su conversación, incluso si el contacto nunca había escrito antes.
 

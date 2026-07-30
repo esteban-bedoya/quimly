@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth/authorization";
 import { formatPhoneForWhatsApp, normalizePhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppMessage } from "@/lib/notifications/whatsapp.service";
 import { getTwilioWhatsAppFrom } from "@/lib/notifications/twilio.client";
+import type { ScheduledWhatsAppTemplateKey } from "@/lib/notifications/types";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { dispatchChatWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
 import type { InboundWhatsAppSupportAlert } from "@/lib/support-notifications/types";
@@ -15,7 +16,7 @@ import type { WhatsAppInboxSyncEvent, WhatsAppInboxSyncState } from "@/types/wha
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_OUTBOUND_BODY_LENGTH = 4_096;
-export type WhatsAppMessageOrigin = "scheduled" | "acknowledgement" | "manual" | "template_test";
+export type WhatsAppMessageOrigin = ScheduledWhatsAppTemplateKey | "scheduled" | "acknowledgement" | "manual" | "template_test";
 
 type ChannelRow = {
   id: string;
@@ -40,6 +41,7 @@ type MessageRow = {
   twilio_message_sid: string | null;
   twilio_status: string;
   body: string;
+  message_origin: WhatsAppMessageOrigin | null;
   num_media: number;
   twilio_error_code: string | null;
   twilio_error_message: string | null;
@@ -95,6 +97,7 @@ export type WhatsAppMessageSummary = {
   twilioMessageSid: string | null;
   twilioStatus: string;
   body: string;
+  origin: WhatsAppMessageOrigin | null;
   numMedia: number;
   errorCode: string | null;
   errorMessage: string | null;
@@ -220,6 +223,7 @@ function mapMessage(row: MessageRow): WhatsAppMessageSummary {
     twilioMessageSid: row.twilio_message_sid,
     twilioStatus: row.twilio_status,
     body: row.body,
+    origin: row.message_origin,
     numMedia: row.num_media,
     errorCode: row.twilio_error_code,
     errorMessage: row.twilio_error_message,
@@ -281,7 +285,7 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
   const messagesResult = selectedConversation
     ? await supabase
         .from("whatsapp_messages")
-        .select("id, direction, twilio_message_sid, twilio_status, body, num_media, twilio_error_code, twilio_error_message, received_at, sent_at, created_at")
+        .select("id, direction, twilio_message_sid, twilio_status, body, message_origin, num_media, twilio_error_code, twilio_error_message, received_at, sent_at, created_at")
         .eq("conversation_id", selectedConversation.id)
         .order("created_at", { ascending: true })
         .limit(250)
@@ -659,7 +663,7 @@ export async function recordAutomatedWhatsAppTemplateMessage({
   to: E164PhoneNumber;
   message: OutboundWhatsAppMessage;
   fallbackBody: string;
-  origin?: "scheduled";
+  origin?: ScheduledWhatsAppTemplateKey | "scheduled";
 }) {
   const senderPhone = message.from ? normalizePhoneNumber(message.from) : null;
 
@@ -709,10 +713,12 @@ export async function recordAutomatedWhatsAppTemplateMessage({
 export async function recordFailedAutomatedWhatsAppTemplateMessage({
   to,
   fallbackBody,
+  origin = "scheduled",
   error,
 }: {
   to: E164PhoneNumber;
   fallbackBody: string;
+  origin?: ScheduledWhatsAppTemplateKey | "scheduled";
   error: unknown;
 }) {
   const senderPhone = normalizePhoneNumber(getTwilioWhatsAppFrom());
@@ -750,7 +756,7 @@ export async function recordFailedAutomatedWhatsAppTemplateMessage({
     from: getTwilioWhatsAppFrom(),
     to: `whatsapp:${to}`,
     body: fallbackBody,
-    origin: "scheduled",
+    origin,
     error,
   });
 }

@@ -353,10 +353,12 @@ create table if not exists public.whatsapp_messages (
   from_address text not null,
   to_address text not null,
   body text not null default '',
-  message_origin text check (message_origin is null or message_origin in ('scheduled', 'acknowledgement', 'manual', 'template_test')),
+  message_origin text check (message_origin is null or message_origin in ('scheduled', 'document_expiry_reminder', 'weekly_operational_summary', 'trial_welcome', 'trial_midpoint', 'trial_expired', 'founder_benefit_assigned', 'acknowledgement', 'manual', 'template_test')),
   num_media integer not null default 0,
   twilio_error_code text,
   twilio_error_message text,
+  telegram_delivery_notified_for_sid text,
+  telegram_failure_notified_for_sid text,
   received_at timestamptz,
   sent_at timestamptz,
   twilio_status_updated_at timestamptz,
@@ -7380,6 +7382,7 @@ create table if not exists public.whatsapp_notification_deliveries (
   sent_at timestamptz,
   delivered_at timestamptz,
   telegram_failure_notified_for_sid text,
+  telegram_delivery_notified_for_sid text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint whatsapp_notification_deliveries_recipient_phone_e164 check (public.is_e164_phone(recipient_phone))
@@ -7409,7 +7412,7 @@ alter table public.whatsapp_notification_deliveries enable row level security;
 revoke all on table public.whatsapp_notification_deliveries from public, anon, authenticated;
 grant select, insert, update, delete on table public.whatsapp_notification_deliveries to service_role;
 
-create or replace function public.claim_due_whatsapp_notification_deliveries(p_limit integer default 12)
+create or replace function public.claim_due_whatsapp_notification_deliveries(p_limit integer default 6)
 returns setof public.whatsapp_notification_deliveries
 language sql
 security definer
@@ -7427,7 +7430,7 @@ as $$
       and processing_started_at <= now() - interval '15 minutes'
     )
     order by scheduled_for asc, created_at asc
-    limit least(greatest(coalesce(p_limit, 12), 1), 50)
+    limit least(greatest(coalesce(p_limit, 6), 1), 50)
     for update skip locked
   ), claimed as (
     update public.whatsapp_notification_deliveries deliveries

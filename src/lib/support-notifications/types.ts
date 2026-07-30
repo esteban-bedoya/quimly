@@ -15,7 +15,7 @@ export type AutomatedWhatsAppSupportAlert = {
   restaurantName: string;
   branchName: string;
   body: string;
-  status: "accepted" | "retry_scheduled" | "failed";
+  status: "accepted" | "delivered" | "retry_scheduled" | "failed";
   errorMessage?: string | null;
 };
 
@@ -24,7 +24,7 @@ export type ChatWhatsAppSupportAlert = {
   recipientName: string | null;
   recipientPhone: string;
   body: string;
-  status: "accepted" | "failed";
+  status: "accepted" | "delivered" | "failed";
   errorMessage?: string | null;
 };
 

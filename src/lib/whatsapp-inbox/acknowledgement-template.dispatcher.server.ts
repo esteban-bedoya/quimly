@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatPhoneForWhatsApp, normalizePhoneNumber } from "@/lib/phone";
-import { getTwilioClient } from "@/lib/notifications/twilio.client";
+import { getTwilioClient, getTwilioWhatsAppTemplateSid } from "@/lib/notifications/twilio.client";
 import { sendWhatsAppContentTemplate } from "@/lib/notifications/whatsapp.service";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 import { dispatchChatWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
@@ -12,9 +12,8 @@ import {
   recordOutboundWhatsAppMessage,
 } from "@/lib/whatsapp-inbox/service.server";
 
-const ACKNOWLEDGEMENT_TEMPLATE_CONTENT_SID = "HXde19a620325c1cd755fb5f557faeb104";
 const ACKNOWLEDGEMENT_TEMPLATE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
-const ACKNOWLEDGEMENT_TEMPLATE_FALLBACK_BODY = "Plantilla automática de atención enviada.";
+const ACKNOWLEDGEMENT_TEMPLATE_TRACE_FAILURE_BODY = "No se envió el acuse automático porque no fue posible recuperar el contenido de la plantilla configurada.";
 
 let cachedAcknowledgementTemplateBody: string | null = null;
 
@@ -50,7 +49,7 @@ function renderTemplateBody(body: string, variables: Record<string, string>) {
 async function getAcknowledgementTemplateBody(variables: Record<string, string>) {
   try {
     if (!cachedAcknowledgementTemplateBody) {
-      const content = await getTwilioClient().content.v1.contents(ACKNOWLEDGEMENT_TEMPLATE_CONTENT_SID).fetch();
+      const content = await getTwilioClient().content.v1.contents(getTwilioWhatsAppTemplateSid()).fetch();
       cachedAcknowledgementTemplateBody = extractTemplateBody(content.types);
     }
 
@@ -59,9 +58,10 @@ async function getAcknowledgementTemplateBody(variables: Record<string, string>)
     }
   } catch (error) {
     logServerError("whatsapp.acknowledgement_template_content_lookup_failed", error);
+    throw error;
   }
 
-  return ACKNOWLEDGEMENT_TEMPLATE_FALLBACK_BODY;
+  throw new Error("La plantilla de acuse configurada no tiene un cuerpo de texto compatible.");
 }
 
 export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { conversationId: string }) {
@@ -102,6 +102,26 @@ export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { 
       return;
     }
 
+    // Claim the 24-hour acknowledgement slot before calling Twilio. Two inbound
+    // webhooks can arrive together, and only the caller that wins this atomic
+    // update is allowed to send the template.
+    const acknowledgementClaimedAt = new Date().toISOString();
+    const { data: claimedConversation, error: claimError } = await adminClient
+      .from("whatsapp_conversations")
+      .update({ last_ack_template_sent_at: acknowledgementClaimedAt })
+      .eq("id", conversation.id)
+      .or(`last_ack_template_sent_at.is.null,last_ack_template_sent_at.lte.${threshold}`)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+
+    if (claimError) {
+      throw claimError;
+    }
+
+    if (!claimedConversation) {
+      return;
+    }
+
     const to = normalizePhoneNumber(conversation.contact_phone);
     const from = formatPhoneForWhatsApp(channel.whatsapp_phone);
 
@@ -110,24 +130,39 @@ export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { 
     }
 
     const contactName = conversation.contact_name?.trim() || "Cliente";
-    const fallbackBody = await getAcknowledgementTemplateBody({ "1": contactName });
+    let fallbackBody = "";
     let sentMessage: Awaited<ReturnType<typeof sendWhatsAppContentTemplate>>;
 
     try {
+      // We fetch the body from Twilio before sending so the inbox stores the
+      // exact approved text, including the rendered contact-name variable.
+      fallbackBody = await getAcknowledgementTemplateBody({ "1": contactName });
       sentMessage = await sendWhatsAppContentTemplate({
         from,
         to,
-        contentSid: ACKNOWLEDGEMENT_TEMPLATE_CONTENT_SID,
+        contentSid: getTwilioWhatsAppTemplateSid(),
         contentVariables: { "1": contactName },
         statusCallback: getTwilioWhatsAppStatusCallbackUrl(),
       });
     } catch (error) {
+      const { error: releaseClaimError } = await adminClient
+        .from("whatsapp_conversations")
+        .update({ last_ack_template_sent_at: null })
+        .eq("id", conversation.id)
+        .eq("last_ack_template_sent_at", acknowledgementClaimedAt);
+
+      if (releaseClaimError) {
+        logServerError("whatsapp.acknowledgement_template_claim_release_failed", releaseClaimError, {
+          conversationId: conversation.id,
+        });
+      }
+
       try {
         await recordFailedOutboundMessage({
           conversationId: conversation.id,
           from,
           to: formatPhoneForWhatsApp(to)!,
-          body: fallbackBody,
+          body: fallbackBody || ACKNOWLEDGEMENT_TEMPLATE_TRACE_FAILURE_BODY,
           origin: "acknowledgement",
           error,
         });
@@ -140,7 +175,7 @@ export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { 
         kind: "acknowledgement",
         recipientName: conversation.contact_name,
         recipientPhone: conversation.contact_phone,
-        body: fallbackBody,
+        body: fallbackBody || ACKNOWLEDGEMENT_TEMPLATE_TRACE_FAILURE_BODY,
         status: "failed",
         errorMessage: error instanceof Error ? error.message : "Twilio no pudo aceptar el acuse automático.",
       });
@@ -169,18 +204,6 @@ export async function sendAcknowledgementTemplateIfNeeded({ conversationId }: { 
       body: fallbackBody,
       status: "accepted",
     });
-
-    const { data: updatedConversation, error: updateError } = await adminClient
-      .from("whatsapp_conversations")
-      .update({ last_ack_template_sent_at: new Date().toISOString() })
-      .eq("id", conversation.id)
-      .or(`last_ack_template_sent_at.is.null,last_ack_template_sent_at.lte.${threshold}`)
-      .select("id")
-      .maybeSingle<{ id: string }>();
-
-    if (updateError || !updatedConversation) {
-      throw updateError ?? new Error("No fue posible registrar el envío de la plantilla.");
-    }
 
     logServerInfo("whatsapp.acknowledgement_template_sent", {
       conversationId: conversation.id,
