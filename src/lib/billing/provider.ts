@@ -105,7 +105,7 @@ export type BillingProvider = {
   ): Promise<ProviderSubscription>;
   updateSubscriptionStatus(
     providerSubscriptionId: string,
-    status: "paused" | "canceled",
+    status: "paused" | "cancelled",
   ): Promise<ProviderSubscription>;
   refundPayment(providerPaymentId: string, idempotencyKey: string): Promise<ProviderRefund>;
   getPayment(providerPaymentId: string): Promise<ProviderPayment>;

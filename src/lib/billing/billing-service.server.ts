@@ -436,7 +436,7 @@ export class BillingService {
       );
       terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
         ? currentProviderState
-        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
     } catch (error) {
       await this.repository.markIntentFailed(
         intent.id,
@@ -817,7 +817,7 @@ export class BillingService {
 
     const terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
       ? currentProviderState
-      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
 
     if (!isCanceledProviderStatus(terminalProviderState.providerStatus)) {
       throw new Error("Mercado Pago no confirmó la cancelación del checkout abandonado.");
@@ -965,7 +965,7 @@ export class BillingService {
 
         const providerState = providerSubscription.ended_at
           ? await provider.getSubscription(providerSubscription.provider_subscription_id)
-          : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+          : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
 
         if (!isCanceledProviderStatus(providerState.providerStatus)) {
           throw new Error("Mercado Pago no confirmó la cancelación del preapproval rechazado.");
@@ -1035,7 +1035,7 @@ export class BillingService {
       if (!providerSubscription.ended_at) {
         const providerState = await provider.updateSubscriptionStatus(
           providerSubscription.provider_subscription_id,
-          "canceled",
+          "cancelled",
         );
         await this.repository.closeActivationAttempt({
           intent,
@@ -1609,7 +1609,7 @@ export class BillingService {
 
       const providerState = providerSubscription.ended_at
         ? await provider.getSubscription(providerSubscription.provider_subscription_id)
-        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
 
       await this.repository.closeActivationAttempt({
         intent: context.intent,
@@ -1705,7 +1705,7 @@ export class BillingService {
 
       if (currentEntitlement) {
         const isInitialSubscription = isSubscriptionCheckoutIntent(context.intent?.intent_type);
-        const targetProviderStatus = normalizedStatus === "refunded" && isInitialSubscription ? "canceled" : "paused";
+        const targetProviderStatus = normalizedStatus === "refunded" && isInitialSubscription ? "cancelled" : "paused";
 
         providerState = providerSubscription.ended_at
           ? await provider.getSubscription(providerSubscription.provider_subscription_id)
@@ -2235,7 +2235,7 @@ export class BillingService {
     );
     const terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
       ? currentProviderState
-      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+      : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
 
     if (!isCanceledProviderStatus(terminalProviderState.providerStatus)) {
       throw new Error("Mercado Pago no confirmó la cancelación del checkout de activación vencido.");
@@ -2290,7 +2290,7 @@ export class BillingService {
       );
       terminalProviderState = isCanceledProviderStatus(currentProviderState.providerStatus)
         ? currentProviderState
-        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "canceled");
+        : await provider.updateSubscriptionStatus(providerSubscription.provider_subscription_id, "cancelled");
     } catch (error) {
       await this.repository.markIntentCompensationRequired(
         intent.id,

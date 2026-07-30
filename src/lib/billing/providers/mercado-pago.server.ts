@@ -438,7 +438,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
 
   async updateSubscriptionStatus(
     providerSubscriptionId: string,
-    status: "paused" | "canceled",
+    status: "paused" | "cancelled",
   ): Promise<ProviderSubscription> {
     const response = await requestMercadoPago<MercadoPagoPreapprovalResponse>(
       `/preapproval/${encodeURIComponent(providerSubscriptionId)}`,
