@@ -63,7 +63,11 @@ export async function sendTelegramInboundWhatsAppSupportAlert(
 
 export async function sendTelegramAutomatedWhatsAppSupportAlert(alert: AutomatedWhatsAppSupportAlert) {
   const recipientName = alert.recipientName?.trim() || "Cliente sin nombre";
-  const statusLabel = alert.status === "sent" ? "enviado" : "falló";
+  const statusLabel = {
+    accepted: "aceptado por Twilio (pendiente de entrega)",
+    retry_scheduled: "pendiente de reintento",
+    failed: "falló definitivamente",
+  }[alert.status];
   const lines = [
     `📤 Mensaje automático de WhatsApp ${statusLabel}`,
     "",

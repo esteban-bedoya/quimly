@@ -3,7 +3,9 @@ import twilio from "twilio";
 import { revalidatePath } from "next/cache";
 
 import { getTwilioAuthToken } from "@/lib/notifications/twilio.client";
+import { SCHEDULED_WHATSAPP_MAX_ATTEMPTS, getScheduledWhatsAppRetryDelayMinutes } from "@/lib/notifications/scheduled-whatsapp-policy";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
+import { dispatchAutomatedWhatsAppSupportAlert } from "@/lib/support-notifications/dispatch.server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getCanonicalTwilioWebhookUrl,
@@ -27,6 +29,48 @@ function asTwilioParams(formData: FormData) {
 
 function getString(params: Record<string, string>, key: string) {
   return params[key] ?? "";
+}
+
+type NotificationDeliveryRow = {
+  id: string;
+  notification_type: string;
+  attempt_count: number;
+  payload: unknown;
+};
+
+function getTelegramAlertPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const value = payload as {
+    fallbackBody?: unknown;
+    telegram?: {
+      recipientName?: unknown;
+      recipientPhone?: unknown;
+      restaurantName?: unknown;
+      branchName?: unknown;
+    };
+  };
+  const telegram = value.telegram;
+
+  if (
+    typeof value.fallbackBody !== "string" ||
+    !telegram ||
+    typeof telegram.recipientPhone !== "string" ||
+    typeof telegram.restaurantName !== "string" ||
+    typeof telegram.branchName !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    body: value.fallbackBody,
+    recipientName: typeof telegram.recipientName === "string" ? telegram.recipientName : null,
+    recipientPhone: telegram.recipientPhone,
+    restaurantName: telegram.restaurantName,
+    branchName: telegram.branchName,
+  };
 }
 
 export async function POST(request: Request) {
@@ -91,26 +135,69 @@ export async function POST(request: Request) {
   }
 
   const normalizedStatus = messageStatus.toLowerCase();
-  const notificationStatusUpdate = normalizedStatus === "failed" || normalizedStatus === "undelivered"
-    ? {
-        status: "failed",
-        twilio_status: messageStatus,
-        error_message: errorMessage,
-      }
-    : {
-        twilio_status: messageStatus,
-        error_message: errorMessage,
-      };
-  const { error: notificationDeliveryError } = await adminClient
+  const isFinalFailure = normalizedStatus === "failed" || normalizedStatus === "undelivered";
+  const isDelivered = normalizedStatus === "delivered" || normalizedStatus === "read";
+  const { data: notificationDeliveries, error: notificationDeliveryLookupError } = await adminClient
     .from("whatsapp_notification_deliveries")
-    .update(notificationStatusUpdate)
-    .eq("twilio_message_sid", messageSid);
+    .select("id, notification_type, attempt_count, payload")
+    .eq("twilio_message_sid", messageSid)
+    .returns<NotificationDeliveryRow[]>();
 
-  if (notificationDeliveryError) {
-    logServerError("whatsapp.notification_delivery_status_update_failed", notificationDeliveryError, {
-      twilioMessageSid: messageSid,
-      messageStatus,
-    });
+  if (notificationDeliveryLookupError) {
+    logServerError("whatsapp.notification_delivery_status_lookup_failed", notificationDeliveryLookupError, { twilioMessageSid: messageSid, messageStatus });
+  } else if (isFinalFailure) {
+    await Promise.all(
+      (notificationDeliveries ?? []).map(async (delivery) => {
+        const terminal = delivery.attempt_count >= SCHEDULED_WHATSAPP_MAX_ATTEMPTS;
+        const nextAttemptAt = new Date(Date.now() + getScheduledWhatsAppRetryDelayMinutes(delivery.attempt_count) * 60_000).toISOString();
+        const { data: notifiedDelivery, error: updateError } = await adminClient
+          .from("whatsapp_notification_deliveries")
+          .update({
+            status: terminal ? "failed" : "pending",
+            twilio_status: messageStatus,
+            error_message: errorMessage ?? `Twilio reportó ${messageStatus}.`,
+            next_attempt_at: terminal ? new Date().toISOString() : nextAttemptAt,
+            telegram_failure_notified_for_sid: messageSid,
+          })
+          .eq("id", delivery.id)
+          .is("telegram_failure_notified_for_sid", null)
+          .select("id")
+          .maybeSingle<{ id: string }>();
+
+        if (updateError) {
+          logServerError("whatsapp.notification_delivery_failure_update_failed", updateError, { deliveryId: delivery.id, twilioMessageSid: messageSid });
+          return;
+        }
+
+        if (!notifiedDelivery) {
+          return;
+        }
+
+        const alert = getTelegramAlertPayload(delivery.payload);
+        if (alert) {
+          await dispatchAutomatedWhatsAppSupportAlert({
+            notificationType: delivery.notification_type,
+            ...alert,
+            status: terminal ? "failed" : "retry_scheduled",
+            errorMessage: errorMessage ?? `Twilio reportó ${messageStatus}.`,
+          });
+        }
+      }),
+    );
+  } else {
+    const { error: notificationDeliveryError } = await adminClient
+      .from("whatsapp_notification_deliveries")
+      .update({
+        status: isDelivered ? "delivered" : "sent",
+        twilio_status: messageStatus,
+        error_message: errorMessage,
+        ...(isDelivered ? { delivered_at: new Date().toISOString() } : {}),
+      })
+      .eq("twilio_message_sid", messageSid);
+
+    if (notificationDeliveryError) {
+      logServerError("whatsapp.notification_delivery_status_update_failed", notificationDeliveryError, { twilioMessageSid: messageSid, messageStatus });
+    }
   }
 
   await Promise.all(

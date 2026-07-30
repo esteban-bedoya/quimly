@@ -15,7 +15,7 @@ export type AutomatedWhatsAppSupportAlert = {
   restaurantName: string;
   branchName: string;
   body: string;
-  status: "sent" | "failed";
+  status: "accepted" | "retry_scheduled" | "failed";
   errorMessage?: string | null;
 };
 

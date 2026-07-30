@@ -5,6 +5,7 @@ import { logServerError } from "@/lib/server/logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function hasValidCronSecret(request: Request) {
   const secret = process.env.WHATSAPP_NOTIFICATIONS_CRON_SECRET?.trim();
