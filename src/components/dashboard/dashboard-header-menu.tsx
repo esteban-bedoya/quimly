@@ -33,8 +33,6 @@ import {
   canCancelSubscription,
   calculatePlanMonthlyTotalCop,
   formatCopAmount,
-  getDefaultBaseMonthlyPriceCop,
-  getEffectivePlanType,
   getPlanPaymentsVisualState,
   paymentProviderLabel,
   type PlanPaymentsData,
@@ -322,6 +320,7 @@ function InlineActionButton({
 }
 
 function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
+  const router = useRouter();
   const [state, formAction] = useActionState<AdminActionState | undefined, FormData>(
     updateCurrentUserProfile,
     undefined,
@@ -378,12 +377,23 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
     }
 
     handledProfileSaveState.current = state;
-    startTransition(() => {
-      setInitialData(formData);
-      setPhoneOtpCode("");
-      setActiveProfileField(null);
+    let isActive = true;
+
+    getCurrentUserProfileDetails().then((nextState) => {
+      if (!isActive || !nextState.profile) {
+        return;
+      }
+
+      startTransition(() => {
+        setDetailsState(nextState);
+        router.refresh();
+      });
     });
-  }, [formData, state]);
+
+    return () => {
+      isActive = false;
+    };
+  }, [router, state]);
 
   useEffect(() => {
     if (!passwordState?.success || handledPasswordSaveState.current === passwordState) {
@@ -841,6 +851,9 @@ function PlanPaymentsDrawerContent({
     planType: planPayments.planType,
     baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
   });
+  const currentPlanLabel = planPayments.planType === "founder" ? "Plan Founder" : "Plan Operativo";
+  const planStatusMessage =
+    visualState.title === "Plan fundador" || visualState.title === "Plan operativo" ? null : visualState.title;
   const minimumActivationSiteCount = Math.max(planPayments.includedActiveSites, 1);
   const minimumSiteCount = minimumActivationSiteCount;
   const [activationStep, setActivationStep] = useState<PlanActivationStep | null>(null);
@@ -864,13 +877,8 @@ function PlanPaymentsDrawerContent({
   const [isLifecyclePending, startLifecycleTransition] = useTransition();
   const [isScheduledSelectionPending, startScheduledSelectionTransition] = useTransition();
   const capacityQuoteRequestRef = useRef(0);
-  const activationPlanType = getEffectivePlanType({
-    planType: planPayments.planType,
-    subscriptionStatus: planPayments.subscriptionStatus,
-  });
-  const activationBaseMonthlyPriceCop = activationPlanType === planPayments.planType
-    ? planPayments.baseMonthlyPriceCop
-    : getDefaultBaseMonthlyPriceCop(activationPlanType);
+  const activationPlanType = planPayments.planType;
+  const activationBaseMonthlyPriceCop = planPayments.baseMonthlyPriceCop;
   const activationPlanName = activationPlanType === "founder" ? "Plan fundador" : "Plan operativo";
   const selectedAdditionalSites = Math.max(selectedSiteCount - planPayments.includedActiveSites, 0);
   const selectedAdditionalSitesMonthlyTotal =
@@ -928,7 +936,6 @@ function PlanPaymentsDrawerContent({
         ? "downgrade"
         : "unchanged";
   const requiresMercadoPagoCheckout = visualState.isTrial || isReactivationFlow || capacityChangeDirection === "upgrade";
-  const shouldCollectCheckoutEmail = requiresMercadoPagoCheckout && !isValidEmailAddress(profileEmail ?? "");
   const hasCurrentCapacityQuote =
     capacityQuote?.requestedMaxActiveLocations === selectedSiteCount &&
     capacityQuote.changeType === capacityChangeDirection;
@@ -1278,7 +1285,7 @@ function PlanPaymentsDrawerContent({
             ) : !isActivationMode ? (
               <span className="inline-flex flex-wrap items-baseline gap-2">
                 <span className="text-sm font-semibold uppercase tracking-[0.16em] text-[#6f7880]">Plan actual:</span>
-                <span>{visualState.title}</span>
+                <span>{currentPlanLabel}</span>
               </span>
             ) : undefined
           }
@@ -1286,12 +1293,15 @@ function PlanPaymentsDrawerContent({
         {!isActivationMode ? (
           <>
             <div>
+              {planStatusMessage ? (
+                <p className="text-sm font-semibold leading-6 text-[#12110f]">{planStatusMessage}</p>
+              ) : null}
               {visualState.eyebrow ? (
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9298]">
+                <p className={`${planStatusMessage ? "mt-2" : ""} text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9298]`}>
                   {visualState.eyebrow}
                 </p>
               ) : null}
-              <p className={`${visualState.eyebrow ? "mt-3" : ""} text-sm leading-6 text-[#5e6770]`}>
+              <p className={`${planStatusMessage || visualState.eyebrow ? "mt-3" : ""} text-sm leading-6 text-[#5e6770]`}>
                 {paymentStatusMessage}
               </p>
               <div className="mt-2 inline-flex w-fit items-center gap-2 rounded-full border border-[#dfe4e6] bg-[#f7f8f9] px-3 py-1.5 text-sm font-semibold text-[#56616a]">
@@ -1709,10 +1719,10 @@ function PlanPaymentsDrawerContent({
                   />
                 </>
               )}
-              {shouldCollectCheckoutEmail ? (
+              {requiresMercadoPagoCheckout ? (
                 <div className="rounded-2xl border border-[#d9dfe0] bg-[#f7f8f9] px-4 py-3">
                   <label htmlFor="checkoutEmail" className="ui-form-field">
-                    <span className="ui-form-label">Correo electrónico</span>
+                    <span className="ui-form-label">Correo para pagar con Mercado Pago</span>
                     <input
                       id="checkoutEmail"
                       type="email"
@@ -1728,7 +1738,7 @@ function PlanPaymentsDrawerContent({
                     />
                   </label>
                   <p className="mt-2 text-xs leading-5 text-[#5e6770]">
-                    Será el correo de facturación: lo guardaremos en tu perfil y lo usaremos para crear tu suscripción en Mercado Pago.
+                    Usaremos este mismo correo para crear la suscripción y actualizar tu perfil. En Mercado Pago confírmalo; usar otro puede impedir completar el pago.
                   </p>
                 </div>
               ) : null}

@@ -130,16 +130,6 @@ export function getDefaultBaseMonthlyPriceCop(planType: PlanType) {
   return planType === "founder" ? founderPlanBasePriceCop : operationalPlanBasePriceCop;
 }
 
-export function getEffectivePlanType({
-  planType,
-  subscriptionStatus,
-}: {
-  planType: PlanType;
-  subscriptionStatus: SubscriptionStatus;
-}): PlanType {
-  return subscriptionStatus === "cancelled" && planType === "founder" ? "operational" : planType;
-}
-
 export function calculatePlanMonthlyTotalCop({
   planType,
   siteCount,

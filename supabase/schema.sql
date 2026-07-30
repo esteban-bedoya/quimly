@@ -417,7 +417,6 @@ create table if not exists public.company_subscriptions (
   last_successful_payment_at timestamptz,
   cancellation_requested_at timestamptz,
   cancellation_effective_at timestamptz,
-  founder_benefit_forfeited_at timestamptz,
   mercado_pago_customer_id text,
   mercado_pago_subscription_id text,
   created_at timestamptz not null default now(),
@@ -443,10 +442,6 @@ create table if not exists public.company_subscriptions (
   constraint company_subscriptions_payment_attention_check check (
     payment_attention_required = false
     or last_payment_issue_at is not null
-  ),
-  constraint company_subscriptions_founder_forfeiture_check check (
-    founder_benefit_forfeited_at is null
-    or plan_type = 'operational'
   ),
   constraint company_subscriptions_prices_check check (
     base_monthly_price_cop >= 0
@@ -564,6 +559,13 @@ where plan_type = 'founder'
   and base_monthly_price_cop in (24900, 25000);
 
 update public.company_subscriptions
+set
+  plan_type = 'operational',
+  base_monthly_price_cop = 24900
+where status = 'cancelled'
+  and plan_type = 'founder';
+
+update public.company_subscriptions
 set additional_site_monthly_price_cop = 9900
 where additional_site_monthly_price_cop in (15000, 19900);
 
@@ -617,9 +619,6 @@ add column if not exists cancellation_requested_at timestamptz;
 
 alter table if exists public.company_subscriptions
 add column if not exists cancellation_effective_at timestamptz;
-
-alter table if exists public.company_subscriptions
-add column if not exists founder_benefit_forfeited_at timestamptz;
 
 update public.company_subscriptions
 set current_period_started_at = current_period_ends_at - interval '1 month'
@@ -698,19 +697,6 @@ begin
       add constraint company_subscriptions_payment_attention_check check (
         payment_attention_required = false
         or last_payment_issue_at is not null
-      );
-  end if;
-
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'company_subscriptions_founder_forfeiture_check'
-      and conrelid = 'public.company_subscriptions'::regclass
-  ) then
-    alter table public.company_subscriptions
-      add constraint company_subscriptions_founder_forfeiture_check check (
-        founder_benefit_forfeited_at is null
-        or plan_type = 'operational'
       );
   end if;
 
@@ -805,6 +791,12 @@ begin
   end if;
 end;
 $$;
+
+alter table if exists public.company_subscriptions
+drop constraint if exists company_subscriptions_founder_forfeiture_check;
+
+alter table if exists public.company_subscriptions
+drop column if exists founder_benefit_forfeited_at;
 
 update public.user_profiles
 set phone = public.normalize_legacy_phone_to_e164(phone)
@@ -3667,6 +3659,14 @@ begin
   update public.company_subscriptions
   set
     status = case when is_immediate_cancellation or resolved_effective_at <= now() then 'cancelled' else status end,
+    plan_type = case
+      when (is_immediate_cancellation or resolved_effective_at <= now()) and plan_type = 'founder' then 'operational'
+      else plan_type
+    end,
+    base_monthly_price_cop = case
+      when (is_immediate_cancellation or resolved_effective_at <= now()) and plan_type = 'founder' then 24900
+      else base_monthly_price_cop
+    end,
     cancellation_requested_at = coalesce(cancellation_requested_at, target_requested_at),
     cancellation_effective_at = resolved_effective_at,
     payment_attention_required = case when is_immediate_cancellation or resolved_effective_at <= now() then false else payment_attention_required end,
@@ -3717,7 +3717,11 @@ begin
       intent_row.id,
       intent_row.requested_by,
       'subscription_cancellation_effective:' || subscription_row.id,
-      jsonb_build_object('effectiveAt', resolved_effective_at),
+      jsonb_build_object(
+        'effectiveAt', resolved_effective_at,
+        'fromPlanType', subscription_row.plan_type,
+        'toPlanType', case when subscription_row.plan_type = 'founder' then 'operational' else subscription_row.plan_type end
+      ),
       resolved_effective_at
     )
     on conflict (deduplication_key) do nothing;
@@ -4150,6 +4154,7 @@ begin
       cs.id,
       cs.company_id,
       cs.status as from_status,
+      cs.plan_type as from_plan_type,
       cs.cancellation_effective_at
     from public.company_subscriptions cs
     where cs.status in ('active', 'payment_issue', 'suspended')
@@ -4161,11 +4166,13 @@ begin
     update public.company_subscriptions cs
     set
       status = 'cancelled',
+      plan_type = case when cs.plan_type = 'founder' then 'operational' else cs.plan_type end,
+      base_monthly_price_cop = case when cs.plan_type = 'founder' then 24900 else cs.base_monthly_price_cop end,
       payment_attention_required = false,
       payment_grace_ends_at = null
     from due_cancellations
     where cs.id = due_cancellations.id
-    returning cs.id, cs.company_id, due_cancellations.from_status, due_cancellations.cancellation_effective_at
+    returning cs.id, cs.company_id, due_cancellations.from_status, due_cancellations.from_plan_type, due_cancellations.cancellation_effective_at
   ), cancellation_history as (
     insert into public.subscription_status_history (
       company_id,
@@ -4190,7 +4197,11 @@ begin
       cancellation_intent.id,
       cancellation_intent.requested_by,
       'subscription_cancellation_effective:' || finalized_cancellations.id,
-      jsonb_build_object('effectiveAt', finalized_cancellations.cancellation_effective_at),
+      jsonb_build_object(
+        'effectiveAt', finalized_cancellations.cancellation_effective_at,
+        'fromPlanType', finalized_cancellations.from_plan_type,
+        'toPlanType', case when finalized_cancellations.from_plan_type = 'founder' then 'operational' else finalized_cancellations.from_plan_type end
+      ),
       finalized_cancellations.cancellation_effective_at
     from finalized_cancellations
     left join lateral (

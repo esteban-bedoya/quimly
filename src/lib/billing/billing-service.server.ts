@@ -5,13 +5,10 @@ import { createHash } from "node:crypto";
 import {
   canCancelSubscription,
   getAccountCapabilities,
-  getDefaultBaseMonthlyPriceCop,
-  getEffectivePlanType as getEffectivePlanTypeForSubscription,
   getSubscriptionViewState,
   normalizePlanType,
   normalizeSubscriptionStatus,
   type AccountCapabilities,
-  type PlanType,
   type SubscriptionStatus,
   type SubscriptionViewState,
 } from "@/lib/billing";
@@ -208,23 +205,12 @@ function getProcessingExpiry(now = new Date()) {
   return new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString();
 }
 
-function getEffectivePlanType(subscription: CompanySubscriptionBillingRecord): PlanType {
-  return getEffectivePlanTypeForSubscription({
-    planType: normalizePlanType(subscription.plan_type),
-    subscriptionStatus: subscription.status,
-  });
-}
-
 function createEffectivePriceSnapshot(subscription: CompanySubscriptionBillingRecord) {
-  const originalPlanType = normalizePlanType(subscription.plan_type);
-  const planType = getEffectivePlanType(subscription);
+  const planType = normalizePlanType(subscription.plan_type);
 
   return createBillingPriceSnapshot({
     planType,
-    baseMonthlyPriceCop:
-      planType === originalPlanType
-        ? subscription.base_monthly_price_cop
-        : getDefaultBaseMonthlyPriceCop(planType),
+    baseMonthlyPriceCop: subscription.base_monthly_price_cop,
     additionalSiteMonthlyPriceCop: subscription.additional_site_monthly_price_cop,
     includedActiveSites: subscription.included_active_sites,
   });
@@ -2359,7 +2345,7 @@ export class BillingService {
 
   private buildAccountSnapshot(context: CompanyBillingContext): BillingAccountSnapshot {
     const subscriptionStatus = normalizeSubscriptionStatus(context.subscription.status);
-    const planType = getEffectivePlanType(context.subscription);
+    const planType = normalizePlanType(context.subscription.plan_type);
     const subscriptionViewState = getSubscriptionViewState({
       status: subscriptionStatus,
       planType,

@@ -21,7 +21,6 @@ import {
   calculatePlanMonthlyTotalCop,
   founderPlanBasePriceCop,
   getAccountCapabilities,
-  getEffectivePlanType,
   operationalPlanBasePriceCop,
 } from "../src/lib/billing.ts";
 
@@ -45,11 +44,6 @@ test("pago pendiente conserva el acceso operativo hasta que venza la ventana de 
   assert.equal(capabilities.canOperate, true);
   assert.equal(capabilities.canCreateRecords, true);
   assert.equal(capabilities.canCreateBranch, true);
-});
-
-test("Founder cancelado se recupera como Plan operativo, pero Founder suspendido conserva su beneficio", () => {
-  assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "cancelled" }), "operational");
-  assert.equal(getEffectivePlanType({ planType: "founder", subscriptionStatus: "suspended" }), "founder");
 });
 
 test("cancelación está disponible para planes activos, pago pendiente y suspendidos", () => {
