@@ -1,8 +1,13 @@
 import "server-only";
 
 import { formatPhoneForWhatsApp } from "@/lib/phone";
-import { getTwilioClient, getTwilioWhatsAppFrom, getTwilioWhatsAppTemplateSid } from "@/lib/notifications/twilio.client";
-import type { PhoneNumber } from "@/lib/notifications/types";
+import {
+  getTwilioClient,
+  getTwilioScheduledWhatsAppTemplateSid,
+  getTwilioWhatsAppFrom,
+  getTwilioWhatsAppTemplateSid,
+} from "@/lib/notifications/twilio.client";
+import type { PhoneNumber, ScheduledWhatsAppTemplateKey } from "@/lib/notifications/types";
 import { logServerError, logServerInfo } from "@/lib/server/logging";
 
 const WHATSAPP_TEMPLATE_LOG_PREFIX = "[WHATSAPP TEMPLATE]";
@@ -13,6 +18,7 @@ export type WhatsAppTemplateVariables = Record<string, string>;
 type SendWhatsAppTemplateInput = {
   to: PhoneNumber;
   variables: WhatsAppTemplateVariables;
+  templateKey?: ScheduledWhatsAppTemplateKey;
   statusCallback?: string;
 };
 
@@ -99,7 +105,7 @@ export function getWhatsAppTemplateErrorDetails(error: unknown) {
   };
 }
 
-export async function sendWhatsAppTemplate({ to, variables, statusCallback }: SendWhatsAppTemplateInput) {
+export async function sendWhatsAppTemplate({ to, variables, templateKey, statusCallback }: SendWhatsAppTemplateInput) {
   const whatsappTo = formatPhoneForWhatsApp(to);
 
   if (!whatsappTo) {
@@ -107,7 +113,7 @@ export async function sendWhatsAppTemplate({ to, variables, statusCallback }: Se
   }
 
   const from = getTwilioWhatsAppFrom();
-  const contentSid = getTwilioWhatsAppTemplateSid();
+  const contentSid = templateKey ? getTwilioScheduledWhatsAppTemplateSid(templateKey) : getTwilioWhatsAppTemplateSid();
 
   logServerInfo(`${WHATSAPP_TEMPLATE_LOG_PREFIX} send.request`, {
     destination: maskPhoneNumber(to),

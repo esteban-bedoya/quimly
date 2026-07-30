@@ -90,6 +90,29 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unable to process webhook." }, { status: 500 });
   }
 
+  const normalizedStatus = messageStatus.toLowerCase();
+  const notificationStatusUpdate = normalizedStatus === "failed" || normalizedStatus === "undelivered"
+    ? {
+        status: "failed",
+        twilio_status: messageStatus,
+        error_message: errorMessage,
+      }
+    : {
+        twilio_status: messageStatus,
+        error_message: errorMessage,
+      };
+  const { error: notificationDeliveryError } = await adminClient
+    .from("whatsapp_notification_deliveries")
+    .update(notificationStatusUpdate)
+    .eq("twilio_message_sid", messageSid);
+
+  if (notificationDeliveryError) {
+    logServerError("whatsapp.notification_delivery_status_update_failed", notificationDeliveryError, {
+      twilioMessageSid: messageSid,
+      messageStatus,
+    });
+  }
+
   await Promise.all(
     (updatedMessages ?? []).map((message) =>
       recordWhatsAppInboxEventBestEffort({

@@ -640,6 +640,59 @@ export async function recordWhatsAppTemplateTestMessage({
   return conversation.id;
 }
 
+export async function recordAutomatedWhatsAppTemplateMessage({
+  to,
+  message,
+  fallbackBody,
+}: {
+  to: E164PhoneNumber;
+  message: OutboundWhatsAppMessage;
+  fallbackBody: string;
+}) {
+  const senderPhone = message.from ? normalizePhoneNumber(message.from) : null;
+
+  if (!senderPhone) {
+    throw new Error("Twilio no devolvió un WhatsApp Sender válido para guardar el mensaje automático.");
+  }
+
+  const adminClient = getRequiredAdminClient();
+  const { data: channel, error: channelError } = await adminClient
+    .from("whatsapp_channels")
+    .upsert({ whatsapp_phone: senderPhone }, { onConflict: "whatsapp_phone" })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (channelError || !channel) {
+    throw new Error("No fue posible resolver el sender de WhatsApp para el mensaje automático.");
+  }
+
+  const { data: conversation, error: conversationError } = await adminClient
+    .from("whatsapp_conversations")
+    .upsert(
+      {
+        channel_id: channel.id,
+        contact_phone: to,
+        last_message_at: new Date().toISOString(),
+        last_message_direction: "outbound",
+      },
+      { onConflict: "channel_id,contact_phone" },
+    )
+    .select("id")
+    .single<{ id: string }>();
+
+  if (conversationError || !conversation) {
+    throw new Error("No fue posible crear la conversación de WhatsApp para el mensaje automático.");
+  }
+
+  const messageId = await recordOutboundWhatsAppMessage({
+    conversationId: conversation.id,
+    message,
+    fallbackBody,
+  });
+
+  return { conversationId: conversation.id, messageId };
+}
+
 export async function sendOwnerWhatsAppReply({
   conversationId,
   body,

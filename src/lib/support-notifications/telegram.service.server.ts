@@ -1,7 +1,11 @@
 import "server-only";
 
 import { getTelegramSupportAlertConfig } from "@/lib/support-notifications/telegram.config.server";
-import type { InboundWhatsAppSupportAlert, TelegramSupportAlertResult } from "@/lib/support-notifications/types";
+import type {
+  AutomatedWhatsAppSupportAlert,
+  InboundWhatsAppSupportAlert,
+  TelegramSupportAlertResult,
+} from "@/lib/support-notifications/types";
 
 function formatMessageText(alert: InboundWhatsAppSupportAlert) {
   if (alert.body.trim()) {
@@ -55,4 +59,27 @@ export async function sendTelegramInboundWhatsAppSupportAlert(
   alert: InboundWhatsAppSupportAlert,
 ): Promise<TelegramSupportAlertResult> {
   return sendTelegramMessage(formatTelegramMessage(alert));
+}
+
+export async function sendTelegramAutomatedWhatsAppSupportAlert(alert: AutomatedWhatsAppSupportAlert) {
+  const recipientName = alert.recipientName?.trim() || "Cliente sin nombre";
+  const statusLabel = alert.status === "sent" ? "enviado" : "falló";
+  const lines = [
+    `📤 Mensaje automático de WhatsApp ${statusLabel}`,
+    "",
+    `Tipo: ${alert.notificationType}`,
+    `Cliente: ${recipientName}`,
+    `Teléfono: ${alert.recipientPhone}`,
+    `Restaurante: ${alert.restaurantName}`,
+    `Sede: ${alert.branchName}`,
+    "",
+    "Mensaje:",
+    alert.body.slice(0, 3_000),
+  ];
+
+  if (alert.errorMessage) {
+    lines.push("", `Error: ${alert.errorMessage.slice(0, 500)}`);
+  }
+
+  return sendTelegramMessage(lines.join("\n"));
 }

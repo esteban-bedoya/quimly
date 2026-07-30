@@ -4,6 +4,17 @@ export type PhoneNumber = E164PhoneNumber;
 
 export type NotificationType = "otp" | "trial_reminder" | "subscription_expired";
 
+export const scheduledWhatsAppTemplateKeys = [
+  "document_expiry_reminder",
+  "weekly_operational_summary",
+  "trial_welcome",
+  "trial_midpoint",
+  "trial_expired",
+  "founder_benefit_assigned",
+] as const;
+
+export type ScheduledWhatsAppTemplateKey = (typeof scheduledWhatsAppTemplateKeys)[number];
+
 export type NotificationChannel = "whatsapp" | "verify";
 
 export type NotificationDeliveryResult = {

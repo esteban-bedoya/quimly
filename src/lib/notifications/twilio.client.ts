@@ -2,6 +2,8 @@ import "server-only";
 
 import twilio from "twilio";
 
+import type { ScheduledWhatsAppTemplateKey } from "@/lib/notifications/types";
+
 type TwilioClient = ReturnType<typeof twilio>;
 
 let cachedClient: TwilioClient | null = null;
@@ -51,6 +53,26 @@ export function getTwilioWhatsAppFrom() {
 export function getTwilioWhatsAppTemplateSid() {
   requireTwilioConfig(["whatsappTemplateSid"]);
   return readEnv("whatsappTemplateSid")!;
+}
+
+const scheduledTemplateEnvKeys: Record<ScheduledWhatsAppTemplateKey, string> = {
+  document_expiry_reminder: "TWILIO_WHATSAPP_DOCUMENT_EXPIRY_TEMPLATE_SID",
+  weekly_operational_summary: "TWILIO_WHATSAPP_WEEKLY_SUMMARY_TEMPLATE_SID",
+  trial_welcome: "TWILIO_WHATSAPP_TRIAL_WELCOME_TEMPLATE_SID",
+  trial_midpoint: "TWILIO_WHATSAPP_TRIAL_MIDPOINT_TEMPLATE_SID",
+  trial_expired: "TWILIO_WHATSAPP_TRIAL_EXPIRED_TEMPLATE_SID",
+  founder_benefit_assigned: "TWILIO_WHATSAPP_FOUNDER_BENEFIT_TEMPLATE_SID",
+};
+
+export function getTwilioScheduledWhatsAppTemplateSid(templateKey: ScheduledWhatsAppTemplateKey) {
+  const environmentKey = scheduledTemplateEnvKeys[templateKey];
+  const contentSid = process.env[environmentKey]?.trim();
+
+  if (!contentSid) {
+    throw new Error(`Missing Twilio configuration: ${environmentKey}`);
+  }
+
+  return contentSid;
 }
 
 export function getTwilioAuthToken() {

@@ -7335,3 +7335,60 @@ grant execute on function public.submit_public_operational_form(
 
 comment on function public.bootstrap_owner(uuid, text, text, text) is
 'Run this manually after creating the first auth user in Supabase Auth to promote that user to owner.';
+
+-- WhatsApp notification MVP. The cron configuration with Vault values lives in
+-- supabase/notifications-mvp.sql because it depends on deployment secrets.
+create table if not exists public.whatsapp_notification_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies (id) on delete cascade,
+  branch_id uuid references public.branches (id) on delete set null,
+  recipient_user_id uuid not null references public.user_profiles (user_id) on delete restrict,
+  recipient_phone text not null,
+  notification_type text not null check (
+    notification_type in (
+      'document_expiry_reminder',
+      'weekly_operational_summary',
+      'trial_welcome',
+      'trial_midpoint',
+      'trial_expired',
+      'founder_benefit_assigned'
+    )
+  ),
+  template_key text not null check (
+    template_key in (
+      'document_expiry_reminder',
+      'weekly_operational_summary',
+      'trial_welcome',
+      'trial_midpoint',
+      'trial_expired',
+      'founder_benefit_assigned'
+    )
+  ),
+  deduplication_key text not null unique,
+  payload jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'sent', 'failed')),
+  twilio_message_sid text unique,
+  twilio_status text,
+  whatsapp_message_id uuid references public.whatsapp_messages (id) on delete set null,
+  error_message text,
+  sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint whatsapp_notification_deliveries_recipient_phone_e164 check (public.is_e164_phone(recipient_phone))
+);
+
+create index if not exists whatsapp_notification_deliveries_company_created_idx
+on public.whatsapp_notification_deliveries (company_id, created_at desc);
+
+create index if not exists whatsapp_notification_deliveries_status_created_idx
+on public.whatsapp_notification_deliveries (status, created_at desc);
+
+drop trigger if exists set_whatsapp_notification_deliveries_updated_at on public.whatsapp_notification_deliveries;
+create trigger set_whatsapp_notification_deliveries_updated_at
+before update on public.whatsapp_notification_deliveries
+for each row
+execute function public.set_updated_at();
+
+alter table public.whatsapp_notification_deliveries enable row level security;
+revoke all on table public.whatsapp_notification_deliveries from public, anon, authenticated;
+grant select, insert, update, delete on table public.whatsapp_notification_deliveries to service_role;
