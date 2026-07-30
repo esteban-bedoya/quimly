@@ -760,7 +760,10 @@ export async function startPlanActivation({
         providerStatus: checkout.providerStatus,
         providerCustomerId: checkout.providerCustomerId,
         providerPayerId: checkout.providerPayerId,
-        payerEmail: checkout.payerEmail,
+        // Mercado Pago puede omitir payer_email en la respuesta del preapproval
+        // aunque el correo fue enviado al crearlo. Conservamos el valor validado
+        // por el usuario para evitar perder la trazabilidad del checkout.
+        payerEmail,
         providerVersion: checkout.providerVersion,
         providerUpdatedAt: checkout.providerUpdatedAt,
         nextPaymentAt: checkout.nextPaymentAt,
