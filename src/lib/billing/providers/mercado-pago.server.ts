@@ -299,6 +299,11 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       }),
     });
     const checkoutUrl = environment === "sandbox" ? response.sandbox_init_point ?? response.init_point : response.init_point;
+    const returnedPayerEmail = response.payer_email?.trim().toLowerCase() ?? null;
+
+    if (returnedPayerEmail && returnedPayerEmail !== payerEmail.trim().toLowerCase()) {
+      throw new Error("Mercado Pago devolvió una suscripción asociada a un correo diferente al registrado para el pago.");
+    }
 
     return {
       providerSubscriptionId: getRequiredString(response.id, "el identificador de suscripción"),
@@ -307,7 +312,7 @@ export class MercadoPagoBillingProvider implements BillingProvider {
       // Mercado Pago devuelve collector_id para la cuenta de Quimly, no para el cliente pagador.
       providerCustomerId: null,
       providerPayerId: response.payer_id === undefined ? null : String(response.payer_id),
-      payerEmail: response.payer_email || payerEmail,
+      payerEmail: returnedPayerEmail ?? payerEmail,
       providerVersion: typeof response.version === "number" ? response.version : null,
       providerUpdatedAt: toIsoDate(response.last_modified ?? response.date_last_updated),
       nextPaymentAt: toIsoDate(response.next_payment_date),

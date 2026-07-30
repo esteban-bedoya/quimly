@@ -1728,7 +1728,7 @@ function PlanPaymentsDrawerContent({
                     />
                   </label>
                   <p className="mt-2 text-xs leading-5 text-[#5e6770]">
-                    Lo usaremos para crear tu suscripción con Mercado Pago y también lo guardaremos en tu perfil.
+                    Será el correo de facturación: lo guardaremos en tu perfil y lo usaremos para crear tu suscripción en Mercado Pago.
                   </p>
                 </div>
               ) : null}

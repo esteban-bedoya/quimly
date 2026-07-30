@@ -1130,6 +1130,7 @@ export class BillingRepository {
           amount_cop: amountCop,
           currency: "COP",
           payment_method_type: paymentMethodType,
+          rejection_reason: normalizedStatus === "rejected" ? providerStatusDetail : null,
           provider_created_at: providerCreatedAt,
           provider_updated_at: providerUpdatedAt,
           approved_at: approvedAt,

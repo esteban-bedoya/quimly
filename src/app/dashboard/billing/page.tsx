@@ -93,6 +93,30 @@ function formatLabel(value: string | null | undefined) {
   return value ? value.replaceAll("_", " ") : "—";
 }
 
+function formatPaymentRejectionReason(value: string | null | undefined) {
+  const reasons: Record<string, string> = {
+    cc_rejected_bad_filled_card_number: "Número de tarjeta inválido",
+    cc_rejected_bad_filled_date: "Fecha de vencimiento inválida",
+    cc_rejected_bad_filled_other: "Datos del pago inválidos",
+    cc_rejected_bad_filled_security_code: "Código de seguridad inválido",
+    cc_rejected_call_for_authorize: "El banco requiere autorización",
+    cc_rejected_card_disabled: "Medio de pago bloqueado o deshabilitado",
+    cc_rejected_duplicated_payment: "Pago detectado como duplicado",
+    cc_rejected_insufficient_amount: "Fondos o cupo insuficiente",
+    cc_rejected_invalid_installments: "Cuotas no permitidas",
+    cc_rejected_max_attempts: "Se superó el límite de intentos",
+    cc_rejected_blacklist: "Pago bloqueado por prevención de fraude",
+    cc_rejected_high_risk: "Pago rechazado por riesgo",
+    cc_rejected_other_reason: "El banco no detalló el motivo",
+  };
+
+  if (!value) {
+    return "Mercado Pago no entregó un motivo específico.";
+  }
+
+  return reasons[value] ?? formatLabel(value);
+}
+
 function statusTone(value: string | null | undefined) {
   const normalized = value?.toLowerCase() ?? "";
 
@@ -449,7 +473,7 @@ function Pagination({ tab, page, total }: { tab: BillingTab; page: number; total
 
 function BillingTable({ tab, rows, companies }: { tab: BillingTab; rows: Record<string, unknown>[]; companies: Map<string, CompanyRow> }) {
   if (tab === "payments") {
-    return <TableShell><table className="min-w-full text-left text-sm"><thead className="bg-[#f4efe7] text-xs uppercase tracking-[0.12em] text-[#655f57]"><tr><th className="px-5 py-3">Fecha</th><th className="px-5 py-3">Empresa</th><th className="px-5 py-3">Pago Mercado Pago</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Monto</th><th className="px-5 py-3">Asociación</th></tr></thead><tbody className="divide-y divide-[#12110f]/8 bg-white">{rows.length ? rows.map((row) => <tr key={String(row.id)}><td className="whitespace-nowrap px-5 py-4 text-[#625c53]">{formatDate((row.approved_at as string | null) ?? (row.created_at as string))}</td><td className="px-5 py-4 font-semibold text-[#12110f]">{companyLabel(companies, row.company_id as string)}</td><td className="px-5 py-4"><p className="font-mono text-xs text-[#12110f]">{String(row.provider_payment_id)}</p><p className="mt-1 text-xs text-[#756e65]">{formatLabel(row.provider_status as string)}</p></td><td className="px-5 py-4"><StatusBadge value={row.normalized_status as string} /></td><td className="whitespace-nowrap px-5 py-4 font-semibold text-[#12110f]">{formatCopAmount(Number(row.amount_cop))}{Number(row.refunded_amount_cop) > 0 ? <p className="mt-1 text-xs font-normal text-rose-700">Devuelto: {formatCopAmount(Number(row.refunded_amount_cop))}</p> : null}</td><td className="px-5 py-4 text-xs text-[#625c53]">{row.billing_intent_id ? "Operación vinculada" : "Renovación / sin operación"}{row.invoice_id ? " · Factura vinculada" : ""}</td></tr>) : <EmptyRow columns={6}>Aún no hay transacciones.</EmptyRow>}</tbody></table></TableShell>;
+    return <TableShell><table className="min-w-full text-left text-sm"><thead className="bg-[#f4efe7] text-xs uppercase tracking-[0.12em] text-[#655f57]"><tr><th className="px-5 py-3">Fecha</th><th className="px-5 py-3">Empresa</th><th className="px-5 py-3">Pago Mercado Pago</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Motivo del rechazo</th><th className="px-5 py-3">Monto</th><th className="px-5 py-3">Asociación</th></tr></thead><tbody className="divide-y divide-[#12110f]/8 bg-white">{rows.length ? rows.map((row) => { const rejectionReason = (row.rejection_reason as string | null) ?? (row.provider_status_detail as string | null); const isRejected = row.normalized_status === "rejected"; return <tr key={String(row.id)}><td className="whitespace-nowrap px-5 py-4 text-[#625c53]">{formatDate((row.approved_at as string | null) ?? (row.created_at as string))}</td><td className="px-5 py-4 font-semibold text-[#12110f]">{companyLabel(companies, row.company_id as string)}</td><td className="px-5 py-4"><p className="font-mono text-xs text-[#12110f]">{String(row.provider_payment_id)}</p><p className="mt-1 text-xs text-[#756e65]">{formatLabel(row.provider_status as string)}</p></td><td className="px-5 py-4"><StatusBadge value={row.normalized_status as string} /></td><td className="max-w-xs px-5 py-4 text-xs leading-5 text-[#625c53]">{isRejected ? <><p>{formatPaymentRejectionReason(rejectionReason)}</p>{rejectionReason ? <p className="mt-1 font-mono text-[0.68rem] text-[#756e65]">{rejectionReason}</p> : null}</> : "—"}</td><td className="whitespace-nowrap px-5 py-4 font-semibold text-[#12110f]">{formatCopAmount(Number(row.amount_cop))}{Number(row.refunded_amount_cop) > 0 ? <p className="mt-1 text-xs font-normal text-rose-700">Devuelto: {formatCopAmount(Number(row.refunded_amount_cop))}</p> : null}</td><td className="px-5 py-4 text-xs text-[#625c53]">{row.billing_intent_id ? "Operación vinculada" : "Renovación / sin operación"}{row.invoice_id ? " · Factura vinculada" : ""}</td></tr>; }) : <EmptyRow columns={7}>Aún no hay transacciones.</EmptyRow>}</tbody></table></TableShell>;
   }
 
   if (tab === "invoices") {
