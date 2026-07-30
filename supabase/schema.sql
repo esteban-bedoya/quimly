@@ -6037,7 +6037,7 @@ begin
     'founder_assigned',
     'manual',
     actor_id,
-    'founder_assigned:' || subscription_row.id,
+    'founder_assigned:' || subscription_row.id || ':' || gen_random_uuid(),
     jsonb_build_object(
       'fromPlanType', subscription_row.plan_type,
       'toPlanType', 'founder',
