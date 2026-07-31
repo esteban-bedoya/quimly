@@ -16,6 +16,11 @@ import {
 } from "@/lib/billing";
 import type { AccessibleBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
+const subtleBranchActionButtonClassName =
+  "inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-2 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.02] hover:border-[#12110f]/32 hover:bg-[#e7e7e7] disabled:cursor-not-allowed disabled:opacity-55";
+
+type PlanStatusTone = "success" | "info" | "warning" | "critical";
+
 function PremiumStat({
   label,
   value,
@@ -23,12 +28,15 @@ function PremiumStat({
 }: {
   label: string;
   value: string | number;
-  tone?: "muted" | "accent" | "gold";
+  tone?: "muted" | "accent" | PlanStatusTone;
 }) {
   const toneStyles = {
     muted: "border-[#d9dfe0] bg-white text-[#12110f]",
     accent: "border-[#12110f] bg-[#12110f] text-white",
-    gold: "border-[#bde5e7] bg-[#effbfb] text-[#1c6a71]",
+    success: "border-[#5fa57b]/35 bg-[#5fa57b]/10 text-[#46795a]",
+    info: "border-[#5e9da5]/35 bg-[#5e9da5]/10 text-[#47777d]",
+    warning: "border-[#c99a3f]/35 bg-[#c99a3f]/10 text-[#80642d]",
+    critical: "border-[#bc7568]/35 bg-[#bc7568]/10 text-[#875348]",
   } as const;
 
   return (
@@ -121,6 +129,14 @@ export function CompanyAdminDashboard({
       });
   const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
   const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
+  const subscriptionStatusTone: PlanStatusTone =
+    planPayments.subscriptionViewState === "founder_active" || planPayments.subscriptionViewState === "operational_active"
+      ? "success"
+      : planPayments.subscriptionViewState === "trial_active"
+        ? "info"
+        : planPayments.subscriptionViewState === "payment_issue"
+          ? "warning"
+          : "critical";
   const companyForBranchCreation = company ?? (branches[0]
     ? {
         id: branches[0].companyId,
@@ -182,13 +198,13 @@ export function CompanyAdminDashboard({
 
               <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:min-w-[18rem]">
                 <PremiumStat
-                  label="Sedes activas"
-                  value={`${activeBranches.length}/${planPayments.accountCapabilities.maxBranches}`}
+                  label="Uso de sedes"
+                  value={`${activeBranches.length} de ${planPayments.accountCapabilities.maxBranches}`}
                 />
                 <PremiumStat
-                  label="Estado"
+                  label="Estado del plan"
                   value={subscriptionStatusLabel}
-                  tone="gold"
+                  tone={subscriptionStatusTone}
                 />
               </div>
             </div>
@@ -207,7 +223,7 @@ export function CompanyAdminDashboard({
             ) : null}
 
             {companyForBranchCreation ? (
-              <details className="group rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">
+              <details className="peer group rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-2 text-sm font-semibold text-[#12110f] [&::-webkit-details-marker]:hidden [&::marker]:hidden">
                   <span className="inline-flex h-5 w-7 shrink-0 items-center justify-center text-[#5e6770]">
                     <svg viewBox="0 0 12 12" aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-open:rotate-90">
@@ -236,14 +252,14 @@ export function CompanyAdminDashboard({
                       {branchCreationBlockedMessage.action === "resolve_capacity" ? (
                         <a
                           href="#resolver-sedes-activas"
-                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:-translate-y-0.5 hover:bg-[#dff4e8]"
+                          className={subtleBranchActionButtonClassName}
                         >
                           {branchCreationBlockedMessage.actionLabel}
                         </a>
                       ) : branchCreationBlockedMessage.action === "manage_scheduled_downgrade" ? (
                         <a
                           href="#reduccion-programada"
-                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#e2b35d] bg-[#fff8e9] px-5 py-2.5 text-sm font-semibold text-[#8f5b15] shadow-[0_14px_34px_rgba(143,91,21,0.14)] transition hover:-translate-y-0.5 hover:bg-[#fff1d6]"
+                          className={subtleBranchActionButtonClassName}
                         >
                           {branchCreationBlockedMessage.actionLabel}
                         </a>
@@ -251,7 +267,7 @@ export function CompanyAdminDashboard({
                         <OpenPlanPaymentsButton
                           label={branchCreationBlockedMessage.actionLabel}
                           target={planPayments.subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
-                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:-translate-y-0.5 hover:bg-[#dff4e8]"
+                          className={subtleBranchActionButtonClassName}
                         />
                       )}
                     </div>
@@ -263,6 +279,7 @@ export function CompanyAdminDashboard({
                         lockedCompanyId={companyForBranchCreation.id}
                         idleLabel="Crear sede activa"
                         pendingLabel="Creando sede..."
+                        submitClassName={subtleBranchActionButtonClassName}
                       />
                     </div>
                   )}
@@ -270,12 +287,12 @@ export function CompanyAdminDashboard({
               </details>
             ) : null}
 
-            <div className="grid gap-4">
+            <div className="grid gap-4 peer-open:hidden">
               {branches.length ? (
                 branches.map((branch) => <BranchCard key={branch.id} branch={branch} />)
               ) : (
                 <div className="rounded-[1.75rem] border border-dashed border-[#d9dfe0] bg-[#fbfdfe] px-5 py-8 text-sm leading-7 text-[#5e6770]">
-                  Todavía no tienes sedes activas disponibles para este usuario.
+                  Aún no tienes sedes asociadas a tu negocio.
                 </div>
               )}
             </div>

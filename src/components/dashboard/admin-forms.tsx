@@ -51,14 +51,22 @@ export function OpenPlanPaymentsButton({
   );
 }
 
-function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingLabel: string }) {
+function SubmitButton({
+  idleLabel,
+  pendingLabel,
+  className = "inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#12110f] px-5 py-3 text-sm font-semibold text-white transition duration-300 hover:bg-[#1d1b18] disabled:cursor-not-allowed disabled:opacity-70",
+}: {
+  idleLabel: string;
+  pendingLabel: string;
+  className?: string;
+}) {
   const { pending } = useFormStatus();
 
   return (
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[#12110f] px-5 py-3 text-sm font-semibold text-white transition duration-300 hover:bg-[#1d1b18] disabled:cursor-not-allowed disabled:opacity-70"
+      className={className}
     >
       {pending ? pendingLabel : idleLabel}
     </button>
@@ -257,11 +265,13 @@ export function CreateCompanyBranchForm({
   lockedCompanyId,
   idleLabel = "Crear sede pendiente",
   pendingLabel = "Creando sede...",
+  submitClassName,
 }: {
   companies: CompanySummary[];
   lockedCompanyId?: string;
   idleLabel?: string;
   pendingLabel?: string;
+  submitClassName?: string;
 }) {
   const [state, formAction] = useActionState(createCompanyBranch, undefined);
 
@@ -296,12 +306,12 @@ export function CreateCompanyBranchForm({
       <Field id="name" label="Nombre de la sede" placeholder="Ej.: Café del Parque" />
 
       <ActionFeedback state={state} />
-      <SubmitButton idleLabel={idleLabel} pendingLabel={pendingLabel} />
+      <SubmitButton idleLabel={idleLabel} pendingLabel={pendingLabel} className={submitClassName} />
     </form>
   );
 }
 
-function CapacityResolutionSubmitButton({ disabled }: { disabled: boolean }) {
+function CapacityResolutionSubmitButton({ disabled, requiredCount }: { disabled: boolean; requiredCount: number }) {
   const { pending } = useFormStatus();
 
   return (
@@ -310,7 +320,7 @@ function CapacityResolutionSubmitButton({ disabled }: { disabled: boolean }) {
       disabled={pending || disabled}
       className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#21734f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:bg-[#1d6646] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
     >
-      {pending ? "Resolviendo..." : "Confirmar sede(s) activas"}
+      {pending ? "Resolviendo..." : `Confirmar sede${requiredCount === 1 ? " activa" : "s activas"}`}
     </button>
   );
 }
@@ -351,7 +361,7 @@ export function CapacityResolutionForm({
       <div className="grid gap-2">
         <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8f5b15]">Acción requerida</p>
         <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">
-          Tu plan permite administrar {requiredCount} sede{requiredCount === 1 ? "" : "s"} activa{requiredCount === 1 ? "" : "s"}, pero actualmente tienes {activeBranches.length} sedes activas.
+          Tu plan permite administrar {requiredCount} sede{requiredCount === 1 ? "" : "s"} activa{requiredCount === 1 ? "" : "s"}, pero actualmente tienes {activeBranches.length} sede{activeBranches.length === 1 ? "" : "s"} activa{activeBranches.length === 1 ? "" : "s"}.
         </h2>
         <p className="max-w-3xl text-sm leading-6 text-[#5f5750]">
           Selecciona qué sede{requiredCount === 1 ? "" : "s"} deseas mantener activa{requiredCount === 1 ? "" : "s"} para continuar operando. Las demás pasarán a inactivas y conservarán su historial, documentos y reportes.
@@ -389,7 +399,7 @@ export function CapacityResolutionForm({
         <p className="text-sm leading-6 text-[#6f5a2f]">
           Seleccionadas: {selectedCount} / {requiredCount}
         </p>
-        <CapacityResolutionSubmitButton disabled={selectedCount !== requiredCount} />
+        <CapacityResolutionSubmitButton disabled={selectedCount !== requiredCount} requiredCount={requiredCount} />
       </div>
       <ActionFeedback state={state} />
     </form>
@@ -475,7 +485,7 @@ export function ScheduledDowngradeSelectionForm({
       <div className="grid gap-2">
         <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8f5b15]">Reducción programada</p>
         <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">
-          Solicitaste bajar tus sedes contratadas.
+          Programaste una reducción de capacidad.
         </h2>
         <p className="max-w-3xl text-sm leading-6 text-[#5f5750]">
           Se hará efectivo el día <strong>{formatScheduledDowngradeDate(effectiveAt)}</strong>, cuando Mercado Pago confirme el pago de la próxima renovación.
@@ -731,6 +741,7 @@ export function CompanyBranchActionsMenu({
   companySlug?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -768,7 +779,18 @@ export function CompanyBranchActionsMenu({
             companySlug={companySlug}
             isActive={branch.isActive}
           />
-          {branch.status !== "active" ? <CompanyBranchDeleteButton branch={branch} companySlug={companySlug} /> : null}
+          {branch.status !== "active" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                setIsDeleteConfirming(true);
+              }}
+              className="inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8a2d1f] transition hover:bg-[#fff1ee]"
+            >
+              Eliminar
+            </button>
+          ) : null}
         </div>
       ) : null}
       <button
@@ -780,6 +802,13 @@ export function CompanyBranchActionsMenu({
       >
         <EllipsisIcon />
       </button>
+      {branch.status !== "active" && isDeleteConfirming ? (
+        <CompanyBranchDeleteDialog
+          branch={branch}
+          companySlug={companySlug}
+          onClose={() => setIsDeleteConfirming(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -806,27 +835,39 @@ export function CompanyBranchDeleteButton({
   companySlug?: string;
 }) {
   const [isConfirming, setIsConfirming] = useState(false);
-  const [confirmationName, setConfirmationName] = useState("");
-  const [state, formAction] = useActionState(deleteCompanyBranch, undefined);
-  const hasConfirmedBranchName = confirmationName.trim() === branch.name;
 
   return (
     <>
       <button
         type="button"
-        onClick={() => {
-          setConfirmationName("");
-          setIsConfirming(true);
-        }}
+        onClick={() => setIsConfirming(true)}
         disabled={branch.status === "active"}
         className="inline-flex rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8a2d1f] transition hover:bg-[#fff1ee] disabled:cursor-not-allowed disabled:opacity-45"
       >
         Eliminar
       </button>
-      <ActionFeedback state={state} />
+      {isConfirming ? (
+        <CompanyBranchDeleteDialog branch={branch} companySlug={companySlug} onClose={() => setIsConfirming(false)} />
+      ) : null}
+    </>
+  );
+}
 
-      {isConfirming && typeof document !== "undefined"
-        ? createPortal(
+function CompanyBranchDeleteDialog({
+  branch,
+  companySlug,
+  onClose,
+}: {
+  branch: CompanyBranchSummary;
+  companySlug?: string;
+  onClose: () => void;
+}) {
+  const [confirmationName, setConfirmationName] = useState("");
+  const [state, formAction] = useActionState(deleteCompanyBranch, undefined);
+  const hasConfirmedBranchName = confirmationName.trim() === branch.name;
+
+  return typeof document !== "undefined"
+    ? createPortal(
             <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
               <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
                 <div className="space-y-3">
@@ -880,32 +921,25 @@ export function CompanyBranchDeleteButton({
                     type="button"
                     onClick={() => {
                       setConfirmationName("");
-                      setIsConfirming(false);
+                      onClose();
                     }}
                     className="ui-pill-button-secondary ui-modal-action-secondary"
                   >
                     Cancelar
                   </button>
-                  <form
-                    action={(formData) => {
-                      formAction(formData);
-                      setConfirmationName("");
-                      setIsConfirming(false);
-                    }}
-                  >
+                  <form action={formAction}>
                     <input type="hidden" name="branchId" value={branch.id} />
                     <input type="hidden" name="companySlug" value={companySlug ?? ""} />
                     <input type="hidden" name="confirmationName" value={confirmationName} />
                     <BranchDeleteConfirmButton disabled={!hasConfirmedBranchName} />
                   </form>
                 </div>
+                <ActionFeedback state={state} />
               </div>
             </div>,
             document.body,
           )
-        : null}
-    </>
-  );
+    : null;
 }
 
 export function EditCompanyBranchForm({

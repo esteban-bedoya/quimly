@@ -72,7 +72,11 @@ test("el bloqueo al agregar sedes prioriza la causa y una acción resoluble", ()
   );
   assert.deepEqual(
     { summaryLabel: capacityResolution.summaryLabel, action: capacityResolution.action },
-    { summaryLabel: "Regularizar sedes activas", action: "resolve_capacity" },
+    { summaryLabel: "Elegir sedes activas", action: "resolve_capacity" },
+  );
+  assert.equal(
+    capacityResolution.description,
+    "Tu plan permite hasta 1 sede activa, pero actualmente tienes 2 sedes activas. Elige la sede que mantendrás activa antes de crear otra sede.",
   );
 });
 

@@ -510,7 +510,7 @@ function getCapacityResolutionRequiredMessage({
   activeBranches: number;
   maxBranches: number;
 }) {
-  return `Tu plan permite administrar ${maxBranches} sede${maxBranches === 1 ? "" : "s"} activa${maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${activeBranches} sedes activas. Selecciona qué sede deseas mantener activa para continuar operando.`;
+  return `Tu plan permite administrar ${maxBranches} sede${maxBranches === 1 ? "" : "s"} activa${maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${activeBranches} sede${activeBranches === 1 ? "" : "s"} activa${activeBranches === 1 ? "" : "s"}. Selecciona ${maxBranches === 1 ? "la sede que deseas mantener activa" : "las sedes que deseas mantener activas"} para continuar operando.`;
 }
 
 async function resolveBranchRouteTarget(branchId: string) {
@@ -908,7 +908,7 @@ export async function startPlanUpgrade({
         externalReference: intent.external_reference,
         companyId: company.id,
         payerEmail,
-        description: `Ampliación de Quimly a ${requestedQuote.maxActiveLocations} sedes`,
+        description: `Ampliación de Quimly a ${requestedQuote.maxActiveLocations} ${requestedQuote.maxActiveLocations === 1 ? "sede" : "sedes"}`,
         amountCop: proration.proratedAmountCop,
         returnUrl: new URL("/dashboard?billing=upgrade-processing", getApplicationUrl()).toString(),
         expiresAt: checkoutExpiresAt,
@@ -1475,7 +1475,7 @@ export async function createCompanyBranch(
   revalidatePath(`/dashboard/sedes/${company.slug}/${createdBranch.branch_slug}`);
   revalidatePath(`/dashboard/companies/${company.slug}`);
   return {
-    success: `Sede "${name}" creada activa. Uso: ${createdBranch.active_branches} / ${createdBranch.max_active_locations} sedes activas.`,
+    success: `Sede "${name}" creada y activada. Uso actual: ${createdBranch.active_branches} de ${createdBranch.max_active_locations} ${createdBranch.max_active_locations === 1 ? "sede activa" : "sedes activas"}.`,
   };
 }
 

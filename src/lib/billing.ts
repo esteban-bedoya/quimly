@@ -433,9 +433,9 @@ export function getBranchCreationBlockedMessage({
 }): BranchCreationBlockedMessage {
   if (accountCapabilities.requiresCapacityResolution) {
     return {
-      summaryLabel: "Regularizar sedes activas",
+      summaryLabel: "Elegir sedes activas",
       title: "Primero elige las sedes que seguirán activas.",
-      description: `Tu plan permite ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"}, pero tienes ${accountCapabilities.activeBranches} activa${accountCapabilities.activeBranches === 1 ? "" : "s"}. Ajusta esa selección antes de crear otra sede.`,
+      description: `Tu plan permite hasta ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"} activa${accountCapabilities.maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${accountCapabilities.activeBranches} sede${accountCapabilities.activeBranches === 1 ? "" : "s"} activa${accountCapabilities.activeBranches === 1 ? "" : "s"}. Elige ${accountCapabilities.maxBranches === 1 ? "la sede que mantendrás activa" : "las sedes que mantendrás activas"} antes de crear otra sede.`,
       actionLabel: "Elegir sedes activas",
       action: "resolve_capacity",
     };

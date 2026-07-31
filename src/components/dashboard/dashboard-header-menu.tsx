@@ -1318,7 +1318,7 @@ function PlanPaymentsDrawerContent({
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Detalles</p>
                 <AdminDrawerSummaryRow
                   label="Capacidad contratada"
-                  value={`${planPayments.accountCapabilities.maxBranches} sedes`}
+                  value={`${planPayments.accountCapabilities.maxBranches} ${planPayments.accountCapabilities.maxBranches === 1 ? "sede" : "sedes"}`}
                 />
                 <AdminDrawerSummaryRow
                   label="Valor mensual"
@@ -1528,7 +1528,7 @@ function PlanPaymentsDrawerContent({
                       <span>{formatCopAmount(activationBaseMonthlyPriceCop)}</span>
                     </div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
-                      <span>+ {selectedAdditionalSites} sedes adicionales</span>
+                      <span>+ {selectedAdditionalSites} {selectedAdditionalSites === 1 ? "sede adicional" : "sedes adicionales"}</span>
                       <span>{formatCopAmount(selectedAdditionalSitesMonthlyTotal)}</span>
                     </div>
                   </div>
@@ -1611,7 +1611,7 @@ function PlanPaymentsDrawerContent({
                   value={`${formatCopAmount(capacityQuote.currentMonthlyTotalCop)} COP/mes`}
                 />
                 <AdminDrawerSummaryRow
-                  label="Nuevas sedes"
+                  label="Nueva capacidad"
                   value={`${capacityQuote.requestedMaxActiveLocations} ${capacityQuote.requestedMaxActiveLocations === 1 ? "sede" : "sedes"}`}
                 />
                 {capacityQuote.changeType === "upgrade" ? (

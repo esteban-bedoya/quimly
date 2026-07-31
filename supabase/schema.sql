@@ -5003,7 +5003,10 @@ begin
     and b.id = any(normalized_keep_branch_ids);
 
   if valid_keep_count <> contracted_capacity then
-    raise exception 'Selecciona exactamente % sede(s) activa(s) para continuar operando.', contracted_capacity;
+    raise exception 'Selecciona exactamente % % activa% para continuar operando.',
+      contracted_capacity,
+      case when contracted_capacity = 1 then 'sede' else 'sedes' end,
+      case when contracted_capacity = 1 then '' else 's' end;
   end if;
 
   update public.branches b
