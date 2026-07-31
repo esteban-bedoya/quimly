@@ -75,6 +75,28 @@ const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType,
   freezer: "Congelador",
 };
 
+function ReadOnlyLockIcon() {
+  return (
+    <span aria-hidden="true" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d5bd73] bg-white/65 text-[#7a5a00] shadow-[0_2px_6px_rgba(95,71,0,0.08)]">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <rect x="5" y="10" width="14" height="10" rx="2.5" />
+        <path strokeLinecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
+        <path strokeLinecap="round" d="M12 14v2" />
+      </svg>
+    </span>
+  );
+}
+
+function NavigationReadOnlyLockIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <rect x="5" y="10" width="14" height="10" rx="2.5" />
+      <path strokeLinecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
+      <path strokeLinecap="round" d="M12 14v2" />
+    </svg>
+  );
+}
+
 function BranchLayout({
   company,
   branch,
@@ -98,12 +120,12 @@ function BranchLayout({
   const headerDescription = branchHeaderDescriptions[currentSection];
   const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
   const readOnlyTitle = branch.status !== "active"
-    ? "Sede inactiva"
+    ? "Sede inactiva · acceso solo de lectura"
     : accountCapabilities.requiresCapacityResolution
       ? "Resolución de sedes requerida"
       : "Operación bloqueada";
   const readOnlyDescription = branch.status !== "active"
-    ? "Esta sede conserva su historial sanitario. Los formularios, documentos y configuraciones están bloqueados para nuevos registros."
+    ? "Esta sede conserva todo su historial sanitario y puedes exportar tus reportes en cualquier momento. Los nuevos registros en formularios, documentos y configuraciones están pausados."
     : accountCapabilities.requiresCapacityResolution
       ? `Tu plan permite administrar ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"} activa${accountCapabilities.maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${accountCapabilities.activeBranches} sedes activas. Resuelve la capacidad en el panel de administración para continuar operando.`
       : "Tu cuenta puede consultar y descargar reportes históricos, pero no crear registros ni gestionar operación hasta recuperar el plan.";
@@ -199,21 +221,26 @@ function BranchLayout({
 
                   {navigation.map((item) => {
                     const isActive = item.key === currentSection;
+                    const showReadOnlyIcon = isReadOnly && item.key !== "home";
 
                     return (
                       <Link
                         key={item.key}
                         href={item.href}
+                        aria-label={showReadOnlyIcon ? `${item.label} · acceso solo de lectura` : undefined}
                         onClick={() => {
                           if (item.key === "compliance" && currentSection === "compliance") {
                             window.dispatchEvent(new Event(DOCUMENTS_HOME_EVENT));
                           }
                         }}
-                        className={`relative z-10 inline-flex h-10 min-w-0 items-center justify-center rounded-[1rem] px-2 text-center text-sm transition duration-300 hover:scale-[1.04] sm:px-4 ${
+                        className={`relative z-10 inline-flex h-10 min-w-0 items-center justify-center rounded-[1rem] px-1 text-center text-[0.82rem] transition duration-300 hover:scale-[1.04] sm:px-4 sm:text-sm ${
                           isActive ? "font-semibold text-[#12110f]" : "font-medium text-white/68 hover:text-white"
                         }`}
                       >
-                        <span className="truncate">{item.label}</span>
+                        <span className="flex min-w-0 items-center justify-center gap-1.5">
+                          {showReadOnlyIcon ? <NavigationReadOnlyLockIcon /> : null}
+                          <span className="truncate">{item.label}</span>
+                        </span>
                       </Link>
                     );
                   })}
@@ -233,7 +260,10 @@ function BranchLayout({
 
         {isReadOnly ? (
           <section className="mx-auto w-full max-w-[74rem] rounded-[1.25rem] border border-[#e0d1a0] bg-[#fff8df] px-5 py-4 text-sm leading-6 text-[#7a5a00]">
-            <p className="font-semibold text-[#5f4700]">{readOnlyTitle}</p>
+            <p className="flex items-center gap-2 font-semibold text-[#5f4700]">
+              {branch.status !== "active" ? <ReadOnlyLockIcon /> : null}
+              {readOnlyTitle}
+            </p>
             <p>{readOnlyDescription}</p>
           </section>
         ) : null}
@@ -1091,7 +1121,16 @@ export function BranchOperationalView({
   accountCapabilities,
 }: BranchDetailViewProps) {
   const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
-  const activeOperationalQrCodes = isReadOnly ? [] : qrCodes.filter((qrCode) => qrCode.isActive);
+
+  if (isReadOnly) {
+    return (
+      <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="operational">
+        {null}
+      </BranchLayout>
+    );
+  }
+
+  const activeOperationalQrCodes = qrCodes.filter((qrCode) => qrCode.isActive);
   const allOperationalFormsPdfPath = `/dashboard/sedes/${encodeURIComponent(company.slug)}/${encodeURIComponent(branch.slug)}/operacion/formularios-operarios.pdf`;
   const operationalCards = operationalFormTypes.map((formType) => {
     let configuration: ReactNode | undefined;
@@ -1202,13 +1241,20 @@ export function BranchComplianceView({
 }: BranchDetailViewProps) {
   const isReadOnly = branch.status !== "active" || !accountCapabilities.canOperate;
 
+  if (isReadOnly) {
+    return (
+      <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="compliance">
+        {null}
+      </BranchLayout>
+    );
+  }
+
   return (
     <BranchLayout company={company} branch={branch} accountCapabilities={accountCapabilities} currentSection="compliance">
       <CompanyAdminDocumentsView
         branchId={branch.id}
         companySlug={company.slug}
         branchSlug={branch.slug}
-        isReadOnly={isReadOnly}
         initialChemicalProducts={chemicalProducts}
         initialStaffMembers={staffMembers}
         initialSanitaryDocumentFiles={sanitaryDocumentFiles}

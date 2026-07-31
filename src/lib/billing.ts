@@ -151,11 +151,13 @@ export function getSubscriptionViewState({
   status,
   planType,
   trialEndsAt,
+  paymentGraceEndsAt = null,
   now = new Date(),
 }: {
   status: SubscriptionStatus;
   planType: PlanType;
   trialEndsAt: string | null;
+  paymentGraceEndsAt?: string | null;
   now?: Date;
 }): SubscriptionViewState {
   if (status === "trial") {
@@ -173,7 +175,14 @@ export function getSubscriptionViewState({
     return "cancelled";
   }
 
-  return status === "suspended" ? "suspended" : "payment_issue";
+  if (status === "payment_issue") {
+    const paymentGraceEndDate = paymentGraceEndsAt ? new Date(paymentGraceEndsAt) : null;
+    return paymentGraceEndDate && !Number.isNaN(paymentGraceEndDate.getTime()) && paymentGraceEndDate.getTime() > now.getTime()
+      ? "payment_issue"
+      : "suspended";
+  }
+
+  return "suspended";
 }
 
 export function getCapacityState({

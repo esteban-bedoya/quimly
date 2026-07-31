@@ -90,6 +90,7 @@ type ManagedCompanySubscriptionRow = {
   status: string | null;
   plan_type: string | null;
   trial_ends_at: string | null;
+  payment_grace_ends_at: string | null;
 };
 
 async function getManagementData(role: UserProfile["globalRole"]) {
@@ -127,7 +128,7 @@ async function getManagementData(role: UserProfile["globalRole"]) {
       .returns<ManagedUserRow[]>(),
     supabase
       .from("company_subscriptions")
-      .select("company_id, status, plan_type, trial_ends_at")
+      .select("company_id, status, plan_type, trial_ends_at, payment_grace_ends_at")
       .returns<ManagedCompanySubscriptionRow[]>(),
   ]);
 
@@ -193,6 +194,7 @@ async function getManagementData(role: UserProfile["globalRole"]) {
                 status: normalizeSubscriptionStatus(subscription.status),
                 planType: planType ?? "operational",
                 trialEndsAt: subscription.trial_ends_at,
+                paymentGraceEndsAt: subscription.payment_grace_ends_at,
               })
             : null,
         } satisfies FounderCompanySummary;

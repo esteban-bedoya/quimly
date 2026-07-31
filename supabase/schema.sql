@@ -3170,6 +3170,11 @@ as $$
       and (
         cs.status = 'active'
         or (
+          cs.status = 'payment_issue'
+          and cs.payment_attention_required = true
+          and cs.payment_grace_ends_at > now()
+        )
+        or (
           cs.status = 'trial'
           and cs.trial_ends_at >= now()
         )
@@ -3189,6 +3194,9 @@ as $$
       select case
         when cs.status = 'trial' and cs.trial_ends_at >= now() then 1
         when cs.status = 'active' then greatest(cs.max_active_locations, 0)
+        when cs.status = 'payment_issue'
+          and cs.payment_attention_required = true
+          and cs.payment_grace_ends_at > now() then greatest(cs.max_active_locations, 0)
         else 0
       end
       from public.company_subscriptions cs
@@ -5221,13 +5229,7 @@ begin
     and b.is_active = true
     and c.is_active = true
     and not public.company_requires_capacity_resolution(qr.company_id)
-    and (
-      cs.status = 'active'
-      or (
-        cs.status = 'trial'
-        and cs.trial_ends_at >= now()
-      )
-    )
+    and public.can_company_operate(qr.company_id)
   limit 1;
 
   return form_payload;
@@ -5266,13 +5268,7 @@ begin
     and b.is_active = true
     and c.is_active = true
     and not public.company_requires_capacity_resolution(qr.company_id)
-    and (
-      cs.status = 'active'
-      or (
-        cs.status = 'trial'
-        and cs.trial_ends_at >= now()
-      )
-    )
+    and public.can_company_operate(qr.company_id)
   limit 1;
 
   if qr_record.branch_id is null then
@@ -5436,13 +5432,7 @@ begin
     and b.is_active = true
     and c.is_active = true
     and not public.company_requires_capacity_resolution(qr.company_id)
-    and (
-      cs.status = 'active'
-      or (
-        cs.status = 'trial'
-        and cs.trial_ends_at >= now()
-      )
-    )
+    and public.can_company_operate(qr.company_id)
   limit 1;
 
   if qr_record.id is null then

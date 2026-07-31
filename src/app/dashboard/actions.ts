@@ -628,12 +628,13 @@ async function getCompanyActiveLocationUsage({
       .eq("status", "active"),
     supabase
       .from("company_subscriptions")
-      .select("status, plan_type, trial_ends_at, included_active_sites, max_active_locations")
+      .select("status, plan_type, trial_ends_at, payment_grace_ends_at, included_active_sites, max_active_locations")
       .eq("company_id", companyId)
       .maybeSingle<{
         status: string | null;
         plan_type: string | null;
         trial_ends_at: string | null;
+        payment_grace_ends_at: string | null;
         included_active_sites: number | null;
         max_active_locations: number | null;
       }>(),
@@ -653,6 +654,7 @@ async function getCompanyActiveLocationUsage({
     status: subscriptionStatus,
     planType: normalizePlanType(subscription?.plan_type),
     trialEndsAt: subscription?.trial_ends_at ?? null,
+    paymentGraceEndsAt: subscription?.payment_grace_ends_at ?? null,
   });
   const activeLocations = count ?? 0;
   const accountCapabilities = getAccountCapabilities({

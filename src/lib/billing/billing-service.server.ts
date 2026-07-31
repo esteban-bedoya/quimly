@@ -2350,6 +2350,7 @@ export class BillingService {
       status: subscriptionStatus,
       planType,
       trialEndsAt: context.subscription.trial_ends_at,
+      paymentGraceEndsAt: context.subscription.payment_grace_ends_at,
     });
     const accountCapabilities = getAccountCapabilities({
       subscriptionViewState,

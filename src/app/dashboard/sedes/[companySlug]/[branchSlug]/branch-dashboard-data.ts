@@ -284,6 +284,24 @@ export async function loadBranchDashboardData(companySlug: string, branchSlug: s
   let sanitaryDocumentFiles: BranchSanitaryDocumentFileSummary[] = [];
   let sanitaryDocumentCategoryStatuses = {} as BranchSanitaryDocumentCategoryStatusMap;
   let operationalRecordDateStatuses = getEmptyOperationalRecordDateStatuses();
+  const canLoadOperationalAndComplianceContent = branch.status === "active" && accountCapabilities.canOperate;
+
+  if (!canLoadOperationalAndComplianceContent) {
+    return {
+      company,
+      branch,
+      accountCapabilities,
+      documents,
+      qrCodes,
+      operationalRecordDateStatuses,
+      refrigerationEquipment,
+      sanitationAreas,
+      chemicalProducts,
+      staffMembers,
+      sanitaryDocumentFiles,
+      sanitaryDocumentCategoryStatuses,
+    };
+  }
 
   if (supabase) {
     logServerInfo("branch.view.load.start", {

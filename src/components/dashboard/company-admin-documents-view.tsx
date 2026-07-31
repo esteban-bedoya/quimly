@@ -3060,13 +3060,6 @@ export function CompanyAdminDocumentsView({
   return (
     <>
       <section className="grid gap-5 transition-all duration-300 ease-in-out">
-        {isReadOnly ? (
-          <div className="rounded-2xl border border-[#e0d1a0] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#7a5a00]">
-            <p className="font-semibold text-[#5f4700]">Documentos bloqueados</p>
-            <p>La sede está inactiva. Puedes consultar el historial, pero no registrar, editar ni eliminar documentos.</p>
-          </div>
-        ) : null}
-
         {activeSectionConfig ? (
           <DocumentsToolbar activeSectionConfig={activeSectionConfig} />
         ) : null}

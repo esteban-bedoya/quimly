@@ -21,6 +21,7 @@ import {
   calculatePlanMonthlyTotalCop,
   founderPlanBasePriceCop,
   getAccountCapabilities,
+  getSubscriptionViewState,
   operationalPlanBasePriceCop,
 } from "../src/lib/billing.ts";
 
@@ -44,6 +45,25 @@ test("pago pendiente conserva el acceso operativo hasta que venza la ventana de 
   assert.equal(capabilities.canOperate, true);
   assert.equal(capabilities.canCreateRecords, true);
   assert.equal(capabilities.canCreateBranch, true);
+});
+
+test("pago pendiente se suspende al vencer su ventana de reintentos", () => {
+  const now = new Date("2026-07-30T12:00:00.000Z");
+
+  assert.equal(getSubscriptionViewState({
+    status: "payment_issue",
+    planType: "operational",
+    trialEndsAt: null,
+    paymentGraceEndsAt: "2026-07-30T12:00:01.000Z",
+    now,
+  }), "payment_issue");
+  assert.equal(getSubscriptionViewState({
+    status: "payment_issue",
+    planType: "operational",
+    trialEndsAt: null,
+    paymentGraceEndsAt: "2026-07-30T12:00:00.000Z",
+    now,
+  }), "suspended");
 });
 
 test("cancelación está disponible para planes activos, pago pendiente y suspendidos", () => {

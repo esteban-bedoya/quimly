@@ -75,6 +75,7 @@ function buildPlanPaymentsData({
     status: subscriptionStatus,
     planType,
     trialEndsAt: subscription?.trial_ends_at ?? null,
+    paymentGraceEndsAt: subscription?.payment_grace_ends_at ?? null,
   });
   const accountCapabilities = getAccountCapabilities({
     subscriptionViewState,
