@@ -132,6 +132,11 @@ export async function submitPublicOperationalForm(
   }
 
   const adminSubmissionContext = await loadAdminSubmissionContext(token, requestedAdminMode);
+
+  if (requestedAdminMode && !adminSubmissionContext) {
+    return { error: "El registro de control interno requiere una sesión activa de administrador." };
+  }
+
   const maxPastDays = adminSubmissionContext?.maxPastDays ?? 5;
   const recordedAtResult = readRecordedAt(formData, maxPastDays);
 
