@@ -14,6 +14,7 @@ import {
 import {
   BillingOperationPendingError,
   createBillingService,
+  ScheduledDowngradeCancellationRecoveryError,
   type CapacityChangeQuotePreview,
   type PendingBillingOperation,
 } from "@/lib/billing/billing-service.server";
@@ -38,6 +39,7 @@ import type {
 export type AdminActionState = {
   error?: string;
   success?: string;
+  retryable?: boolean;
 };
 
 export type StartPlanActivationResult = {
@@ -1046,6 +1048,7 @@ export async function cancelScheduledPlanDowngrade({
 
     await billingService.cancelScheduledDowngrade({
       companyId: company.id,
+      requestedBy: context.profile.userId,
       provider,
     });
 
@@ -1059,6 +1062,13 @@ export async function cancelScheduledPlanDowngrade({
   } catch (error) {
     if (error instanceof BillingOperationPendingError) {
       return { error: "Ya estamos procesando otra operación de pago. Espera unos instantes e inténtalo de nuevo." };
+    }
+
+    if (error instanceof ScheduledDowngradeCancellationRecoveryError) {
+      return {
+        error: "Mercado Pago confirmó el cambio, pero aún estamos terminando el registro. Reintenta en unos segundos; es seguro hacerlo.",
+        retryable: true,
+      };
     }
 
     logAdminActionError("billing.scheduled_downgrade_cancellation_failed", error, { companySlug });

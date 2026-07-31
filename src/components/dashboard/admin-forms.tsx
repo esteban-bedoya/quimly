@@ -90,6 +90,8 @@ function ActionFeedback({ state }: { state: AdminActionState | undefined }) {
 
   return (
     <p
+      role={state.error ? "alert" : "status"}
+      aria-live={state.error ? "assertive" : "polite"}
       className={`rounded-2xl px-4 py-3 text-sm ${
         state.error
           ? "border border-[#c66b5c]/22 bg-[#fff1ee] text-[#8a2d1f]"
@@ -506,7 +508,11 @@ export function ScheduledDowngradeSelectionForm({
               disabled={isCancellationPending}
               className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#8a2d1f] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6e261b] disabled:cursor-not-allowed disabled:opacity-55"
             >
-              {isCancellationPending ? "Cancelando..." : "Conservar capacidad actual"}
+              {isCancellationPending
+                ? "Verificando..."
+                : cancellationState?.retryable
+                  ? "Reintentar cancelación"
+                  : "Conservar capacidad actual"}
             </button>
           </div>
           <ActionFeedback state={cancellationState} />

@@ -1382,17 +1382,20 @@ export class BillingRepository {
   }
 
   async completeScheduledDowngradeCancellation({
+    intent,
     capacityChange,
     providerSubscription,
     providerState,
     restoredMonthlyAmountCop,
   }: {
+    intent: BillingIntentRecord;
     capacityChange: SubscriptionCapacityChangeRecord;
     providerSubscription: BillingProviderSubscriptionRecord;
     providerState: ProviderSubscription;
     restoredMonthlyAmountCop: number;
   }) {
-    const { error } = await this.supabase.rpc("cancel_scheduled_billing_downgrade", {
+    const { error } = await this.supabase.rpc("complete_scheduled_downgrade_cancellation", {
+      target_cancellation_intent_id: intent.id,
       target_capacity_change_id: capacityChange.id,
       target_provider_subscription_record_id: providerSubscription.id,
       target_provider_status: providerState.providerStatus,

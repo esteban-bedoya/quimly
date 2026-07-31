@@ -137,6 +137,13 @@ export class BillingOperationPendingError extends Error {
   }
 }
 
+export class ScheduledDowngradeCancellationRecoveryError extends Error {
+  constructor() {
+    super("Mercado Pago confirmó el cambio, pero Quimly aún debe terminar de registrarlo.");
+    this.name = "ScheduledDowngradeCancellationRecoveryError";
+  }
+}
+
 function ensureRequestedCapacity(requestedMaxActiveLocations: number) {
   if (!Number.isInteger(requestedMaxActiveLocations) || requestedMaxActiveLocations < 1) {
     throw new Error("La capacidad solicitada debe ser un número entero mayor o igual a 1.");
@@ -367,7 +374,11 @@ export class BillingService {
 
     const pendingIntent = await this.repository.findOpenIntent(companyId);
 
-    if (pendingIntent?.intent_type === "cancellation" && pendingIntent.status === "compensation_required") {
+    if (
+      pendingIntent?.intent_type === "cancellation" &&
+      !pendingIntent.capacity_change_id &&
+      pendingIntent.status === "compensation_required"
+    ) {
       return this.resumeCompensatingCancellation({ account, intent: pendingIntent, provider, now });
     }
 
@@ -2201,16 +2212,33 @@ export class BillingService {
 
   async cancelScheduledDowngrade({
     companyId,
+    requestedBy,
     provider,
     now = new Date(),
   }: {
     companyId: string;
+    requestedBy: string;
     provider: BillingProvider;
     now?: Date;
   }) {
+    const account = await this.getAccountSnapshot(companyId);
+    const pendingIntent = await this.repository.findOpenIntent(companyId);
+
+    if (
+      pendingIntent?.intent_type === "cancellation" &&
+      pendingIntent.capacity_change_id &&
+      pendingIntent.status === "compensation_required"
+    ) {
+      return this.resumeCompensatingScheduledDowngradeCancellation({
+        account,
+        intent: pendingIntent,
+        provider,
+        now,
+      });
+    }
+
     await this.ensureNoOpenIntent(companyId);
 
-    const account = await this.getAccountSnapshot(companyId);
     const capacityChange = await this.repository.findScheduledCapacityChange(companyId);
 
     if (!capacityChange || capacityChange.change_type !== "downgrade") {
@@ -2231,25 +2259,93 @@ export class BillingService {
     }
 
     const restoredMonthlyAmountCop = account.currentQuote.monthlyTotalCop;
-    const providerState = await provider.updateSubscriptionAmount(
-      providerSubscription.provider_subscription_id,
-      restoredMonthlyAmountCop,
-    );
+    let intent: BillingIntentRecord;
+
+    try {
+      intent = await this.repository.createIntent({
+        company_id: companyId,
+        subscription_id: account.subscription.id,
+        capacity_change_id: capacityChange.id,
+        intent_type: "cancellation",
+        plan_type_snapshot: account.currentQuote.planType,
+        previous_max_active_locations: capacityChange.requested_max_active_locations,
+        requested_max_active_locations: account.subscription.max_active_locations,
+        monthly_amount_before_cop: providerSubscription.recurring_amount_cop,
+        monthly_amount_after_cop: restoredMonthlyAmountCop,
+        expected_immediate_amount_cop: 0,
+        currency: "COP",
+        period_started_at: account.subscription.current_period_started_at,
+        period_ends_at: capacityChange.effective_at,
+        proration_amount_cop: null,
+        proration_calculated_at: null,
+        proration_formula_version: null,
+        external_reference: getIntentReference("cancellation"),
+        requested_by: requestedBy,
+        expires_at: getProcessingExpiry(now),
+        last_error_code: null,
+        last_error_message: null,
+        metadata: {
+          source: "scheduled_downgrade_cancellation",
+          restoredMonthlyAmountCop,
+        },
+      });
+    } catch (error) {
+      const pendingOperation = await this.getPendingOperation(companyId, now);
+
+      if (pendingOperation) {
+        throw new BillingOperationPendingError(pendingOperation);
+      }
+
+      throw error;
+    }
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
+
+    let providerState: ProviderSubscription;
+
+    try {
+      providerState = await provider.updateSubscriptionAmount(
+        providerSubscription.provider_subscription_id,
+        restoredMonthlyAmountCop,
+      );
+    } catch (error) {
+      await this.repository.markIntentFailed(
+        intent.id,
+        "scheduled_downgrade_cancellation_provider_update_failed",
+        error instanceof Error ? error.message : "Mercado Pago no pudo restaurar el valor mensual anterior.",
+      );
+      throw error;
+    }
 
     if (
       providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
       providerState.currency !== "COP" ||
       providerState.recurringAmountCop !== restoredMonthlyAmountCop
     ) {
-      throw new Error("Mercado Pago no confirmó la restauración del valor mensual anterior.");
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago respondió sin confirmar el valor mensual restaurado.",
+        "scheduled_downgrade_cancellation_provider_mismatch",
+      );
+      throw new ScheduledDowngradeCancellationRecoveryError();
     }
 
-    await this.repository.completeScheduledDowngradeCancellation({
-      capacityChange,
-      providerSubscription,
-      providerState,
-      restoredMonthlyAmountCop,
-    });
+    try {
+      await this.repository.completeScheduledDowngradeCancellation({
+        intent,
+        capacityChange,
+        providerSubscription,
+        providerState,
+        restoredMonthlyAmountCop,
+      });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Quimly no pudo registrar la cancelación confirmada.",
+        "scheduled_downgrade_cancellation_internal_persistence_failed",
+      );
+      throw new ScheduledDowngradeCancellationRecoveryError();
+    }
   }
 
   private async closeExpiredActivationAttempt(
@@ -2310,6 +2406,92 @@ export class BillingService {
 
     if (openIntent) {
       throw new BillingOperationPendingError(openIntent);
+    }
+  }
+
+  private async resumeCompensatingScheduledDowngradeCancellation({
+    account,
+    intent,
+    provider,
+    now,
+  }: {
+    account: BillingAccountSnapshot;
+    intent: BillingIntentRecord;
+    provider: BillingProvider;
+    now: Date;
+  }) {
+    if (!intent.capacity_change_id || !intent.monthly_amount_after_cop) {
+      throw new Error("La recuperación de la reducción programada no tiene información suficiente. Contacta a soporte.");
+    }
+
+    const capacityChange = await this.repository.findScheduledCapacityChange(account.subscription.company_id);
+
+    if (!capacityChange || capacityChange.id !== intent.capacity_change_id || capacityChange.change_type !== "downgrade") {
+      throw new Error("La reducción programada cambió mientras verificábamos la cancelación. Contacta a soporte.");
+    }
+
+    if (new Date(capacityChange.effective_at).getTime() <= now.getTime()) {
+      throw new Error("La reducción ya está en su fecha efectiva y requiere revisión de soporte.");
+    }
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      account.subscription.id,
+      account.subscription.company_id,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("No encontramos la suscripción de Mercado Pago para verificar la cancelación.");
+    }
+
+    await this.repository.markIntentProcessing(intent.id, getProcessingExpiry(now));
+
+    let providerState: ProviderSubscription;
+
+    try {
+      const currentProviderState = await provider.getSubscription(providerSubscription.provider_subscription_id);
+      providerState = currentProviderState.recurringAmountCop === intent.monthly_amount_after_cop
+        ? currentProviderState
+        : await provider.updateSubscriptionAmount(
+            providerSubscription.provider_subscription_id,
+            intent.monthly_amount_after_cop,
+          );
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Mercado Pago no pudo confirmar la restauración del valor mensual.",
+        "scheduled_downgrade_cancellation_recovery_failed",
+      );
+      throw new ScheduledDowngradeCancellationRecoveryError();
+    }
+
+    if (
+      providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      providerState.currency !== "COP" ||
+      providerState.recurringAmountCop !== intent.monthly_amount_after_cop
+    ) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        "Mercado Pago no confirmó el valor mensual restaurado durante el reintento.",
+        "scheduled_downgrade_cancellation_recovery_mismatch",
+      );
+      throw new ScheduledDowngradeCancellationRecoveryError();
+    }
+
+    try {
+      await this.repository.completeScheduledDowngradeCancellation({
+        intent,
+        capacityChange,
+        providerSubscription,
+        providerState,
+        restoredMonthlyAmountCop: intent.monthly_amount_after_cop,
+      });
+    } catch (error) {
+      await this.repository.markIntentCompensationRequired(
+        intent.id,
+        error instanceof Error ? error.message : "Quimly no pudo terminar de registrar la cancelación.",
+        "scheduled_downgrade_cancellation_recovery_persistence_failed",
+      );
+      throw new ScheduledDowngradeCancellationRecoveryError();
     }
   }
 
