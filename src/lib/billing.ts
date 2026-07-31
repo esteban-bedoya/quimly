@@ -414,43 +414,109 @@ export function getPlanPaymentsVisualState({
   };
 }
 
-export function getBranchCreationBlockedMessage(subscriptionViewState: SubscriptionViewState) {
-  if (subscriptionViewState === "trial_active" || subscriptionViewState === "trial_expired") {
+export type BranchCreationBlockedMessage = {
+  summaryLabel: string;
+  title: string;
+  description: string;
+  actionLabel: string;
+  action: "open_plan_payments" | "resolve_capacity" | "manage_scheduled_downgrade";
+};
+
+export function getBranchCreationBlockedMessage({
+  subscriptionViewState,
+  accountCapabilities,
+  hasScheduledDowngrade = false,
+}: {
+  subscriptionViewState: SubscriptionViewState;
+  accountCapabilities: Pick<AccountCapabilities, "activeBranches" | "maxBranches" | "requiresCapacityResolution">;
+  hasScheduledDowngrade?: boolean;
+}): BranchCreationBlockedMessage {
+  if (accountCapabilities.requiresCapacityResolution) {
     return {
-      title: "Agregar una sede requiere activar tu plan.",
-      description: "Activa el Plan operativo para contratar capacidad y sumar sedes cuando la necesites.",
+      summaryLabel: "Regularizar sedes activas",
+      title: "Primero elige las sedes que seguirán activas.",
+      description: `Tu plan permite ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"}, pero tienes ${accountCapabilities.activeBranches} activa${accountCapabilities.activeBranches === 1 ? "" : "s"}. Ajusta esa selección antes de crear otra sede.`,
+      actionLabel: "Elegir sedes activas",
+      action: "resolve_capacity",
+    };
+  }
+
+  if (subscriptionViewState === "trial_active") {
+    return {
+      summaryLabel: "Activar plan para agregar sedes",
+      title: "Tu prueba incluye una sola sede.",
+      description: "Activa tu plan para aumentar la capacidad y agregar otra sede.",
       actionLabel: "Activar plan",
+      action: "open_plan_payments",
+    };
+  }
+
+  if (subscriptionViewState === "trial_expired") {
+    return {
+      summaryLabel: "Activar plan para agregar sedes",
+      title: "Tu prueba terminó.",
+      description: "Activa tu plan para recuperar el acceso y agregar las sedes que necesites.",
+      actionLabel: "Activar plan",
+      action: "open_plan_payments",
     };
   }
 
   if (subscriptionViewState === "payment_issue") {
     return {
-      title: "Tu pago está pendiente de confirmación.",
-      description: "Actualiza tu método de pago para evitar que se suspenda el acceso a tus sedes.",
-      actionLabel: "Actualizar pago",
+      summaryLabel: "Actualizar método de pago",
+      title: "Tu pago requiere atención.",
+      description: "Actualiza tu método de pago para conservar el acceso. Cuando Mercado Pago confirme el pago, podrás aumentar la capacidad si lo necesitas.",
+      actionLabel: "Actualizar método de pago",
+      action: "open_plan_payments",
     };
   }
 
   if (subscriptionViewState === "suspended") {
     return {
+      summaryLabel: "Reactivar plan para agregar sedes",
       title: "Tu acceso está suspendido.",
-      description: "Reactiva tu plan y elige las sedes que contratarás antes de volver a operar.",
+      description: "Reactiva tu plan y define la capacidad que necesita tu negocio antes de agregar otra sede.",
       actionLabel: "Reactivar plan",
+      action: "open_plan_payments",
     };
   }
 
   if (subscriptionViewState === "cancelled") {
     return {
+      summaryLabel: "Recuperar plan para agregar sedes",
       title: "Tu suscripción está cancelada.",
-      description: "Reactiva tu plan para volver a crear sedes y gestionar la operación.",
+      description: "Recupera tu plan para volver a crear sedes y gestionar la operación.",
       actionLabel: "Recuperar suscripción",
+      action: "open_plan_payments",
+    };
+  }
+
+  if (hasScheduledDowngrade && accountCapabilities.activeBranches >= accountCapabilities.maxBranches) {
+    return {
+      summaryLabel: "Gestionar reducción programada",
+      title: "Tienes una reducción de capacidad programada.",
+      description: "Cancela esa reducción antes de aumentar la capacidad y crear otra sede.",
+      actionLabel: "Gestionar reducción",
+      action: "manage_scheduled_downgrade",
+    };
+  }
+
+  if (accountCapabilities.activeBranches >= accountCapabilities.maxBranches) {
+    return {
+      summaryLabel: "Aumentar capacidad",
+      title: "No tienes cupos disponibles para otra sede.",
+      description: `Tus ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"} contratada${accountCapabilities.maxBranches === 1 ? "" : "s"} ya ${accountCapabilities.maxBranches === 1 ? "está activa" : "están activas"}. Aumenta la capacidad de tu plan para agregar otra.`,
+      actionLabel: "Aumentar capacidad",
+      action: "open_plan_payments",
     };
   }
 
   return {
-    title: "Has alcanzado el límite de sedes activas de tu plan.",
-    description: "Amplía tu plan para activar otra sede.",
-    actionLabel: "Ampliar plan",
+    summaryLabel: "Gestionar plan para agregar sedes",
+    title: "No puedes agregar una sede en este momento.",
+    description: "Revisa la configuración de tu plan para continuar.",
+    actionLabel: "Gestionar plan",
+    action: "open_plan_payments",
   };
 }
 

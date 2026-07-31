@@ -14,7 +14,7 @@ import {
   type ScheduledCapacityChange,
 } from "@/lib/billing";
 import { getSupabaseRlsClient } from "@/lib/supabase/rls-server";
-import type { AccessibleBranchSummary } from "@/types/auth";
+import type { AccessibleBranchSummary, CompanySummary } from "@/types/auth";
 
 type CompanySubscriptionRow = {
   status: string | null;
@@ -131,9 +131,10 @@ function buildPlanPaymentsData({
 
 export async function getCompanyAdminPlanPaymentsData(
   branches: AccessibleBranchSummary[],
+  company: CompanySummary | null = null,
 ): Promise<PlanPaymentsData> {
-  const companyId = branches[0]?.companyId ?? null;
-  const companySlug = branches[0]?.companySlug ?? null;
+  const companyId = company?.id ?? branches[0]?.companyId ?? null;
+  const companySlug = company?.slug ?? branches[0]?.companySlug ?? null;
   const supabase = await getSupabaseRlsClient();
 
   if (!supabase || !companyId) {

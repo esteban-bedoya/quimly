@@ -21,6 +21,7 @@ import {
   calculatePlanMonthlyTotalCop,
   founderPlanBasePriceCop,
   getAccountCapabilities,
+  getBranchCreationBlockedMessage,
   getSubscriptionViewState,
   operationalPlanBasePriceCop,
 } from "../src/lib/billing.ts";
@@ -45,6 +46,63 @@ test("pago pendiente conserva el acceso operativo hasta que venza la ventana de 
   assert.equal(capabilities.canOperate, true);
   assert.equal(capabilities.canCreateRecords, true);
   assert.equal(capabilities.canCreateBranch, true);
+});
+
+test("el bloqueo al agregar sedes prioriza la causa y una acción resoluble", () => {
+  const capacityLimit = getBranchCreationBlockedMessage({
+    subscriptionViewState: "operational_active",
+    accountCapabilities: getAccountCapabilities({
+      subscriptionViewState: "operational_active",
+      maxActiveLocations: 2,
+      activeBranches: 2,
+    }),
+  });
+  const capacityResolution = getBranchCreationBlockedMessage({
+    subscriptionViewState: "operational_active",
+    accountCapabilities: getAccountCapabilities({
+      subscriptionViewState: "operational_active",
+      maxActiveLocations: 1,
+      activeBranches: 2,
+    }),
+  });
+
+  assert.deepEqual(
+    { summaryLabel: capacityLimit.summaryLabel, action: capacityLimit.action },
+    { summaryLabel: "Aumentar capacidad", action: "open_plan_payments" },
+  );
+  assert.deepEqual(
+    { summaryLabel: capacityResolution.summaryLabel, action: capacityResolution.action },
+    { summaryLabel: "Regularizar sedes activas", action: "resolve_capacity" },
+  );
+});
+
+test("pago pendiente y reducción programada muestran la acción que realmente desbloquea otra sede", () => {
+  const paymentIssueAtCapacity = getBranchCreationBlockedMessage({
+    subscriptionViewState: "payment_issue",
+    accountCapabilities: getAccountCapabilities({
+      subscriptionViewState: "payment_issue",
+      maxActiveLocations: 2,
+      activeBranches: 2,
+    }),
+  });
+  const scheduledDowngradeAtCapacity = getBranchCreationBlockedMessage({
+    subscriptionViewState: "operational_active",
+    accountCapabilities: getAccountCapabilities({
+      subscriptionViewState: "operational_active",
+      maxActiveLocations: 2,
+      activeBranches: 2,
+    }),
+    hasScheduledDowngrade: true,
+  });
+
+  assert.deepEqual(
+    { summaryLabel: paymentIssueAtCapacity.summaryLabel, action: paymentIssueAtCapacity.action },
+    { summaryLabel: "Actualizar método de pago", action: "open_plan_payments" },
+  );
+  assert.deepEqual(
+    { summaryLabel: scheduledDowngradeAtCapacity.summaryLabel, action: scheduledDowngradeAtCapacity.action },
+    { summaryLabel: "Gestionar reducción programada", action: "manage_scheduled_downgrade" },
+  );
 });
 
 test("pago pendiente se suspende al vencer su ventana de reintentos", () => {

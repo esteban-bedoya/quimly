@@ -1995,9 +1995,31 @@ returns trigger
 language plpgsql
 set search_path = public
 as $$
+declare
+  base_slug text;
+  candidate_slug text;
+  suffix integer := 2;
 begin
   if tg_table_name = 'companies' then
-    new.slug = public.slugify(new.name);
+    -- A company name is commercial information, not a unique identifier. Keep
+    -- the first readable slug and suffix later equivalent names. The advisory
+    -- lock makes the choice safe when registrations happen concurrently.
+    base_slug := coalesce(nullif(public.slugify(new.name), ''), 'empresa');
+    perform pg_advisory_xact_lock(hashtext(base_slug));
+
+    candidate_slug := base_slug;
+
+    while exists (
+      select 1
+      from public.companies c
+      where c.slug = candidate_slug
+        and c.id <> new.id
+    ) loop
+      candidate_slug := base_slug || '-' || suffix;
+      suffix := suffix + 1;
+    end loop;
+
+    new.slug = candidate_slug;
   elsif tg_table_name = 'branches' then
     new.slug = public.slugify(new.name);
   end if;
@@ -5801,23 +5823,6 @@ begin
   )
   returning id into new_company_id;
 
-  insert into public.branches (
-    company_id,
-    name,
-    status,
-    is_active,
-    billing_activation_confirmed_at,
-    created_by
-  )
-  values (
-    new_company_id,
-    'Sede 1',
-    'active',
-    true,
-    now(),
-    target_user_id
-  );
-
   insert into public.user_profiles (
     user_id,
     email,
@@ -5852,6 +5857,23 @@ begin
     'operational',
     now(),
     now() + interval '14 days'
+  );
+
+  insert into public.branches (
+    company_id,
+    name,
+    status,
+    is_active,
+    billing_activation_confirmed_at,
+    created_by
+  )
+  values (
+    new_company_id,
+    'Sede 1',
+    'active',
+    true,
+    now(),
+    target_user_id
   );
 
   return new_company_id;
@@ -5902,6 +5924,22 @@ begin
   values (trim(company_name), actor_id)
   returning id into new_company_id;
 
+  insert into public.company_subscriptions (
+    company_id,
+    status,
+    plan_type,
+    trial_started_at,
+    trial_ends_at
+  )
+  values (
+    new_company_id,
+    'trial',
+    'operational',
+    now(),
+    now() + interval '14 days'
+  )
+  on conflict (company_id) do nothing;
+
   insert into public.branches (
     company_id,
     name,
@@ -5919,23 +5957,255 @@ begin
     actor_id
   );
 
-  insert into public.company_subscriptions (
+  return new_company_id;
+end;
+$$;
+
+create or replace function public.enforce_active_branch_capacity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  subscription_row public.company_subscriptions%rowtype;
+  active_branch_count integer := 0;
+  contracted_capacity integer := 0;
+begin
+  if new.status <> 'active' or new.is_active is not true then
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE'
+    and old.company_id = new.company_id
+    and old.status = 'active'
+    and old.is_active is true then
+    return new;
+  end if;
+
+  select *
+  into subscription_row
+  from public.company_subscriptions cs
+  where cs.company_id = new.company_id
+  for update;
+
+  if not found then
+    raise exception 'La empresa no tiene una suscripción configurada para crear sedes.';
+  end if;
+
+  if subscription_row.status = 'trial' and subscription_row.trial_ends_at >= now() then
+    contracted_capacity := 1;
+  elsif subscription_row.status = 'active' then
+    contracted_capacity := greatest(subscription_row.max_active_locations, 0);
+  elsif subscription_row.status = 'payment_issue'
+    and subscription_row.payment_attention_required = true
+    and subscription_row.payment_grace_ends_at > now() then
+    contracted_capacity := greatest(subscription_row.max_active_locations, 0);
+  else
+    raise exception 'Activa o recupera tu plan para agregar sedes.';
+  end if;
+
+  select count(*)::integer
+  into active_branch_count
+  from public.branches b
+  where b.company_id = new.company_id
+    and b.status = 'active'
+    and b.is_active = true
+    and (tg_op = 'INSERT' or b.id <> new.id);
+
+  if active_branch_count > contracted_capacity then
+    raise exception 'Primero elige las sedes que seguirán activas antes de crear otra.';
+  end if;
+
+  if active_branch_count >= contracted_capacity then
+    raise exception 'Has alcanzado el límite de sedes activas de tu plan. Amplía tu plan para activar otra sede.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_active_branch_capacity on public.branches;
+create trigger enforce_active_branch_capacity
+before insert or update of company_id, status, is_active on public.branches
+for each row
+execute function public.enforce_active_branch_capacity();
+
+create or replace function public.create_active_company_branch(
+  target_company_id uuid,
+  target_branch_name text
+)
+returns table (
+  branch_slug text,
+  active_branches integer,
+  max_active_locations integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  actor_id uuid := auth.uid();
+  normalized_branch_name text;
+  subscription_row public.company_subscriptions%rowtype;
+  active_branch_count integer := 0;
+  contracted_capacity integer := 0;
+  created_branch public.branches%rowtype;
+begin
+  normalized_branch_name := btrim(coalesce(target_branch_name, ''));
+
+  if actor_id is null or target_company_id is null or normalized_branch_name = '' then
+    raise exception 'Debes indicar una empresa y un nombre válidos para la sede.';
+  end if;
+
+  if not public.can_access_company(target_company_id) then
+    raise exception 'No tienes permisos para crear sedes para esta empresa.';
+  end if;
+
+  select *
+  into subscription_row
+  from public.company_subscriptions cs
+  where cs.company_id = target_company_id
+  for update;
+
+  if not found then
+    raise exception 'La empresa no tiene una suscripción configurada para crear sedes.';
+  end if;
+
+  if subscription_row.status = 'trial' and subscription_row.trial_ends_at >= now() then
+    contracted_capacity := 1;
+  elsif subscription_row.status = 'active' then
+    contracted_capacity := greatest(subscription_row.max_active_locations, 0);
+  elsif subscription_row.status = 'payment_issue'
+    and subscription_row.payment_attention_required = true
+    and subscription_row.payment_grace_ends_at > now() then
+    contracted_capacity := greatest(subscription_row.max_active_locations, 0);
+  else
+    raise exception 'Activa o recupera tu plan para agregar sedes.';
+  end if;
+
+  select count(*)::integer
+  into active_branch_count
+  from public.branches b
+  where b.company_id = target_company_id
+    and b.status = 'active'
+    and b.is_active = true;
+
+  if active_branch_count > contracted_capacity then
+    raise exception 'Primero elige las sedes que seguirán activas antes de crear otra.';
+  end if;
+
+  if active_branch_count >= contracted_capacity then
+    raise exception 'Has alcanzado el límite de sedes activas de tu plan. Amplía tu plan para activar otra sede.';
+  end if;
+
+  insert into public.branches (
     company_id,
+    name,
     status,
-    plan_type,
-    trial_started_at,
-    trial_ends_at
+    is_active,
+    billing_activation_confirmed_at,
+    created_by
   )
   values (
-    new_company_id,
-    'trial',
-    'operational',
+    target_company_id,
+    normalized_branch_name,
+    'active',
+    true,
     now(),
-    now() + interval '14 days'
+    actor_id
   )
-  on conflict (company_id) do nothing;
+  returning * into created_branch;
 
-  return new_company_id;
+  return query
+  select created_branch.slug, active_branch_count + 1, contracted_capacity;
+end;
+$$;
+
+create or replace function public.cancel_scheduled_billing_downgrade(
+  target_capacity_change_id uuid,
+  target_provider_subscription_record_id uuid,
+  target_provider_status text,
+  target_provider_version integer,
+  target_provider_updated_at timestamptz,
+  target_next_payment_at timestamptz,
+  target_recurring_amount_cop integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  capacity_change_row public.subscription_capacity_changes%rowtype;
+  intent_row public.billing_intents%rowtype;
+begin
+  if target_recurring_amount_cop is null or target_recurring_amount_cop <= 0 then
+    raise exception 'El valor mensual restaurado no es válido.';
+  end if;
+
+  select *
+  into capacity_change_row
+  from public.subscription_capacity_changes scc
+  where scc.id = target_capacity_change_id
+  for update;
+
+  if not found
+    or capacity_change_row.status <> 'scheduled'
+    or capacity_change_row.change_type <> 'downgrade' then
+    raise exception 'La reducción programada ya no está disponible para cancelarse.';
+  end if;
+
+  select *
+  into intent_row
+  from public.billing_intents bi
+  where bi.capacity_change_id = capacity_change_row.id
+    and bi.company_id = capacity_change_row.company_id
+    and bi.subscription_id = capacity_change_row.subscription_id
+    and bi.intent_type = 'downgrade'
+  order by bi.created_at desc
+  limit 1
+  for update;
+
+  if not found then
+    raise exception 'No encontramos la operación de billing asociada a esta reducción.';
+  end if;
+
+  update public.billing_provider_subscriptions
+  set
+    provider_status = target_provider_status,
+    provider_version = coalesce(target_provider_version, provider_version),
+    provider_updated_at = coalesce(target_provider_updated_at, provider_updated_at),
+    recurring_amount_cop = target_recurring_amount_cop,
+    next_payment_at = coalesce(target_next_payment_at, next_payment_at)
+  where id = target_provider_subscription_record_id
+    and company_id = capacity_change_row.company_id
+    and subscription_id = capacity_change_row.subscription_id
+    and provider = 'mercado_pago'
+    and ended_at is null;
+
+  if not found then
+    raise exception 'La suscripción externa no está disponible para cancelar la reducción.';
+  end if;
+
+  update public.subscription_capacity_changes
+  set
+    status = 'cancelled',
+    cancelled_at = now(),
+    metadata = metadata || jsonb_build_object(
+      'cancelled_at', now(),
+      'restored_monthly_amount_cop', target_recurring_amount_cop
+    )
+  where id = capacity_change_row.id;
+
+  update public.billing_intents
+  set metadata = metadata || jsonb_build_object(
+    'scheduled_downgrade_cancelled_at', now(),
+    'restored_monthly_amount_cop', target_recurring_amount_cop
+  )
+  where id = intent_row.id;
+
+  return true;
 end;
 $$;
 
@@ -7215,6 +7485,15 @@ grant execute on function public.onboard_company_trial(uuid, text, text, text) t
 revoke all on function public.create_company_with_initial_branch(text, uuid, text) from public;
 revoke all on function public.create_company_with_initial_branch(text, uuid, text) from anon;
 grant execute on function public.create_company_with_initial_branch(text, uuid, text) to authenticated;
+
+revoke all on function public.create_active_company_branch(uuid, text) from public;
+revoke all on function public.create_active_company_branch(uuid, text) from anon;
+grant execute on function public.create_active_company_branch(uuid, text) to authenticated;
+
+revoke all on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) from public;
+revoke all on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) from anon;
+revoke all on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) from authenticated;
+grant execute on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) to service_role;
 
 revoke all on function public.assign_company_founder(uuid) from public;
 revoke all on function public.assign_company_founder(uuid) from anon;

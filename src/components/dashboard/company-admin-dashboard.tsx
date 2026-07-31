@@ -4,17 +4,17 @@ import {
   CapacityResolutionForm,
   CompanyBranchActionsMenu,
   CreateCompanyBranchForm,
+  OpenPlanPaymentsButton,
   ScheduledDowngradeSelectionForm,
 } from "@/components/dashboard/admin-forms";
 import { DashboardHeaderMenu } from "@/components/dashboard/dashboard-header-menu";
 import {
-  calculatePlanMonthlyTotalCop,
   getBranchCreationBlockedMessage,
   getSiteStatusLabel,
   getSubscriptionViewStateLabel,
   type PlanPaymentsData,
 } from "@/lib/billing";
-import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
+import type { AccessibleBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
 function PremiumStat({
   label,
@@ -100,27 +100,28 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
 export function CompanyAdminDashboard({
   profile,
   branches,
+  company,
   planPayments,
 }: {
   profile: UserProfile;
   branches: AccessibleBranchSummary[];
+  company: CompanySummary | null;
   planPayments: PlanPaymentsData;
 }) {
   const activeBranches = branches.filter((branch) => branch.status === "active");
   const canCreateBranch = planPayments.accountCapabilities.canCreateBranch;
-  const branchCreationBlockedMessage = getBranchCreationBlockedMessage(planPayments.subscriptionViewState);
-  const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
-  const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
   const scheduledDowngrade =
     planPayments.scheduledCapacityChange?.changeType === "downgrade" ? planPayments.scheduledCapacityChange : null;
-  const nextMonthlyTotalCop = calculatePlanMonthlyTotalCop({
-    planType: planPayments.planType,
-    siteCount: planPayments.maxActiveLocations,
-    baseMonthlyPriceCop: planPayments.baseMonthlyPriceCop,
-    additionalSiteMonthlyPriceCop: planPayments.additionalSiteMonthlyPriceCop,
-    includedActiveSites: planPayments.includedActiveSites,
-  });
-  const companyForBranchCreation = branches[0]
+  const branchCreationBlockedMessage = canCreateBranch
+    ? null
+    : getBranchCreationBlockedMessage({
+        subscriptionViewState: planPayments.subscriptionViewState,
+        accountCapabilities: planPayments.accountCapabilities,
+        hasScheduledDowngrade: Boolean(scheduledDowngrade),
+      });
+  const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
+  const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
+  const companyForBranchCreation = company ?? (branches[0]
     ? {
         id: branches[0].companyId,
         name: branches[0].companyName,
@@ -128,7 +129,7 @@ export function CompanyAdminDashboard({
         isActive: true,
         companyAdminUserId: profile.userId,
       }
-    : null;
+    : null);
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
@@ -157,13 +158,15 @@ export function CompanyAdminDashboard({
         </section>
 
         <div className="mx-auto grid w-full max-w-[74rem] gap-5">
-          {requiresCapacityResolution && branches[0] ? (
-            <CapacityResolutionForm
-              activeBranches={activeBranches}
-              companyId={branches[0].companyId}
-              companySlug={branches[0].companySlug}
-              maxBranches={planPayments.accountCapabilities.maxBranches}
-            />
+          {requiresCapacityResolution && companyForBranchCreation ? (
+            <div id="resolver-sedes-activas">
+              <CapacityResolutionForm
+                activeBranches={activeBranches}
+                companyId={companyForBranchCreation.id}
+                companySlug={companyForBranchCreation.slug}
+                maxBranches={planPayments.accountCapabilities.maxBranches}
+              />
+            </div>
           ) : null}
 
           <section id="sedes" className="grid gap-6 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
@@ -177,15 +180,10 @@ export function CompanyAdminDashboard({
                 </p>
               </div>
 
-              <div className="grid auto-rows-fr gap-3 sm:grid-cols-3 lg:min-w-[26rem]">
+              <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:min-w-[18rem]">
                 <PremiumStat
                   label="Sedes activas"
                   value={`${activeBranches.length}/${planPayments.accountCapabilities.maxBranches}`}
-                />
-                <PremiumStat
-                  label="Sedes contratadas"
-                  value={planPayments.accountCapabilities.maxBranches}
-                  tone="accent"
                 />
                 <PremiumStat
                   label="Estado"
@@ -196,14 +194,16 @@ export function CompanyAdminDashboard({
             </div>
 
             {scheduledDowngrade && planPayments.companySlug ? (
-              <ScheduledDowngradeSelectionForm
-                key={`${scheduledDowngrade.id}:${activeBranches.map((branch) => branch.id).join(":")}`}
-                activeBranches={activeBranches}
-                companySlug={planPayments.companySlug}
-                effectiveAt={scheduledDowngrade.effectiveAt}
-                maxBranches={scheduledDowngrade.requestedMaxActiveLocations}
-                selectedBranchIds={scheduledDowngrade.selectedBranchIds}
-              />
+              <div id="reduccion-programada">
+                <ScheduledDowngradeSelectionForm
+                  key={`${scheduledDowngrade.id}:${activeBranches.map((branch) => branch.id).join(":")}`}
+                  activeBranches={activeBranches}
+                  companySlug={planPayments.companySlug}
+                  effectiveAt={scheduledDowngrade.effectiveAt}
+                  maxBranches={scheduledDowngrade.requestedMaxActiveLocations}
+                  selectedBranchIds={scheduledDowngrade.selectedBranchIds}
+                />
+              </div>
             ) : null}
 
             {companyForBranchCreation ? (
@@ -220,11 +220,11 @@ export function CompanyAdminDashboard({
                       />
                     </svg>
                   </span>
-                  <span>Agregar sede</span>
+                  <span>{canCreateBranch ? "Agregar sede" : branchCreationBlockedMessage?.summaryLabel}</span>
                 </summary>
                 <div className="mt-4 border-t border-[#eef1f2] pt-4">
-                  {!canCreateBranch ? (
-                    <div className="grid gap-4">
+                  {branchCreationBlockedMessage ? (
+                    <div className="grid gap-5">
                       <div>
                         <p className="text-sm font-semibold leading-6 text-[#12110f]">
                           {branchCreationBlockedMessage.title}
@@ -233,24 +233,38 @@ export function CompanyAdminDashboard({
                           {branchCreationBlockedMessage.description}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition disabled:cursor-not-allowed disabled:opacity-80"
-                      >
-                        {branchCreationBlockedMessage.actionLabel}
-                      </button>
+                      {branchCreationBlockedMessage.action === "resolve_capacity" ? (
+                        <a
+                          href="#resolver-sedes-activas"
+                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:-translate-y-0.5 hover:bg-[#dff4e8]"
+                        >
+                          {branchCreationBlockedMessage.actionLabel}
+                        </a>
+                      ) : branchCreationBlockedMessage.action === "manage_scheduled_downgrade" ? (
+                        <a
+                          href="#reduccion-programada"
+                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#e2b35d] bg-[#fff8e9] px-5 py-2.5 text-sm font-semibold text-[#8f5b15] shadow-[0_14px_34px_rgba(143,91,21,0.14)] transition hover:-translate-y-0.5 hover:bg-[#fff1d6]"
+                        >
+                          {branchCreationBlockedMessage.actionLabel}
+                        </a>
+                      ) : (
+                        <OpenPlanPaymentsButton
+                          label={branchCreationBlockedMessage.actionLabel}
+                          target={planPayments.subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
+                          className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#9edfc1]/60 bg-[#e8f7ef] px-5 py-2.5 text-sm font-semibold text-[#21734f] shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:-translate-y-0.5 hover:bg-[#dff4e8]"
+                        />
+                      )}
                     </div>
                   ) : (
-                    <CreateCompanyBranchForm
-                      companies={[companyForBranchCreation]}
-                      lockedCompanyId={companyForBranchCreation.id}
-                      lockedCompanyName={companyForBranchCreation.name}
-                      additionalSiteMonthlyPriceCop={0}
-                      nextMonthlyTotalCop={nextMonthlyTotalCop}
-                      idleLabel="Crear sede activa"
-                      pendingLabel="Creando sede..."
-                    />
+                    <div className="grid gap-4">
+                      <p className="text-sm leading-6 text-[#5e6770]">La sede quedará activa de inmediato.</p>
+                      <CreateCompanyBranchForm
+                        companies={[companyForBranchCreation]}
+                        lockedCompanyId={companyForBranchCreation.id}
+                        idleLabel="Crear sede activa"
+                        pendingLabel="Creando sede..."
+                      />
+                    </div>
                   )}
                 </div>
               </details>

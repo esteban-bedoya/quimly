@@ -3,9 +3,11 @@
 import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 
 import {
   assignCompanyFounder,
+  cancelScheduledPlanDowngrade,
   createCompany,
   createCompanyAdmin,
   createCompanyBranch,
@@ -23,12 +25,31 @@ import {
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
-import { formatCopAmount } from "@/lib/billing";
 import type { CompanyBranchSummary, CompanySummary, AppRole } from "@/types/auth";
 
 const activeLocationLimitReachedMessage =
   "Has alcanzado el límite de sedes activas de tu plan. Amplía tu plan para activar otra sede.";
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
+
+export function OpenPlanPaymentsButton({
+  label,
+  className,
+  target = "overview",
+}: {
+  label: string;
+  className: string;
+  target?: "overview" | "payment_method";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent(openPlanPaymentsEventName, { detail: { target } }))}
+      className={className}
+    >
+      {label}
+    </button>
+  );
+}
 
 function SubmitButton({ idleLabel, pendingLabel }: { idleLabel: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
@@ -232,36 +253,20 @@ export function CreateCompanyAdminForm({ companies }: { companies: CompanySummar
 export function CreateCompanyBranchForm({
   companies,
   lockedCompanyId,
-  lockedCompanyName,
-  additionalSiteMonthlyPriceCop,
-  nextMonthlyTotalCop,
   idleLabel = "Crear sede pendiente",
   pendingLabel = "Creando sede...",
 }: {
   companies: CompanySummary[];
   lockedCompanyId?: string;
-  lockedCompanyName?: string;
-  additionalSiteMonthlyPriceCop?: number;
-  nextMonthlyTotalCop?: number;
   idleLabel?: string;
   pendingLabel?: string;
 }) {
   const [state, formAction] = useActionState(createCompanyBranch, undefined);
-  const usesAvailableSlot = additionalSiteMonthlyPriceCop === 0;
 
   return (
     <form action={formAction} className="space-y-4">
-      <div>
-        <p className="text-lg font-semibold tracking-[-0.03em] text-[#12110f]">Nueva sede</p>
-      </div>
       {lockedCompanyId ? (
-        <>
-          <input type="hidden" name="companyId" value={lockedCompanyId} />
-          <div className="rounded-2xl border border-[#12110f]/10 bg-[#fcfbf8] px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">Empresa</p>
-            <p className="mt-1 text-sm font-semibold text-[#12110f]">{lockedCompanyName ?? "Empresa actual"}</p>
-          </div>
-        </>
+        <input type="hidden" name="companyId" value={lockedCompanyId} />
       ) : (
         <div className="space-y-2">
           <label htmlFor="companyId" className="block text-sm font-medium text-[#12110f]">
@@ -286,23 +291,7 @@ export function CreateCompanyBranchForm({
         </div>
       )}
 
-      <Field id="name" label="Nombre de la sede" placeholder="Sede Norte" />
-      <div className="grid gap-3 rounded-2xl border border-[#12110f]/10 bg-[#fcfbf8] px-4 py-3">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm leading-6 text-[#5d574f]">
-            {usesAvailableSlot ? "Cupo de suscripción" : "Costo adicional"}
-          </p>
-          <p className="text-sm font-semibold leading-6 text-[#12110f]">
-            {usesAvailableSlot ? "Disponible" : `+${formatCopAmount(additionalSiteMonthlyPriceCop ?? 0)}/mes`}
-          </p>
-        </div>
-        {nextMonthlyTotalCop !== undefined ? (
-          <div className="flex items-start justify-between gap-4 border-t border-[#e6eaed] pt-3">
-            <p className="text-sm leading-6 text-[#5d574f]">Total mensual</p>
-            <p className="text-sm font-semibold leading-6 text-[#12110f]">{formatCopAmount(nextMonthlyTotalCop)}</p>
-          </div>
-        ) : null}
-      </div>
+      <Field id="name" label="Nombre de la sede" placeholder="Ej.: Café del Parque" />
 
       <ActionFeedback state={state} />
       <SubmitButton idleLabel={idleLabel} pendingLabel={pendingLabel} />
@@ -433,10 +422,14 @@ export function ScheduledDowngradeSelectionForm({
   maxBranches: number;
   selectedBranchIds: string[];
 }) {
+  const router = useRouter();
   const activeBranchIdSet = new Set(activeBranches.map((branch) => branch.id));
   const [selectedIds, setSelectedIds] = useState(() => selectedBranchIds.filter((branchId) => activeBranchIdSet.has(branchId)));
   const [state, setState] = useState<AdminActionState | undefined>(undefined);
+  const [cancellationState, setCancellationState] = useState<AdminActionState | undefined>(undefined);
+  const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isCancellationPending, startCancellationTransition] = useTransition();
   const targetCount = Math.max(maxBranches, 0);
   const requiredCount = Math.min(activeBranches.length, targetCount);
   const selectedCount = selectedIds.length;
@@ -464,6 +457,16 @@ export function ScheduledDowngradeSelectionForm({
       setState(result);
     });
   };
+  const cancelDowngrade = () => {
+    startCancellationTransition(async () => {
+      const result = await cancelScheduledPlanDowngrade({ companySlug });
+      setCancellationState(result);
+
+      if (result.success) {
+        router.refresh();
+      }
+    });
+  };
 
   return (
     <section className="grid gap-5 rounded-[1.45rem] border border-[#e2b35d] bg-[#fff8e9] p-5 shadow-[0_20px_50px_rgba(143,91,21,0.12)]">
@@ -479,6 +482,47 @@ export function ScheduledDowngradeSelectionForm({
           Elige qué sedes mantener activas. Puedes seleccionar hasta {targetCount} sede{targetCount === 1 ? "" : "s"}; las demás se inactivarán al hacerse efectiva la reducción y conservarán toda su información.
         </p>
       </div>
+
+      {isCancellationConfirmationOpen ? (
+        <div className="grid gap-3 rounded-2xl border border-[#d7a39a] bg-white px-4 py-4">
+          <div>
+            <p className="text-sm font-semibold text-[#6e261b]">¿Cancelar la reducción programada?</p>
+            <p className="mt-1 text-sm leading-6 text-[#5f5750]">
+              Conservarás la capacidad actual y Mercado Pago volverá a cobrar el valor mensual anterior en la próxima renovación.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setIsCancellationConfirmationOpen(false)}
+              disabled={isCancellationPending}
+              className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#d9dfe0] bg-white px-4 py-2 text-sm font-semibold text-[#12110f] transition hover:bg-[#f6f8f9] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              Volver
+            </button>
+            <button
+              type="button"
+              onClick={cancelDowngrade}
+              disabled={isCancellationPending}
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#8a2d1f] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6e261b] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {isCancellationPending ? "Cancelando..." : "Conservar capacidad actual"}
+            </button>
+          </div>
+          <ActionFeedback state={cancellationState} />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setCancellationState(undefined);
+            setIsCancellationConfirmationOpen(true);
+          }}
+          className="w-fit text-sm font-semibold text-[#8a2d1f] underline underline-offset-4 transition hover:text-[#6e261b]"
+        >
+          Cancelar reducción programada
+        </button>
+      )}
 
       {hasActiveBranches ? (
         <div className="grid gap-2">
@@ -496,7 +540,7 @@ export function ScheduledDowngradeSelectionForm({
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  disabled={isDisabled || isPending}
+                  disabled={isDisabled || isPending || isCancellationPending}
                   onChange={() => toggleBranch(branch.id)}
                   className="h-4 w-4 accent-[#21734f]"
                 />
@@ -519,7 +563,7 @@ export function ScheduledDowngradeSelectionForm({
           <button
             type="button"
             onClick={saveSelection}
-            disabled={isPending || selectedCount !== requiredCount}
+            disabled={isPending || isCancellationPending || selectedCount !== requiredCount}
             className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#21734f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(33,115,79,0.14)] transition hover:bg-[#1d6646] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
           >
             {isPending ? "Guardando..." : "Guardar sedes seleccionadas"}
@@ -650,13 +694,10 @@ export function CompanyBranchStatusToggle({
       </form>
       <ActionFeedback state={state} />
       {shouldShowPlanUpgradeAction ? (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new Event(openPlanPaymentsEventName))}
+        <OpenPlanPaymentsButton
+          label="Ampliar plan"
           className="inline-flex w-fit rounded-full bg-[#dff3e6] px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#265b38] transition hover:bg-[#d2ecd9]"
-        >
-          Ampliar plan
-        </button>
+        />
       ) : null}
     </div>
   );

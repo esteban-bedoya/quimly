@@ -207,9 +207,13 @@ export default async function DashboardPage() {
   const { profile } = context;
 
   if (profile.globalRole === "company_admin") {
-    const accessibleBranches = await getAccessibleBranches(context);
-    const planPayments = await getCompanyAdminPlanPaymentsData(accessibleBranches);
-    return <CompanyAdminDashboard profile={profile} branches={accessibleBranches} planPayments={planPayments} />;
+    const [accessibleBranches, accessibleCompanies] = await Promise.all([
+      getAccessibleBranches(context),
+      getAccessibleCompanies(context),
+    ]);
+    const company = accessibleCompanies[0] ?? null;
+    const planPayments = await getCompanyAdminPlanPaymentsData(accessibleBranches, company);
+    return <CompanyAdminDashboard profile={profile} branches={accessibleBranches} company={company} planPayments={planPayments} />;
   }
 
   const accessibleCompanies = await getAccessibleCompanies(context);

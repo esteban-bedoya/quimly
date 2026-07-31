@@ -1381,6 +1381,32 @@ export class BillingRepository {
     }
   }
 
+  async completeScheduledDowngradeCancellation({
+    capacityChange,
+    providerSubscription,
+    providerState,
+    restoredMonthlyAmountCop,
+  }: {
+    capacityChange: SubscriptionCapacityChangeRecord;
+    providerSubscription: BillingProviderSubscriptionRecord;
+    providerState: ProviderSubscription;
+    restoredMonthlyAmountCop: number;
+  }) {
+    const { error } = await this.supabase.rpc("cancel_scheduled_billing_downgrade", {
+      target_capacity_change_id: capacityChange.id,
+      target_provider_subscription_record_id: providerSubscription.id,
+      target_provider_status: providerState.providerStatus,
+      target_provider_version: providerState.providerVersion,
+      target_provider_updated_at: providerState.providerUpdatedAt,
+      target_next_payment_at: providerState.nextPaymentAt,
+      target_recurring_amount_cop: restoredMonthlyAmountCop,
+    });
+
+    if (error) {
+      throwDatabaseError(error, "No fue posible cancelar la reducción programada.");
+    }
+  }
+
   async createScheduledCapacityChange({
     companyId,
     subscriptionId,

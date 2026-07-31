@@ -280,10 +280,6 @@ async function deleteBranchDocumentFile(fileUrl: string | null, supabaseClient: 
 
 function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   if (error.code === "23505") {
-    if (error.message.includes("companies_slug")) {
-      return "Ya existe una empresa con un nombre que genera el mismo identificador interno.";
-    }
-
     if (error.message.includes("branches_company_id_slug")) {
       return "Ya existe una sede con un nombre equivalente dentro de esa empresa.";
     }
@@ -1034,6 +1030,44 @@ export async function updateScheduledDowngradeBranches({
   }
 }
 
+export async function cancelScheduledPlanDowngrade({
+  companySlug,
+}: {
+  companySlug: string;
+}): Promise<AdminActionState> {
+  if (!companySlug) {
+    return { error: "No fue posible identificar la empresa." };
+  }
+
+  try {
+    const { context, company } = await requireCompanyBillingAdmin(companySlug);
+    const billingService = createBillingService();
+    const provider = createMercadoPagoBillingProvider();
+
+    await billingService.cancelScheduledDowngrade({
+      companyId: company.id,
+      provider,
+    });
+
+    logServerInfo("billing.scheduled_downgrade_cancelled", {
+      actorUserId: context.profile.userId,
+      companyId: company.id,
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/plan-y-pagos");
+    return { success: "La reducción fue cancelada. Conservas tu capacidad actual." };
+  } catch (error) {
+    if (error instanceof BillingOperationPendingError) {
+      return { error: "Ya estamos procesando otra operación de pago. Espera unos instantes e inténtalo de nuevo." };
+    }
+
+    logAdminActionError("billing.scheduled_downgrade_cancellation_failed", error, { companySlug });
+    return {
+      error: error instanceof Error ? error.message : "No fue posible cancelar la reducción programada.",
+    };
+  }
+}
+
 export async function cancelCompanyPlan({
   companySlug,
 }: {
@@ -1412,44 +1446,26 @@ export async function createCompanyBranch(
     return { error: companyError?.message ?? "No fue posible encontrar la empresa seleccionada." };
   }
 
-  const activeLocationUsage = await getCompanyActiveLocationUsage({ companyId, supabase });
-
-  if (activeLocationUsage.accountCapabilities.requiresCapacityResolution) {
-    return {
-      error: getCapacityResolutionRequiredMessage(activeLocationUsage.accountCapabilities),
-    };
-  }
-
-  if (!activeLocationUsage.accountCapabilities.canOperate) {
-    return { error: "Activa o recupera tu plan para agregar sedes." };
-  }
-
-  if (!activeLocationUsage.accountCapabilities.canCreateBranch) {
-    return { error: activeLocationLimitReachedMessage };
-  }
-
   const { data: createdBranch, error } = await supabase
-    .from("branches")
-    .insert({
-      company_id: companyId,
-      name,
-      created_by: context.profile.userId,
-      status: "active",
-      is_active: true,
-      billing_activation_confirmed_at: new Date().toISOString(),
+    .rpc("create_active_company_branch", {
+      target_company_id: companyId,
+      target_branch_name: name,
     })
-    .select("slug")
-    .single<{ slug: string }>();
+    .maybeSingle<{
+      branch_slug: string;
+      active_branches: number;
+      max_active_locations: number;
+    }>();
 
-  if (error) {
-    return { error: formatDatabaseError(error, "No fue posible crear la sede.") };
+  if (error || !createdBranch) {
+    return { error: formatDatabaseError(error ?? { message: "No fue posible crear la sede." }, "No fue posible crear la sede.") };
   }
 
   revalidatePath("/dashboard");
-  revalidatePath(`/dashboard/sedes/${company.slug}/${createdBranch.slug}`);
+  revalidatePath(`/dashboard/sedes/${company.slug}/${createdBranch.branch_slug}`);
   revalidatePath(`/dashboard/companies/${company.slug}`);
   return {
-    success: `Sede "${name}" creada activa. Uso: ${activeLocationUsage.activeLocations + 1} / ${activeLocationUsage.accountCapabilities.maxBranches} sedes activas.`,
+    success: `Sede "${name}" creada activa. Uso: ${createdBranch.active_branches} / ${createdBranch.max_active_locations} sedes activas.`,
   };
 }
 

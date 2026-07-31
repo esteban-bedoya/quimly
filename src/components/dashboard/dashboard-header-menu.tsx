@@ -50,6 +50,7 @@ const logoutItemClass =
   "inline-flex min-h-10 w-full cursor-pointer items-center justify-center rounded-full px-5 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-white/5 hover:text-[0.95rem] hover:text-white";
 
 type DashboardMenuPanel = "profile" | "planPayments";
+type PlanPaymentsOpenTarget = "overview" | "payment_method";
 
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
 const subscribeToHydration = () => () => {};
@@ -840,10 +841,12 @@ function PlanPaymentsDrawerContent({
   planPayments,
   profileEmail,
   branches,
+  openTarget,
 }: {
   planPayments: PlanPaymentsData;
   profileEmail: string | null;
   branches: AccessibleBranchSummary[];
+  openTarget: PlanPaymentsOpenTarget;
 }) {
   const router = useRouter();
   const visualState = getPlanPaymentsVisualState({
@@ -864,7 +867,7 @@ function PlanPaymentsDrawerContent({
   const [planChangeSuccess, setPlanChangeSuccess] = useState<string | null>(null);
   const [capacityQuote, setCapacityQuote] = useState<CapacityChangeQuote | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingPlanOperation | null>(null);
-  const [isPaymentMethodFormOpen, setIsPaymentMethodFormOpen] = useState(false);
+  const [isPaymentMethodFormOpen, setIsPaymentMethodFormOpen] = useState(openTarget === "payment_method");
   const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
   const [billingLifecycleState, setBillingLifecycleState] = useState<AdminActionState | undefined>(undefined);
   const [cancellationEffectiveOverride, setCancellationEffectiveOverride] = useState<string | null>(null);
@@ -1865,6 +1868,7 @@ export function DashboardHeaderMenu({
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<DashboardMenuPanel | null>(null);
+  const [planPaymentsOpenTarget, setPlanPaymentsOpenTarget] = useState<PlanPaymentsOpenTarget>("overview");
   const [isPlanPaymentsWelcomeOpen, setIsPlanPaymentsWelcomeOpen] = useState(false);
 
   useEffect(() => {
@@ -1879,14 +1883,19 @@ export function DashboardHeaderMenu({
     };
   }, []);
 
-  const openPanel = useCallback((panel: DashboardMenuPanel) => {
+  const openPanel = useCallback((panel: DashboardMenuPanel, target: PlanPaymentsOpenTarget = "overview") => {
     setIsMenuOpen(false);
     setActivePanel(panel);
-    setIsPlanPaymentsWelcomeOpen(panel === "planPayments");
+    setPlanPaymentsOpenTarget(panel === "planPayments" ? target : "overview");
+    setIsPlanPaymentsWelcomeOpen(panel === "planPayments" && target === "overview");
   }, []);
 
   useEffect(() => {
-    const openPlanPayments = () => openPanel("planPayments");
+    const openPlanPayments = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as { target?: unknown } : null;
+      const target: PlanPaymentsOpenTarget = detail?.target === "payment_method" ? "payment_method" : "overview";
+      openPanel("planPayments", target);
+    };
 
     window.addEventListener(openPlanPaymentsEventName, openPlanPayments);
 
@@ -1966,7 +1975,12 @@ export function DashboardHeaderMenu({
       >
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
         {activePanel === "planPayments" ? (
-          <PlanPaymentsDrawerContent planPayments={planPayments} profileEmail={profile.email} branches={branches} />
+          <PlanPaymentsDrawerContent
+            planPayments={planPayments}
+            profileEmail={profile.email}
+            branches={branches}
+            openTarget={planPaymentsOpenTarget}
+          />
         ) : null}
       </AdminSideDrawer>
       {activePanel === "planPayments" && isPlanPaymentsWelcomeOpen ? (

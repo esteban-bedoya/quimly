@@ -2199,6 +2199,59 @@ export class BillingService {
     });
   }
 
+  async cancelScheduledDowngrade({
+    companyId,
+    provider,
+    now = new Date(),
+  }: {
+    companyId: string;
+    provider: BillingProvider;
+    now?: Date;
+  }) {
+    await this.ensureNoOpenIntent(companyId);
+
+    const account = await this.getAccountSnapshot(companyId);
+    const capacityChange = await this.repository.findScheduledCapacityChange(companyId);
+
+    if (!capacityChange || capacityChange.change_type !== "downgrade") {
+      throw new Error("No tienes una reducción programada para cancelar.");
+    }
+
+    if (new Date(capacityChange.effective_at).getTime() <= now.getTime()) {
+      throw new Error("La reducción ya está en su fecha efectiva y no puede cancelarse.");
+    }
+
+    const providerSubscription = await this.repository.findProviderSubscriptionForSubscription(
+      account.subscription.id,
+      companyId,
+    );
+
+    if (!providerSubscription) {
+      throw new Error("La empresa no tiene una suscripción de Mercado Pago activa para cancelar la reducción.");
+    }
+
+    const restoredMonthlyAmountCop = account.currentQuote.monthlyTotalCop;
+    const providerState = await provider.updateSubscriptionAmount(
+      providerSubscription.provider_subscription_id,
+      restoredMonthlyAmountCop,
+    );
+
+    if (
+      providerState.providerSubscriptionId !== providerSubscription.provider_subscription_id ||
+      providerState.currency !== "COP" ||
+      providerState.recurringAmountCop !== restoredMonthlyAmountCop
+    ) {
+      throw new Error("Mercado Pago no confirmó la restauración del valor mensual anterior.");
+    }
+
+    await this.repository.completeScheduledDowngradeCancellation({
+      capacityChange,
+      providerSubscription,
+      providerState,
+      restoredMonthlyAmountCop,
+    });
+  }
+
   private async closeExpiredActivationAttempt(
     companyId: string,
     provider: BillingProvider,
