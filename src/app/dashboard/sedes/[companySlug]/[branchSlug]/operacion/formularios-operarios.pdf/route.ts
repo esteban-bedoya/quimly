@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireActiveBranchAccess } from "@/lib/auth/authorization";
 import {
+  getPublicFormOrigin,
   isOperationalFormType,
   operationalFormTypes,
   type OperationalFormType,
@@ -70,7 +71,7 @@ export async function GET(
     }
 
     const pdf = createBranchOperationalFormsPdf({
-      origin: new URL(request.url).origin,
+      origin: getPublicFormOrigin(request.url),
       companyName: company.name,
       branchName: branch.name,
       forms: activeForms,

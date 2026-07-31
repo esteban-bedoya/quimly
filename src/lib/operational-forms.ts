@@ -49,6 +49,26 @@ export function createPublicFormPath(token: string) {
   return `/f/${encodeURIComponent(token)}`;
 }
 
+/**
+ * QR codes must always point to the configured public application domain.
+ * The request URL can be an internal or preview deployment URL when a PDF is
+ * generated behind a proxy, which makes the printed QR unavailable to users.
+ */
+export function getPublicFormOrigin(requestUrl: string) {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim();
+
+  if (configuredUrl) {
+    try {
+      return new URL(configuredUrl).origin;
+    } catch {
+      // Fall back to the request origin so QR generation remains available if
+      // an environment variable is malformed.
+    }
+  }
+
+  return new URL(requestUrl).origin;
+}
+
 export function createPublicFormUrl(origin: string, token: string) {
   return new URL(createPublicFormPath(token), origin).toString();
 }
