@@ -3177,7 +3177,9 @@ as $$
   )
 $$;
 
-create or replace function public.can_company_operate(target_company_id uuid)
+-- This predicate deliberately has no user-access check. It is used by the
+-- public QR RPCs, which run without an authenticated administrator session.
+create or replace function public.company_has_operational_entitlement(target_company_id uuid)
 returns boolean
 language sql
 stable
@@ -3188,7 +3190,6 @@ as $$
     select 1
     from public.company_subscriptions cs
     where cs.company_id = target_company_id
-      and public.can_access_company(cs.company_id)
       and (
         cs.status = 'active'
         or (
@@ -3202,6 +3203,16 @@ as $$
         )
       )
   )
+$$;
+
+create or replace function public.can_company_operate(target_company_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.company_has_operational_entitlement(target_company_id)
 $$;
 
 create or replace function public.get_company_contracted_capacity(target_company_id uuid)
@@ -5250,8 +5261,7 @@ begin
     and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
-    and not public.company_requires_capacity_resolution(qr.company_id)
-    and public.can_company_operate(qr.company_id)
+    and public.company_has_operational_entitlement(qr.company_id)
   limit 1;
 
   return form_payload;
@@ -5289,8 +5299,7 @@ begin
     and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
-    and not public.company_requires_capacity_resolution(qr.company_id)
-    and public.can_company_operate(qr.company_id)
+    and public.company_has_operational_entitlement(qr.company_id)
   limit 1;
 
   if qr_record.branch_id is null then
@@ -5453,8 +5462,7 @@ begin
     and b.status = 'active'
     and b.is_active = true
     and c.is_active = true
-    and not public.company_requires_capacity_resolution(qr.company_id)
-    and public.can_company_operate(qr.company_id)
+    and public.company_has_operational_entitlement(qr.company_id)
   limit 1;
 
   if qr_record.id is null then

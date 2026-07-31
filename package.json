@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:billing:domain": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test scripts/billing-critical-domain.test.mjs",
     "test:operational-forms": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test scripts/operational-forms.test.mjs",
+    "test:public-qr-schema": "node --test scripts/public-qr-schema.test.mjs",
     "test:billing:sandbox": "node --env-file-if-exists=.env.local scripts/mercado-pago-sandbox-check.mjs"
   },
   "dependencies": {
