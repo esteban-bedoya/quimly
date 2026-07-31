@@ -1,0 +1,1 @@
+export const BRANCH_NAME_MAX_LENGTH = 120;

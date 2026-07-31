@@ -5,11 +5,13 @@ import { revalidatePath } from "next/cache";
 
 import { requireActiveBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
+import { BRANCH_NAME_MAX_LENGTH } from "@/lib/branch-name";
 import {
   getAccountCapabilities,
   getSubscriptionViewState,
   normalizePlanType,
   normalizeSubscriptionStatus,
+  type SubscriptionViewState,
 } from "@/lib/billing";
 import {
   BillingOperationPendingError,
@@ -150,6 +152,18 @@ function readString(formData: FormData, key: string) {
 function readSensitiveString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function getBranchNameValidationError(name: string) {
+  if (!name) {
+    return "Debes indicar un nombre válido para la sede.";
+  }
+
+  if (name.length > BRANCH_NAME_MAX_LENGTH) {
+    return `El nombre de la sede no puede superar los ${BRANCH_NAME_MAX_LENGTH} caracteres.`;
+  }
+
+  return null;
 }
 
 function getNewPasswordValidationError({
@@ -306,7 +320,7 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
     }
   }
 
-  return error.message || fallback;
+  return fallback;
 }
 
 function readSanitaryDocumentKind(formData: FormData, key = "documentKind") {
@@ -458,7 +472,7 @@ async function ensurePhoneIsAvailable(phone: E164PhoneNumber, allowedUserId?: st
     .maybeSingle<{ user_id: string }>();
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error("No fue posible validar el número de celular.");
   }
 
   if (data && data.user_id !== allowedUserId) {
@@ -513,6 +527,22 @@ function getCapacityResolutionRequiredMessage({
   return `Tu plan permite administrar ${maxBranches} sede${maxBranches === 1 ? "" : "s"} activa${maxBranches === 1 ? "" : "s"}, pero actualmente tienes ${activeBranches} sede${activeBranches === 1 ? "" : "s"} activa${activeBranches === 1 ? "" : "s"}. Selecciona ${maxBranches === 1 ? "la sede que deseas mantener activa" : "las sedes que deseas mantener activas"} para continuar operando.`;
 }
 
+function getBranchActivationUnavailableMessage(subscriptionViewState: SubscriptionViewState) {
+  if (subscriptionViewState === "trial_expired") {
+    return "No puedes activar esta sede porque tu prueba terminó. Activa tu plan para continuar.";
+  }
+
+  if (subscriptionViewState === "suspended") {
+    return "No puedes activar esta sede porque tu plan está suspendido. Reactívalo para continuar.";
+  }
+
+  if (subscriptionViewState === "cancelled") {
+    return "No puedes activar esta sede porque tu suscripción está cancelada. Recupérala para continuar.";
+  }
+
+  return "No puedes activar esta sede con el estado actual de tu plan.";
+}
+
 async function resolveBranchRouteTarget(branchId: string) {
   const supabase = await getSupabaseRlsClientOrThrow({
     operation: "resolveBranchRouteTarget",
@@ -529,7 +559,7 @@ async function resolveBranchRouteTarget(branchId: string) {
     }>();
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error("No fue posible resolver la ruta de la sede.");
   }
 
   if (!data) {
@@ -1438,8 +1468,10 @@ export async function createCompanyBranch(
   const companyId = isOperator ? requestedCompanyId : context.profile.defaultCompanyId;
   const name = readString(formData, "name");
 
-  if (!companyId || !name) {
-    return { error: "Debes indicar empresa y nombre válidos para la sede." };
+  const branchNameValidationError = getBranchNameValidationError(name);
+
+  if (!companyId || branchNameValidationError) {
+    return { error: branchNameValidationError ?? "Debes indicar una empresa válida para la sede." };
   }
 
   if (!isOperator && requestedCompanyId && requestedCompanyId !== companyId) {
@@ -1453,7 +1485,7 @@ export async function createCompanyBranch(
     .maybeSingle<{ slug: string }>();
 
   if (companyError || !company) {
-    return { error: companyError?.message ?? "No fue posible encontrar la empresa seleccionada." };
+    return { error: "No fue posible validar la empresa seleccionada." };
   }
 
   const { data: createdBranch, error } = await supabase
@@ -2861,18 +2893,38 @@ export async function updateCompanyBranch(
   _: AdminActionState | undefined,
   formData: FormData,
 ): Promise<AdminActionState> {
-  await requireOperatorAccess();
+  const context = await requireUserContext();
   const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCompanyBranch" });
 
   const branchId = readString(formData, "branchId");
   const name = readString(formData, "name");
   const companySlug = readString(formData, "companySlug");
 
-  if (!branchId || !name) {
-    return { error: "Debes indicar una sede y un nombre válidos." };
+  const branchNameValidationError = getBranchNameValidationError(name);
+
+  if (!branchId || branchNameValidationError) {
+    return { error: branchNameValidationError ?? "Debes indicar una sede válida." };
   }
 
-  const { error } = await supabase.from("branches").update({ name }).eq("id", branchId);
+  const { data: branch, error: branchError } = await supabase
+    .from("branches")
+    .select("company_id")
+    .eq("id", branchId)
+    .maybeSingle<{ company_id: string }>();
+
+  if (branchError || !branch) {
+    return { error: "No fue posible actualizar esta sede." };
+  }
+
+  if (!canManageCompanySites(context, branch.company_id)) {
+    return { error: "No tienes permisos para modificar esta sede." };
+  }
+
+  const { error } = await supabase
+    .from("branches")
+    .update({ name })
+    .eq("id", branchId)
+    .eq("company_id", branch.company_id);
 
   if (error) {
     return { error: formatDatabaseError(error, "No fue posible actualizar la sede.") };
@@ -2992,7 +3044,7 @@ export async function toggleCompanyBranchStatus(
     }
 
     if (!activeLocationUsage.accountCapabilities.canOperate) {
-      return { error: "Actualiza tu plan para activar esta sede." };
+      return { error: getBranchActivationUnavailableMessage(activeLocationUsage.subscriptionViewState) };
     }
 
     const activeLocationsExcludingCurrent = branch.status === "active"

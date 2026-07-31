@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  BranchCapacityModal,
   CapacityResolutionForm,
   CompanyBranchActionsMenu,
   CreateCompanyBranchForm,
@@ -8,6 +9,12 @@ import {
   ScheduledDowngradeSelectionForm,
 } from "@/components/dashboard/admin-forms";
 import { DashboardHeaderMenu } from "@/components/dashboard/dashboard-header-menu";
+import {
+  ReadOnlyBranchStatus,
+  readOnlyBranchActionToneClassName,
+  readOnlyBranchDashboardCardToneClassName,
+  readOnlyBranchSurfaceToneClassName,
+} from "@/components/dashboard/read-only-branch-status";
 import {
   getBranchCreationBlockedMessage,
   getSiteStatusLabel,
@@ -68,33 +75,46 @@ function AccessIcon() {
 
 function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
   const statusLabel = getSiteStatusLabel(branch.status);
+  const isInactive = branch.status === "inactive";
+  const accessLabel = isInactive ? "Ver histórico" : "Acceder";
 
   return (
-    <article className="group rounded-[1.45rem] border border-[#eef1f2] bg-white p-5 shadow-[0_18px_44px_rgba(18,17,15,0.12)] transition duration-300 hover:-translate-y-0.5 hover:border-white hover:shadow-[0_24px_58px_rgba(18,17,15,0.16)]">
+    <article
+      className={`group rounded-[1.45rem] border p-5 transition duration-300 hover:-translate-y-0.5 ${
+        isInactive
+          ? `${readOnlyBranchSurfaceToneClassName} ${readOnlyBranchDashboardCardToneClassName}`
+          : "border-[#eef1f2] bg-white shadow-[0_18px_44px_rgba(18,17,15,0.12)] hover:border-white hover:shadow-[0_24px_58px_rgba(18,17,15,0.16)]"
+      }`}
+    >
       <div>
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-4 lg:items-center">
             <div className="min-w-0">
               <div className="space-y-1">
-                <span
-                  className={`text-[0.68rem] font-semibold uppercase tracking-[0.2em] ${
-                    branch.status === "active" ? "text-[#1c6a71]" : "text-[#8a2d1f]"
-                  }`}
-                >
-                  {statusLabel}
-                </span>
+                {isInactive ? (
+                  <ReadOnlyBranchStatus />
+                ) : (
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#1c6a71]">
+                    {statusLabel}
+                  </span>
+                )}
                 <h3 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-[#12110f]">{branch.name}</h3>
+                <p className="text-sm font-medium text-[#5e6770]">{branch.companyName}</p>
               </div>
             </div>
 
             <div className="flex shrink-0 items-center gap-1">
               <Link
                 href={`/dashboard/sedes/${branch.companySlug}/${branch.slug}`}
-                aria-label={`Acceder a ${branch.name}`}
-                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-2 text-sm font-semibold text-[#12110f] transition duration-300 hover:scale-[1.08] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
+                aria-label={`${accessLabel} de ${branch.name}`}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition duration-300 hover:scale-[1.08] ${
+                  isInactive
+                    ? readOnlyBranchActionToneClassName
+                    : "border-[#12110f]/18 bg-[#f1f1f1] text-[#12110f] hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
+                }`}
               >
                 <AccessIcon />
-                Acceder
+                {accessLabel}
               </Link>
               <CompanyBranchActionsMenu branch={branch} companySlug={branch.companySlug} />
             </div>
@@ -117,6 +137,12 @@ export function CompanyAdminDashboard({
   planPayments: PlanPaymentsData;
 }) {
   const activeBranches = branches.filter((branch) => branch.status === "active");
+  const orderedBranches = [...branches].sort((left, right) => {
+    const leftOrder = left.status === "active" ? 0 : left.status === "inactive" ? 1 : 2;
+    const rightOrder = right.status === "active" ? 0 : right.status === "inactive" ? 1 : 2;
+
+    return leftOrder - rightOrder;
+  });
   const canCreateBranch = planPayments.accountCapabilities.canCreateBranch;
   const scheduledDowngrade =
     planPayments.scheduledCapacityChange?.changeType === "downgrade" ? planPayments.scheduledCapacityChange : null;
@@ -127,6 +153,9 @@ export function CompanyAdminDashboard({
         accountCapabilities: planPayments.accountCapabilities,
         hasScheduledDowngrade: Boolean(scheduledDowngrade),
       });
+  const branchCapacityModalTitle = canCreateBranch
+    ? "Agregar sede"
+    : branchCreationBlockedMessage?.summaryLabel ?? "Gestionar plan para agregar sedes";
   const requiresCapacityResolution = planPayments.accountCapabilities.requiresCapacityResolution;
   const subscriptionStatusLabel = getSubscriptionViewStateLabel(planPayments.subscriptionViewState);
   const subscriptionStatusTone: PlanStatusTone =
@@ -146,6 +175,52 @@ export function CompanyAdminDashboard({
         companyAdminUserId: profile.userId,
       }
     : null);
+  const branchCapacityAction = companyForBranchCreation ? (
+    <BranchCapacityModal
+      title={branchCapacityModalTitle}
+      triggerLabel={branchCapacityModalTitle}
+      triggerClassName="ui-muted-action ui-muted-action-large"
+    >
+      {branchCreationBlockedMessage ? (
+        <div className="grid gap-5">
+          <div>
+            <p className="text-sm font-semibold leading-6 text-[#12110f]">
+              {branchCreationBlockedMessage.title}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[#5e6770]">
+              {branchCreationBlockedMessage.description}
+            </p>
+          </div>
+          {branchCreationBlockedMessage.action === "resolve_capacity" ? (
+            <a href="#resolver-sedes-activas" className={subtleBranchActionButtonClassName}>
+              {branchCreationBlockedMessage.actionLabel}
+            </a>
+          ) : branchCreationBlockedMessage.action === "manage_scheduled_downgrade" ? (
+            <a href="#reduccion-programada" className={subtleBranchActionButtonClassName}>
+              {branchCreationBlockedMessage.actionLabel}
+            </a>
+          ) : (
+            <OpenPlanPaymentsButton
+              label={branchCreationBlockedMessage.actionLabel}
+              target={planPayments.subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
+              className={subtleBranchActionButtonClassName}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          <p className="text-sm leading-6 text-[#5e6770]">La sede quedará activa de inmediato.</p>
+          <CreateCompanyBranchForm
+            companies={[companyForBranchCreation]}
+            lockedCompanyId={companyForBranchCreation.id}
+            idleLabel="Crear sede activa"
+            pendingLabel="Creando sede..."
+            submitClassName={subtleBranchActionButtonClassName}
+          />
+        </div>
+      )}
+    </BranchCapacityModal>
+  ) : null;
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
@@ -173,7 +248,8 @@ export function CompanyAdminDashboard({
           </div>
         </section>
 
-        <div className="mx-auto grid w-full max-w-[74rem] gap-5">
+        <div className="mx-auto w-full max-w-[74rem]">
+        <div className="grid gap-5">
           {requiresCapacityResolution && companyForBranchCreation ? (
             <div id="resolver-sedes-activas">
               <CapacityResolutionForm
@@ -185,30 +261,7 @@ export function CompanyAdminDashboard({
             </div>
           ) : null}
 
-          <section id="sedes" className="grid gap-6 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-              <div className="max-w-3xl space-y-3">
-                <h2 className="text-base font-bold uppercase leading-6 tracking-[0.08em] text-[#2a7f86]">
-                  Sedes asociadas a tu negocio
-                </h2>
-                <p className="max-w-2xl text-sm leading-6 text-[#5e6770]">
-                  Selecciona una sede para mantener tu establecimiento siempre preparado ante auditorías e inspecciones.
-                </p>
-              </div>
-
-              <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:min-w-[18rem]">
-                <PremiumStat
-                  label="Uso de sedes"
-                  value={`${activeBranches.length} de ${planPayments.accountCapabilities.maxBranches}`}
-                />
-                <PremiumStat
-                  label="Estado del plan"
-                  value={subscriptionStatusLabel}
-                  tone={subscriptionStatusTone}
-                />
-              </div>
-            </div>
-
+          <div id="sedes" className="sedes-dashboard-layout grid gap-6">
             {scheduledDowngrade && planPayments.companySlug ? (
               <div id="reduccion-programada">
                 <ScheduledDowngradeSelectionForm
@@ -222,81 +275,44 @@ export function CompanyAdminDashboard({
               </div>
             ) : null}
 
-            {companyForBranchCreation ? (
-              <details className="peer group rounded-[1.25rem] border border-[#d9dfe0] bg-white p-4">
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-2 text-sm font-semibold text-[#12110f] [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-                  <span className="inline-flex h-5 w-7 shrink-0 items-center justify-center text-[#5e6770]">
-                    <svg viewBox="0 0 12 12" aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-open:rotate-90">
-                      <path
-                        d="m4.25 2.75 4.25 3.25-4.25 3.25Z"
-                        fill="currentColor"
-                        stroke="currentColor"
-                        strokeLinejoin="round"
-                        strokeWidth="0.6"
-                      />
-                    </svg>
-                  </span>
-                  <span>{canCreateBranch ? "Agregar sede" : branchCreationBlockedMessage?.summaryLabel}</span>
-                </summary>
-                <div className="mt-4 border-t border-[#eef1f2] pt-4">
-                  {branchCreationBlockedMessage ? (
-                    <div className="grid gap-5">
-                      <div>
-                        <p className="text-sm font-semibold leading-6 text-[#12110f]">
-                          {branchCreationBlockedMessage.title}
-                        </p>
-                        <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-                          {branchCreationBlockedMessage.description}
-                        </p>
-                      </div>
-                      {branchCreationBlockedMessage.action === "resolve_capacity" ? (
-                        <a
-                          href="#resolver-sedes-activas"
-                          className={subtleBranchActionButtonClassName}
-                        >
-                          {branchCreationBlockedMessage.actionLabel}
-                        </a>
-                      ) : branchCreationBlockedMessage.action === "manage_scheduled_downgrade" ? (
-                        <a
-                          href="#reduccion-programada"
-                          className={subtleBranchActionButtonClassName}
-                        >
-                          {branchCreationBlockedMessage.actionLabel}
-                        </a>
-                      ) : (
-                        <OpenPlanPaymentsButton
-                          label={branchCreationBlockedMessage.actionLabel}
-                          target={planPayments.subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
-                          className={subtleBranchActionButtonClassName}
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid gap-4">
-                      <p className="text-sm leading-6 text-[#5e6770]">La sede quedará activa de inmediato.</p>
-                      <CreateCompanyBranchForm
-                        companies={[companyForBranchCreation]}
-                        lockedCompanyId={companyForBranchCreation.id}
-                        idleLabel="Crear sede activa"
-                        pendingLabel="Creando sede..."
-                        submitClassName={subtleBranchActionButtonClassName}
-                      />
-                    </div>
-                  )}
+            <div>
+              <div className="operational-toolbar mt-3 mb-10 flex w-full flex-col items-center gap-3 sm:mt-4 sm:mb-12 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="order-2 self-center sm:order-1 sm:self-auto">{branchCapacityAction}</div>
+                <div className="order-1 grid grid-cols-2 auto-rows-fr self-center gap-3 sm:order-2 sm:self-end lg:min-w-[18rem]">
+                  <PremiumStat
+                    label="Uso de sedes"
+                    value={`${activeBranches.length} de ${planPayments.accountCapabilities.maxBranches}`}
+                    tone="accent"
+                  />
+                  <PremiumStat
+                    label="Estado del plan"
+                    value={subscriptionStatusLabel}
+                    tone={subscriptionStatusTone}
+                  />
                 </div>
-              </details>
-            ) : null}
+              </div>
 
-            <div className="grid gap-4 peer-open:hidden">
-              {branches.length ? (
-                branches.map((branch) => <BranchCard key={branch.id} branch={branch} />)
-              ) : (
-                <div className="rounded-[1.75rem] border border-dashed border-[#d9dfe0] bg-[#fbfdfe] px-5 py-8 text-sm leading-7 text-[#5e6770]">
-                  Aún no tienes sedes asociadas a tu negocio.
+              <section className="grid gap-4 rounded-[1.45rem] p-5 dashboard-card-surface dashboard-card-surface-operational sm:p-6">
+                <div className="max-w-3xl space-y-3">
+                  <h2 className="text-base font-bold uppercase leading-6 tracking-[0.08em] text-[#2a7f86]">
+                    Sedes asociadas a tu negocio
+                  </h2>
+                  <p className="max-w-2xl text-sm leading-6 text-[#5e6770]">
+                    Selecciona una sede para mantener tu establecimiento siempre preparado ante auditorías e inspecciones.
+                  </p>
                 </div>
-              )}
+
+                {orderedBranches.length ? (
+                  orderedBranches.map((branch) => <BranchCard key={branch.id} branch={branch} />)
+                ) : (
+                  <div className="rounded-[1.75rem] border border-dashed border-[#d9dfe0] bg-[#fbfdfe] px-5 py-8 text-sm leading-7 text-[#5e6770]">
+                    Aún no tienes sedes asociadas a tu negocio.
+                  </div>
+                )}
+              </section>
             </div>
-          </section>
+          </div>
+        </div>
         </div>
       </div>
     </main>

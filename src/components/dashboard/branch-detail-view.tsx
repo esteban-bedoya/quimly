@@ -16,6 +16,10 @@ import {
 } from "@/app/dashboard/actions";
 import { CompanyAdminDocumentsView } from "@/components/dashboard/company-admin-documents-view";
 import { BranchReportsPanel } from "@/components/dashboard/branch-reports-panel";
+import {
+  ReadOnlyBranchStatus,
+  readOnlyBranchSurfaceToneClassName,
+} from "@/components/dashboard/read-only-branch-status";
 import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
 import { logout } from "@/app/login/actions";
 import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
@@ -74,18 +78,6 @@ const refrigerationEquipmentTypeLabels: Record<BranchRefrigerationEquipmentType,
   refrigerator: "Refrigerador",
   freezer: "Congelador",
 };
-
-function ReadOnlyLockIcon() {
-  return (
-    <span aria-hidden="true" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d5bd73] bg-white/65 text-[#7a5a00] shadow-[0_2px_6px_rgba(95,71,0,0.08)]">
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-        <rect x="5" y="10" width="14" height="10" rx="2.5" />
-        <path strokeLinecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
-        <path strokeLinecap="round" d="M12 14v2" />
-      </svg>
-    </span>
-  );
-}
 
 function NavigationReadOnlyLockIcon() {
   return (
@@ -259,11 +251,14 @@ function BranchLayout({
         </section>
 
         {isReadOnly ? (
-          <section className="mx-auto w-full max-w-[74rem] rounded-[1.25rem] border border-[#e0d1a0] bg-[#fff8df] px-5 py-4 text-sm leading-6 text-[#7a5a00]">
-            <p className="flex items-center gap-2 font-semibold text-[#5f4700]">
-              {branch.status !== "active" ? <ReadOnlyLockIcon /> : null}
-              {readOnlyTitle}
-            </p>
+          <section
+            className={`mx-auto w-full max-w-[74rem] rounded-[1.25rem] border px-5 py-4 text-sm leading-6 ${readOnlyBranchSurfaceToneClassName}`}
+          >
+            {branch.status !== "active" ? (
+              <ReadOnlyBranchStatus />
+            ) : (
+              <p className="font-semibold text-[#5e5a4c]">{readOnlyTitle}</p>
+            )}
             <p>{readOnlyDescription}</p>
           </section>
         ) : null}

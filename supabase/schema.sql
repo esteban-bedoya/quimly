@@ -1242,6 +1242,13 @@ add column if not exists billing_activation_confirmed_at timestamptz;
 alter table if exists public.branches
 add column if not exists mercado_pago_activation_payment_id text;
 
+alter table if exists public.branches
+drop constraint if exists branches_name_length_check;
+
+alter table if exists public.branches
+add constraint branches_name_length_check
+check (char_length(btrim(name)) between 1 and 120);
+
 update public.branches
 set status = case when is_active then 'active'::public.site_status else 'inactive'::public.site_status end
 where status is null
