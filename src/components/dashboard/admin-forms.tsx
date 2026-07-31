@@ -1164,8 +1164,10 @@ function CompanyBranchEditDialog({
   companySlug?: string;
   onClose: () => void;
 }) {
-  const [state, formAction] = useActionState(updateCompanyBranch, undefined);
+  const [state, formAction, isSubmitting] = useActionState(updateCompanyBranch, undefined);
+  const [name, setName] = useState(branch.name);
   const dialogRef = useRef<HTMLElement | null>(null);
+  const hasChanges = name.trim() !== branch.name;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -1173,7 +1175,7 @@ function CompanyBranchEditDialog({
     dialogRef.current?.focus();
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isSubmitting) {
         onClose();
       }
     };
@@ -1184,76 +1186,107 @@ function CompanyBranchEditDialog({
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [onClose]);
+  }, [isSubmitting, onClose]);
+
+  const isSuccess = Boolean(state?.success);
 
   return typeof document !== "undefined"
     ? createPortal(
         <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-end justify-center bg-[#12110f]/40 p-0 backdrop-blur-md sm:items-center sm:px-4 sm:py-6">
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Cerrar edición de sede"
-            onClick={onClose}
-            className="absolute inset-0"
-          />
+          {!isSubmitting ? (
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Cerrar edición de sede"
+              onClick={onClose}
+              className="absolute inset-0"
+            />
+          ) : null}
           <section
             ref={dialogRef}
             tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-labelledby={`edit-branch-title-${branch.id}`}
+            aria-label={isSuccess ? "Sede actualizada" : "Editar sede"}
+            aria-busy={isSubmitting}
             className="relative w-full max-w-md rounded-t-[1.7rem] bg-white p-5 text-[#12110f] shadow-[0_24px_80px_rgba(18,17,15,0.22)] outline-none sm:rounded-[1.7rem] sm:p-6"
           >
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2">
-                <h3 id={`edit-branch-title-${branch.id}`} className="ui-modal-title">
-                  Editar sede
-                </h3>
-                <p className="ui-modal-copy">
-                  Este cambio se reflejará en todos los registros realizados para esta sede.
+            {isSubmitting ? (
+              <div className="flex items-center gap-4 py-3" role="status" aria-live="polite">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f1f1f1] text-[#12110f]">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 animate-spin" fill="none">
+                    <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2.4" opacity="0.25" />
+                    <path d="M12 4a8 8 0 0 1 8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
+                  </svg>
+                </span>
+                <p className="ui-modal-copy">Guardando cambios...</p>
+              </div>
+            ) : isSuccess ? (
+              <div className="grid gap-6 py-2">
+                <p className="ui-modal-copy" role="status" aria-live="polite">
+                  {state?.success}
                 </p>
+                <div className="flex justify-end">
+                  <button type="button" onClick={onClose} className="ui-pill-button-secondary ui-modal-action-secondary">
+                    Aceptar
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Cerrar edición de sede"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#5e6770] transition hover:bg-[#f1f1f1] hover:text-[#12110f]"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-2">
+                    <h3 className="ui-modal-title">Editar sede</h3>
+                    <p className="ui-modal-copy">
+                      Este cambio se reflejará en todos los registros realizados para esta sede.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Cerrar edición de sede"
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#5e6770] transition hover:bg-[#f1f1f1] hover:text-[#12110f]"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
 
-            <form action={formAction} className="mt-5 grid gap-4">
-              <input type="hidden" name="branchId" value={branch.id} />
-              <input type="hidden" name="companySlug" value={companySlug ?? ""} />
-              <div className="space-y-2">
-                <label htmlFor={`edit-branch-name-${branch.id}`} className="block text-sm font-semibold text-[#12110f]">
-                  Nombre de la sede
-                </label>
-                <input
-                  id={`edit-branch-name-${branch.id}`}
-                  name="name"
-                  type="text"
-                  defaultValue={branch.name}
-                  required
-                  maxLength={BRANCH_NAME_MAX_LENGTH}
-                  className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
-                />
-              </div>
-              <ActionFeedback state={state} />
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button type="button" onClick={onClose} className="ui-pill-button-secondary ui-modal-action-secondary">
-                  Cancelar
-                </button>
-                <SubmitButton
-                  idleLabel="Guardar cambios"
-                  pendingLabel="Guardando..."
-                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-2 text-sm font-semibold text-[#12110f] transition hover:border-[#12110f]/32 hover:bg-[#e7e7e7]"
-                />
-              </div>
-            </form>
+                <form action={formAction} className="mt-5 grid gap-4">
+                  <input type="hidden" name="branchId" value={branch.id} />
+                  <input type="hidden" name="companySlug" value={companySlug ?? ""} />
+                  <div className="space-y-2">
+                    <label htmlFor={`edit-branch-name-${branch.id}`} className="block text-sm font-semibold text-[#12110f]">
+                      Nombre de la sede
+                    </label>
+                    <input
+                      id={`edit-branch-name-${branch.id}`}
+                      name="name"
+                      type="text"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      maxLength={BRANCH_NAME_MAX_LENGTH}
+                      className="min-h-11 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+                    />
+                  </div>
+                  <ActionFeedback state={state?.error ? state : undefined} />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button type="button" onClick={onClose} className="ui-pill-button-secondary ui-modal-action-secondary">
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!hasChanges || !name.trim()}
+                      className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/18 bg-[#f1f1f1] px-4 py-2 text-sm font-semibold text-[#12110f] transition hover:border-[#12110f]/32 hover:bg-[#e7e7e7] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Guardar cambios
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </section>
         </div>,
         document.body,
