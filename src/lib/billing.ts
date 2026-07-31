@@ -505,7 +505,9 @@ export function getBranchCreationBlockedMessage({
     return {
       summaryLabel: "Aumentar capacidad",
       title: "No tienes cupos disponibles para otra sede.",
-      description: `Tus ${accountCapabilities.maxBranches} sede${accountCapabilities.maxBranches === 1 ? "" : "s"} contratada${accountCapabilities.maxBranches === 1 ? "" : "s"} ya ${accountCapabilities.maxBranches === 1 ? "está activa" : "están activas"}. Aumenta la capacidad de tu plan para agregar otra.`,
+      description: accountCapabilities.maxBranches === 1
+        ? "Tu única sede contratada ya está activa. Aumenta la capacidad de tu plan para agregar otra."
+        : `Tus ${accountCapabilities.maxBranches} sedes contratadas ya están activas. Aumenta la capacidad de tu plan para agregar otra.`,
       actionLabel: "Aumentar capacidad",
       action: "open_plan_payments",
     };
