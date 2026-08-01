@@ -17,7 +17,6 @@ import {
   RoleBadge,
   UserStatusToggle,
 } from "@/components/dashboard/admin-forms";
-import { logout } from "@/app/login/actions";
 import {
   getAccessibleBranches,
   getAccessibleCompanies,
@@ -240,7 +239,7 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            <form action={logout}>
+            <form action="/logout" method="post">
               <button
                 type="submit"
                 className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#12110f]/16 bg-[#f3eee6] px-5 py-2.5 text-sm font-semibold text-[#12110f] transition hover:bg-[#eae2d4]"

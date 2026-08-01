@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import { clearSessionTokens, storeSessionTokens } from "@/lib/auth/session";
+import { storeSessionTokens } from "@/lib/auth/session";
 import { notificationService } from "@/lib/notifications/notification.service";
 import { sendTrialWelcomeWhatsAppImmediately } from "@/lib/notifications/scheduled-whatsapp-notifications.service.server";
 import { normalizeInternationalPhoneInput, type E164PhoneNumber } from "@/lib/phone";
@@ -417,9 +417,4 @@ export async function resetPasswordWithOTP(
       phone,
     };
   }
-}
-
-export async function logout() {
-  await clearSessionTokens();
-  redirect("/login");
 }

@@ -17,7 +17,6 @@ import {
   updateCurrentUserProfile,
   updateCurrentCompanyName,
 } from "@/app/dashboard/actions";
-import { logout } from "@/app/login/actions";
 import { COMPANY_NAME_MAX_LENGTH } from "@/lib/company-name";
 import { isValidEmailAddress } from "@/lib/phone";
 import {
@@ -2083,7 +2082,7 @@ export function DashboardHeaderMenu({
                 Plan y pagos
               </button>
               <div className="my-1 h-px bg-[#48c7d2]/20" />
-              <form action={logout} className="flex">
+              <form action="/logout" method="post" className="flex">
                 <button type="submit" className={logoutItemClass}>
                   Cerrar sesión
                 </button>

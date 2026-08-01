@@ -21,7 +21,6 @@ import {
   readOnlyBranchSurfaceToneClassName,
 } from "@/components/dashboard/read-only-branch-status";
 import { OperationalRecordStatusDot } from "@/components/ui/operational-record-status-dot";
-import { logout } from "@/app/login/actions";
 import { createPublicFormPath, operationalFormLabels, operationalFormTypes } from "@/lib/operational-forms";
 import type { OperationalRecordDateStatus } from "@/lib/operational-record-dates";
 import { printableQrInstructions } from "@/lib/qr/printable";
@@ -205,7 +204,7 @@ function BranchLayout({
                     Administración
                   </Link>
                   <div className="my-1 h-px bg-[#48c7d2]/20" />
-                  <form action={logout} className="flex">
+                  <form action="/logout" method="post" className="flex">
                     <button
                       type="submit"
                       className="inline-flex min-h-10 w-full cursor-pointer items-center justify-center rounded-full px-5 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-white/5 hover:text-[0.95rem] hover:text-white"
