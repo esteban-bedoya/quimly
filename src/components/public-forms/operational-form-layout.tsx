@@ -54,7 +54,7 @@ export const operationalFormStyles = {
   responsibleValueEmpty: "text-xl font-black text-[#7b8c87]",
   poweredBy: "px-4 pb-6 text-right text-xs font-bold text-white/35",
   successDialogBackdrop:
-    "fixed inset-0 z-50 flex items-center justify-center bg-[#111816]/35 px-5 backdrop-blur-md",
+    "ui-focus-backdrop ui-focus-backdrop-operational ui-focus-backdrop-soft fixed inset-0 z-50 flex items-center justify-center px-5",
   successDialogCard: "w-full max-w-sm rounded-3xl bg-white p-6 text-[#111816] shadow-[0_24px_80px_rgba(17,24,22,0.22)]",
   successDialogMessage: "whitespace-pre-line text-xl font-black leading-8 text-[#111816]",
   successDialogButton:

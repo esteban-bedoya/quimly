@@ -149,7 +149,7 @@ export function BranchCapacityModal({
                 tabIndex={-1}
                 aria-label={`Cerrar ${title}`}
                 onClick={() => setIsOpen(false)}
-                className="absolute inset-0 bg-[#12110f]/40 backdrop-blur-md"
+                className="ui-focus-backdrop absolute inset-0"
               />
               <section
                 ref={dialogRef}
@@ -1078,7 +1078,7 @@ function BranchStatusChangeDialog({
 
   return typeof document !== "undefined"
     ? createPortal(
-        <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+        <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4">
           {!isProcessing ? (
             <button
               type="button"
@@ -1192,7 +1192,7 @@ function CompanyBranchEditDialog({
 
   return typeof document !== "undefined"
     ? createPortal(
-        <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-end justify-center bg-[#12110f]/40 p-0 backdrop-blur-md sm:items-center sm:px-4 sm:py-6">
+        <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-end justify-center p-0 sm:items-center sm:px-4 sm:py-6">
           {!isSubmitting ? (
             <button
               type="button"
@@ -1349,7 +1349,7 @@ function CompanyBranchDeleteDialog({
 
   return typeof document !== "undefined"
     ? createPortal(
-            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+            <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4">
               <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
                 <div className="space-y-3">
                   <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">

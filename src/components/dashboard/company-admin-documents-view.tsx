@@ -1119,7 +1119,7 @@ function DocumentDateInput({
       {isOpen && pickerPosition && typeof document !== "undefined" ? createPortal(
         <>
           <div
-            className="fixed inset-0 z-[130] bg-[#12110f]/10 backdrop-blur-sm"
+            className="ui-focus-backdrop ui-focus-backdrop-picker fixed inset-0 z-[130]"
             role="presentation"
             onMouseDown={() => setIsOpen(false)}
           />
@@ -1321,7 +1321,7 @@ function DocumentRegisterModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 py-6 backdrop-blur-md">
+    <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4 py-6">
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -1381,7 +1381,7 @@ function DocumentDeleteConfirmationModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+    <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4">
       <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
         <div className="space-y-3">
           <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">

@@ -163,7 +163,7 @@ function PlanPaymentsWelcomeModal({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
-      <div aria-hidden="true" className="absolute inset-0 bg-[#12110f]/35 backdrop-blur-[2px]" />
+      <div aria-hidden="true" className="ui-focus-backdrop ui-focus-backdrop-drawer absolute inset-0" />
       <section
         role="dialog"
         aria-modal="true"
@@ -856,6 +856,11 @@ function BusinessDrawerContent({ company }: { company: CompanySummary | null }) 
               </InlineActionButton>
             )}
           </div>
+          {isEditing ? (
+            <p className="mt-3 rounded-xl border border-[#d8d2c7] bg-[#faf9f6] px-3 py-2.5 text-xs leading-5 text-[#5e6770]">
+              Este cambio actualizará cómo se muestra el nombre de tu negocio en el sistema y en los reportes que generes a partir de ahora.
+            </p>
+          ) : null}
         </form>
       </AdminDrawerSection>
       <AdminDrawerFeedback state={state} />
@@ -2025,7 +2030,7 @@ export function DashboardHeaderMenu({
           type="button"
           aria-label="Cerrar menú"
           onClick={() => setIsMenuOpen(false)}
-          className="fixed inset-0 z-30 cursor-default bg-[#12110f]/28 backdrop-blur-[3px]"
+          className="ui-focus-backdrop ui-focus-backdrop-menu fixed inset-0 z-30 cursor-default"
         />
       ) : null}
       <div className="absolute right-5 top-5 z-40 sm:right-8 sm:top-6">

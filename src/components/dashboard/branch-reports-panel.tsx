@@ -264,7 +264,7 @@ function ReportGenerationModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 py-6 backdrop-blur-md">
+    <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4 py-6">
       <div
         className="ui-document-modal ui-modal-surface w-full max-w-sm max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[1.7rem] p-6 text-left transition-all duration-300 ease-in-out animate-fadeIn"
         aria-busy={isGenerating}
@@ -523,7 +523,7 @@ function ReportDateInput({
       {isOpen && pickerPosition && typeof document !== "undefined" ? createPortal(
         <>
           <div
-            className="fixed inset-0 z-[130] bg-[#12110f]/10 backdrop-blur-sm"
+            className="ui-focus-backdrop ui-focus-backdrop-picker fixed inset-0 z-[130]"
             role="presentation"
             onMouseDown={() => onActiveFieldChange(null)}
           />

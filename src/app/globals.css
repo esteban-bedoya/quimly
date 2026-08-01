@@ -130,6 +130,47 @@ body:has([data-dashboard-shell]) {
   backdrop-filter: blur(24px);
 }
 
+.ui-focus-backdrop {
+  --ui-focus-backdrop-color: 18 17 15;
+  --ui-focus-backdrop-opacity: 0.4;
+  --ui-focus-backdrop-blur: 12px;
+  background-color: rgb(var(--ui-focus-backdrop-color) / var(--ui-focus-backdrop-opacity));
+  -webkit-backdrop-filter: blur(var(--ui-focus-backdrop-blur));
+  backdrop-filter: blur(var(--ui-focus-backdrop-blur));
+}
+
+.ui-focus-backdrop-drawer {
+  --ui-focus-backdrop-opacity: 0.35;
+  --ui-focus-backdrop-blur: 2px;
+}
+
+.ui-focus-backdrop-menu {
+  --ui-focus-backdrop-opacity: 0.28;
+  --ui-focus-backdrop-blur: 3px;
+}
+
+.ui-focus-backdrop-picker {
+  --ui-focus-backdrop-opacity: 0.1;
+  --ui-focus-backdrop-blur: 4px;
+}
+
+.ui-focus-backdrop-toast {
+  --ui-focus-backdrop-opacity: 0.32;
+}
+
+.ui-focus-backdrop-mobile {
+  --ui-focus-backdrop-opacity: 0.15;
+  --ui-focus-backdrop-blur: 4px;
+}
+
+.ui-focus-backdrop-operational {
+  --ui-focus-backdrop-color: 17 24 22;
+}
+
+.ui-focus-backdrop-soft {
+  --ui-focus-backdrop-opacity: 0.35;
+}
+
 .catalog-item-surface {
   background-color: var(--ui-catalog-item-bg);
 }

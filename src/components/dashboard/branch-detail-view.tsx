@@ -134,17 +134,41 @@ function BranchLayout({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isMenuOpen]);
+
   const activeIndex = navigation.findIndex((item) => item.key === currentSection);
 
   return (
     <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
+      {isMenuOpen ? (
+        <button
+          type="button"
+          aria-label="Cerrar menú"
+          onClick={() => setIsMenuOpen(false)}
+          className="ui-focus-backdrop ui-focus-backdrop-menu fixed inset-0 z-30 cursor-default"
+        />
+      ) : null}
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
-          <div className="absolute right-5 top-5 sm:right-8 sm:top-6">
+          <div className="absolute right-5 top-5 z-40 sm:right-8 sm:top-6">
             <div className="relative">
               <button
                 type="button"
                 aria-expanded={isMenuOpen}
+                aria-controls="branch-header-menu"
                 aria-label="Abrir menú"
                 onClick={() => setIsMenuOpen((currentValue) => !currentValue)}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 text-white transition duration-300 hover:scale-[1.04] hover:bg-[#48c7d2]/16"
@@ -169,7 +193,10 @@ function BranchLayout({
               </button>
 
               {isMenuOpen ? (
-                <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 flex min-w-[220px] flex-col gap-2 rounded-[1.5rem] border border-[#48c7d2]/30 bg-[#12110f] p-3 shadow-[0_18px_45px_rgba(18,17,15,0.24)]">
+                <div
+                  id="branch-header-menu"
+                  className="absolute right-0 top-[calc(100%+0.75rem)] flex min-w-[220px] flex-col gap-2 rounded-[1.5rem] border border-[#48c7d2]/30 bg-[#12110f] p-3 shadow-[0_18px_45px_rgba(18,17,15,0.24)]"
+                >
                   <Link
                     href="/dashboard"
                     onClick={() => setIsMenuOpen(false)}
@@ -534,7 +561,7 @@ function InlineCatalogManager({
 
       {typeof document !== "undefined" && isCreateModalOpen
         ? createPortal(
-            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+            <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4">
               <div className="ui-modal-surface w-full max-w-lg rounded-[1.7rem] p-6">
                 <div className="space-y-2">
                   <h3 className="ui-modal-title">{creationHeading}</h3>
@@ -605,7 +632,7 @@ function InlineCatalogManager({
 
       {typeof document !== "undefined" && statusToast
         ? createPortal(
-            <div className="fixed inset-0 z-[110] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/32 px-4 backdrop-blur-md">
+            <div className="ui-focus-backdrop ui-focus-backdrop-toast fixed inset-0 z-[110] flex min-h-screen w-screen items-center justify-center px-4">
               <div className="ui-modal-surface w-full max-w-sm rounded-[1.7rem] px-6 py-7 text-center">
                 <div className="space-y-5">
                   <p className="text-sm font-semibold text-[#12110f]">{statusToast}</p>
@@ -627,7 +654,7 @@ function InlineCatalogManager({
 
       {typeof document !== "undefined" && itemPendingArchive
         ? createPortal(
-            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center bg-[#12110f]/40 px-4 backdrop-blur-md">
+            <div className="ui-focus-backdrop fixed inset-0 z-[100] flex min-h-screen w-screen items-center justify-center px-4">
               <div className="ui-modal-surface w-full max-w-md rounded-[1.7rem] p-6">
                 <div className="space-y-3">
                   <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#f2e4e0] text-[#7b5750]">

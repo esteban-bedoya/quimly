@@ -2109,7 +2109,7 @@ export function OperationalPublicForm({
       </form>
 
       {showDatePicker ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#111816]/40 px-5 backdrop-blur-md" role="presentation">
+        <div className="ui-focus-backdrop ui-focus-backdrop-operational fixed inset-0 z-40 flex items-center justify-center px-5" role="presentation">
           <section
             aria-modal="true"
             aria-label="Modificar fecha y hora del registro"

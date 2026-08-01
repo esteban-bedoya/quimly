@@ -67,7 +67,7 @@ export function AdminSideDrawer({
         type="button"
         aria-label="Cerrar panel lateral"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-[#12110f]/35 backdrop-blur-[2px]"
+        className="ui-focus-backdrop ui-focus-backdrop-drawer absolute inset-0 cursor-default"
       />
       <aside
         role="dialog"

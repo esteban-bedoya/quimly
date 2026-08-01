@@ -297,7 +297,7 @@ export function InternationalPhoneField({
             ? createPortal(
                 <>
               <div
-                className="fixed inset-0 z-40 bg-[#12110f]/15 backdrop-blur-sm sm:hidden"
+                className="ui-focus-backdrop ui-focus-backdrop-mobile fixed inset-0 z-40 sm:hidden"
                 onClick={() => setIsCountryMenuOpen(false)}
               />
               <div
