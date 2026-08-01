@@ -228,6 +228,7 @@ export function CompanyAdminDashboard({
         <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
           <DashboardHeaderMenu
             profile={profile}
+            company={companyForBranchCreation}
             planPayments={planPayments}
             branches={branches}
           />

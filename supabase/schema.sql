@@ -3184,6 +3184,43 @@ as $$
   )
 $$;
 
+create or replace function public.update_current_company_name(target_name text)
+returns table (
+  company_id uuid,
+  company_name text,
+  company_slug text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_name text := btrim(coalesce(target_name, ''));
+  updated_company public.companies%rowtype;
+begin
+  if auth.uid() is null or public.current_profile_role() is distinct from 'company_admin' then
+    raise exception 'No autorizado.';
+  end if;
+
+  if char_length(normalized_name) not between 1 and 120 then
+    raise exception 'El nombre del negocio no es válido.';
+  end if;
+
+  update public.companies
+  set name = normalized_name
+  where company_admin_user_id = auth.uid()
+    and is_active = true
+  returning * into updated_company;
+
+  if not found then
+    raise exception 'No fue posible encontrar el negocio.';
+  end if;
+
+  return query
+  select updated_company.id, updated_company.name, updated_company.slug;
+end;
+$$;
+
 -- This predicate deliberately has no user-access check. It is used by the
 -- public QR RPCs, which run without an authenticated administrator session.
 create or replace function public.company_has_operational_entitlement(target_company_id uuid)
@@ -7602,6 +7639,9 @@ grant execute on function public.create_company_with_initial_branch(text, uuid, 
 revoke all on function public.create_active_company_branch(uuid, text) from public;
 revoke all on function public.create_active_company_branch(uuid, text) from anon;
 grant execute on function public.create_active_company_branch(uuid, text) to authenticated;
+
+revoke all on function public.update_current_company_name(text) from public, anon;
+grant execute on function public.update_current_company_name(text) to authenticated;
 
 revoke all on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) from public;
 revoke all on function public.cancel_scheduled_billing_downgrade(uuid, uuid, text, integer, timestamptz, timestamptz, integer) from anon;

@@ -15,8 +15,10 @@ import {
   startPlanUpgrade,
   updateCurrentUserPassword,
   updateCurrentUserProfile,
+  updateCurrentCompanyName,
 } from "@/app/dashboard/actions";
 import { logout } from "@/app/login/actions";
+import { COMPANY_NAME_MAX_LENGTH } from "@/lib/company-name";
 import { isValidEmailAddress } from "@/lib/phone";
 import {
   AdminDrawerButton,
@@ -42,14 +44,14 @@ import type {
   CurrentUserProfileDetailsState,
   PlanCapacityChangeQuoteResult,
 } from "@/app/dashboard/actions";
-import type { AccessibleBranchSummary, UserProfile } from "@/types/auth";
+import type { AccessibleBranchSummary, CompanySummary, UserProfile } from "@/types/auth";
 
 const menuItemClass =
   "inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 px-5 py-2.5 text-sm font-medium text-white transition duration-300 hover:bg-[#48c7d2]/16";
 const logoutItemClass =
   "inline-flex min-h-10 w-full cursor-pointer items-center justify-center rounded-full px-5 py-2 text-sm font-medium text-white transition-all duration-300 hover:bg-white/5 hover:text-[0.95rem] hover:text-white";
 
-type DashboardMenuPanel = "profile" | "planPayments";
+type DashboardMenuPanel = "profile" | "business" | "planPayments";
 type PlanPaymentsOpenTarget = "overview" | "payment_method";
 
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
@@ -65,6 +67,7 @@ const totalPayableTodayLabel = (
 
 const panelLabels: Record<DashboardMenuPanel, string> = {
   profile: "Mi perfil",
+  business: "Mi negocio",
   planPayments: "Plan y pagos",
 };
 
@@ -771,6 +774,90 @@ function ProfileDrawerContent({ profile }: { profile: UserProfile }) {
 
       <AdminDrawerFeedback state={phoneOtpState} />
       <AdminDrawerFeedback state={passwordState} />
+      <AdminDrawerFeedback state={state} />
+    </>
+  );
+}
+
+function BusinessDrawerContent({ company }: { company: CompanySummary | null }) {
+  const router = useRouter();
+  const [state, formAction] = useActionState<AdminActionState | undefined, FormData>(
+    updateCurrentCompanyName,
+    undefined,
+  );
+  const [name, setName] = useState(company?.name ?? "");
+  const [isEditing, setIsEditing] = useState(false);
+  const handledSaveState = useRef<AdminActionState | undefined>(undefined);
+  const initialName = company?.name ?? "";
+  const hasChanges = name.trim() !== initialName;
+
+  useEffect(() => {
+    if (!state?.success || handledSaveState.current === state) {
+      return;
+    }
+
+    handledSaveState.current = state;
+    startTransition(() => {
+      setIsEditing(false);
+      router.refresh();
+    });
+  }, [router, state]);
+
+  if (!company) {
+    return <AdminDrawerFeedback state={{ error: "No fue posible cargar la información de tu negocio." }} />;
+  }
+
+  return (
+    <>
+      <AdminDrawerSection>
+        <form action={formAction} className="border-b border-[#e6eaed] pb-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="business-name" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8a9298]">
+                Nombre del negocio
+              </label>
+              {isEditing ? (
+                <label htmlFor="business-name" className="ui-form-field mt-2">
+                  <span className="ui-form-label">Nuevo nombre</span>
+                  <input
+                    id="business-name"
+                    name="name"
+                    type="text"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                    maxLength={COMPANY_NAME_MAX_LENGTH}
+                    className={`${adminDrawerInputClassName} ${hasChanges ? "border-yellow-400 focus:border-yellow-400" : ""}`}
+                  />
+                </label>
+              ) : (
+                <p className="mt-1 break-words text-sm font-semibold leading-6 text-[#12110f]">{name}</p>
+              )}
+            </div>
+
+            {isEditing ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <InlineActionButton type="submit" label="Guardar nombre del negocio" disabled={!hasChanges || !name.trim()}>
+                  <CheckIcon />
+                </InlineActionButton>
+                <InlineActionButton
+                  label="Cancelar edición del nombre del negocio"
+                  onClick={() => {
+                    setName(initialName);
+                    setIsEditing(false);
+                  }}
+                >
+                  <XIcon />
+                </InlineActionButton>
+              </div>
+            ) : (
+              <InlineActionButton label="Editar nombre del negocio" onClick={() => setIsEditing(true)}>
+                <EditIcon />
+              </InlineActionButton>
+            )}
+          </div>
+        </form>
+      </AdminDrawerSection>
       <AdminDrawerFeedback state={state} />
     </>
   );
@@ -1859,10 +1946,12 @@ function PlanPaymentsDrawerContent({
 
 export function DashboardHeaderMenu({
   profile,
+  company,
   planPayments,
   branches,
 }: {
   profile: UserProfile;
+  company: CompanySummary | null;
   planPayments: PlanPaymentsData;
   branches: AccessibleBranchSummary[];
 }) {
@@ -1882,6 +1971,21 @@ export function DashboardHeaderMenu({
       window.removeEventListener("resize", closeMenu);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isMenuOpen]);
 
   const openPanel = useCallback((panel: DashboardMenuPanel, target: PlanPaymentsOpenTarget = "overview") => {
     setIsMenuOpen(false);
@@ -1916,11 +2020,20 @@ export function DashboardHeaderMenu({
 
   return (
     <>
-      <div className="absolute right-5 top-5 sm:right-8 sm:top-6">
+      {isMenuOpen ? (
+        <button
+          type="button"
+          aria-label="Cerrar menú"
+          onClick={() => setIsMenuOpen(false)}
+          className="fixed inset-0 z-30 cursor-default bg-[#12110f]/28 backdrop-blur-[3px]"
+        />
+      ) : null}
+      <div className="absolute right-5 top-5 z-40 sm:right-8 sm:top-6">
         <div className="relative">
           <button
             type="button"
             aria-expanded={isMenuOpen}
+            aria-controls="dashboard-header-menu"
             aria-label="Abrir menú"
             onClick={() => setIsMenuOpen((currentValue) => !currentValue)}
             className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#48c7d2]/30 bg-[#48c7d2]/10 text-white transition duration-300 hover:scale-[1.04] hover:bg-[#48c7d2]/16"
@@ -1943,10 +2056,18 @@ export function DashboardHeaderMenu({
           </button>
 
           {isMenuOpen ? (
-            <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 flex min-w-[220px] flex-col gap-2 rounded-[1.5rem] border border-[#48c7d2]/30 bg-[#12110f] p-3 shadow-[0_18px_45px_rgba(18,17,15,0.24)]">
+            <div
+              id="dashboard-header-menu"
+              className="absolute right-0 top-[calc(100%+0.75rem)] flex min-w-[220px] flex-col gap-2 rounded-[1.5rem] border border-[#48c7d2]/30 bg-[#12110f] p-3 shadow-[0_18px_45px_rgba(18,17,15,0.24)]"
+            >
               <button type="button" onClick={() => openPanel("profile")} className={menuItemClass}>
                 Mi perfil
               </button>
+              {company ? (
+                <button type="button" onClick={() => openPanel("business")} className={menuItemClass}>
+                  Mi negocio
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -1974,6 +2095,7 @@ export function DashboardHeaderMenu({
         onClose={closePanel}
       >
         {activePanel === "profile" ? <ProfileDrawerContent profile={profile} /> : null}
+        {activePanel === "business" ? <BusinessDrawerContent company={company} /> : null}
         {activePanel === "planPayments" ? (
           <PlanPaymentsDrawerContent
             planPayments={planPayments}

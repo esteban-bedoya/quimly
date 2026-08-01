@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireActiveBranchAccess } from "@/lib/auth/authorization";
 import { requireUserContext } from "@/lib/auth/user-context";
 import { BRANCH_NAME_MAX_LENGTH } from "@/lib/branch-name";
+import { COMPANY_NAME_MAX_LENGTH } from "@/lib/company-name";
 import {
   getAccountCapabilities,
   getSubscriptionViewState,
@@ -166,6 +167,18 @@ function getBranchNameValidationError(name: string) {
   return null;
 }
 
+function getCompanyNameValidationError(name: string) {
+  if (!name) {
+    return "Debes indicar un nombre válido para tu negocio.";
+  }
+
+  if (name.length > COMPANY_NAME_MAX_LENGTH) {
+    return `El nombre de tu negocio no puede superar los ${COMPANY_NAME_MAX_LENGTH} caracteres.`;
+  }
+
+  return null;
+}
+
 function getNewPasswordValidationError({
   currentPassword,
   newPassword,
@@ -298,6 +311,10 @@ function formatDatabaseError(error: PostgrestErrorLike, fallback: string) {
   if (error.code === "23505") {
     if (error.message.includes("branches_company_id_slug")) {
       return "Ya existe una sede con un nombre equivalente dentro de esa empresa.";
+    }
+
+    if (error.message.includes("companies_slug_key")) {
+      return "Ya existe un negocio con un nombre equivalente.";
     }
 
     if (
@@ -2887,6 +2904,36 @@ export async function updateCompany(
 
   revalidatePath(`/dashboard/companies/${company.slug}`);
   return { success: `Empresa "${name}" actualizada correctamente.` };
+}
+
+export async function updateCurrentCompanyName(
+  _: AdminActionState | undefined,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const context = await requireUserContext();
+  const supabase = await getSupabaseRlsClientOrThrow({ operation: "updateCurrentCompanyName" });
+  const name = readString(formData, "name");
+  const validationError = getCompanyNameValidationError(name);
+
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  if (context.profile.globalRole !== "company_admin") {
+    return { error: "No tienes permisos para modificar este negocio." };
+  }
+
+  const { data: company, error } = await supabase
+    .rpc("update_current_company_name", { target_name: name })
+    .maybeSingle<{ company_id: string; company_name: string; company_slug: string }>();
+
+  if (error || !company) {
+    return { error: formatDatabaseError(error ?? { message: "No fue posible actualizar el negocio." }, "No fue posible actualizar el negocio.") };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath(`/dashboard/companies/${company.company_slug}`);
+  return { success: `Negocio "${company.company_name}" actualizado correctamente.` };
 }
 
 export async function updateCompanyBranch(
