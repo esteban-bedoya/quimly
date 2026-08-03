@@ -2,7 +2,7 @@ import "server-only";
 
 import { isE164PhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppTemplate, type WhatsAppTemplateVariables } from "@/lib/notifications/whatsapp-template.service";
-import { shouldSendTrialExpired, shouldSendTrialMidpoint } from "@/lib/notifications/trial-notification-policy";
+import { shouldDispatchQueuedTrialExpired, shouldDispatchQueuedTrialMidpoint, shouldSendTrialExpired, shouldSendTrialMidpoint } from "@/lib/notifications/trial-notification-policy";
 import {
   SCHEDULED_WHATSAPP_CLAIM_LIMIT,
   SCHEDULED_WHATSAPP_MAX_ATTEMPTS,
@@ -27,6 +27,7 @@ type SubscriptionRow = {
   id: string;
   company_id: string;
   status: "trial" | "active" | "payment_issue" | "suspended" | "cancelled";
+  plan_type: "operational" | "founder";
   trial_started_at: string;
   trial_ends_at: string;
 };
@@ -52,6 +53,7 @@ type PreparedNotification = {
 type StoredDeliveryPayload = { variables: WhatsAppTemplateVariables; fallbackBody: string; telegram: TelegramAlertContext };
 type ClaimedDelivery = {
   id: string;
+  company_id: string;
   recipient_phone: string;
   notification_type: ScheduledWhatsAppTemplateKey;
   template_key: ScheduledWhatsAppTemplateKey;
@@ -207,7 +209,7 @@ async function loadNotificationData() {
     adminUserIds.length
       ? supabase.from("user_profiles").select("user_id, full_name, phone, phone_verified, is_active").in("user_id", adminUserIds).returns<ProfileRow[]>()
       : Promise.resolve({ data: [] as ProfileRow[], error: null }),
-    supabase.from("company_subscriptions").select("id, company_id, status, trial_started_at, trial_ends_at").in("company_id", companyRows.map((company) => company.id)).returns<SubscriptionRow[]>(),
+    supabase.from("company_subscriptions").select("id, company_id, status, plan_type, trial_started_at, trial_ends_at").in("company_id", companyRows.map((company) => company.id)).returns<SubscriptionRow[]>(),
   ]);
   if (profilesResult.error || subscriptionsResult.error) throw new Error(`No fue posible consultar los destinatarios o pruebas: ${(profilesResult.error ?? subscriptionsResult.error)?.message}`);
   return { allBranches, activeBranches, companies: companyRows, profiles: profilesResult.data ?? [], subscriptions: subscriptionsResult.data ?? [] };
@@ -310,7 +312,7 @@ async function prepareWeeklyOperationalSummaries(today: string, contextsByBranch
 function prepareTrialNotifications(now: Date, today: string, branchesByCompanyId: Map<string, BranchRow[]>, contextsByBranchId: Map<string, NotificationContext>, subscriptions: SubscriptionRow[]) {
   const notifications: PreparedNotification[] = [];
   for (const subscription of subscriptions) {
-    if (subscription.status !== "trial") continue;
+    if (subscription.status !== "trial" || subscription.plan_type !== "operational") continue;
     const companyBranches = branchesByCompanyId.get(subscription.company_id) ?? [];
     const context = companyBranches.length ? contextsByBranchId.get(companyBranches[0].id) : null;
     if (!context) continue;
@@ -362,14 +364,14 @@ type PendingDeliveryRow = ClaimedDelivery & {
   deduplication_key: string;
 };
 
-const immediateDeliveryFields = "id, recipient_phone, notification_type, template_key, payload, attempt_count, status, deduplication_key";
+const immediateDeliveryFields = "id, company_id, recipient_phone, notification_type, template_key, payload, attempt_count, status, deduplication_key";
 
 async function loadImmediateNotificationContext(companyId: string) {
   const supabase = requiredAdminClient();
   const [companyResult, branchesResult, subscriptionResult] = await Promise.all([
     supabase.from("companies").select("id, name, is_active, company_admin_user_id").eq("id", companyId).eq("is_active", true).maybeSingle<CompanyRow>(),
     supabase.from("branches").select("id, company_id, name, status, is_active").eq("company_id", companyId).neq("status", "deleted").order("name", { ascending: true }).returns<BranchRow[]>(),
-    supabase.from("company_subscriptions").select("id, company_id, status, trial_started_at, trial_ends_at").eq("company_id", companyId).maybeSingle<SubscriptionRow>(),
+    supabase.from("company_subscriptions").select("id, company_id, status, plan_type, trial_started_at, trial_ends_at").eq("company_id", companyId).maybeSingle<SubscriptionRow>(),
   ]);
 
   const firstError = companyResult.error ?? branchesResult.error ?? subscriptionResult.error;
@@ -470,7 +472,7 @@ async function dispatchImmediateNotification(notification: PreparedNotification)
     .eq("id", existingDelivery.id)
     .eq("status", "pending")
     .eq("attempt_count", existingDelivery.attempt_count)
-    .select("id, recipient_phone, notification_type, template_key, payload, attempt_count")
+    .select("id, company_id, recipient_phone, notification_type, template_key, payload, attempt_count")
     .maybeSingle<ClaimedDelivery>();
 
   if (claimError) {
@@ -522,6 +524,49 @@ async function scheduleRetryOrFail(delivery: ClaimedDelivery, errorMessage: stri
   else result.retryScheduled += 1;
 }
 
+async function cancelObsoleteDelivery(delivery: ClaimedDelivery, errorMessage: string, result: ScheduledWhatsAppNotificationRunResult) {
+  const { error } = await requiredAdminClient()
+    .from("whatsapp_notification_deliveries")
+    .update({
+      status: "failed",
+      next_attempt_at: new Date().toISOString(),
+      processing_started_at: null,
+      twilio_status: "failed",
+      error_message: errorMessage,
+    })
+    .eq("id", delivery.id);
+
+  if (error) throw new Error(`No fue posible cancelar la entrega obsoleta de WhatsApp: ${error.message}`);
+
+  result.skipped += 1;
+  logServerInfo("whatsapp.scheduled_notification_cancelled_as_obsolete", {
+    deliveryId: delivery.id,
+    notificationType: delivery.notification_type,
+    attemptCount: delivery.attempt_count,
+  });
+}
+
+async function isQueuedTrialNotificationStillRelevant(delivery: ClaimedDelivery, now: Date) {
+  const { data: subscription, error } = await requiredAdminClient()
+    .from("company_subscriptions")
+    .select("status, plan_type, trial_ends_at")
+    .eq("company_id", delivery.company_id)
+    .maybeSingle<Pick<SubscriptionRow, "status" | "plan_type" | "trial_ends_at">>();
+
+  if (error) throw new Error(`No fue posible validar la vigencia de la prueba antes del reintento: ${error.message}`);
+  if (!subscription) return false;
+
+  const input = {
+    now,
+    subscriptionStatus: subscription.status,
+    planType: subscription.plan_type,
+    trialEndsAt: new Date(subscription.trial_ends_at),
+  };
+  return delivery.notification_type === "trial_midpoint"
+    ? shouldDispatchQueuedTrialMidpoint(input)
+    : shouldDispatchQueuedTrialExpired(input);
+}
+
 async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: ScheduledWhatsAppNotificationRunResult) {
   if (delivery.attempt_count > SCHEDULED_WHATSAPP_MAX_ATTEMPTS) {
     await scheduleRetryOrFail(delivery, "Un intento anterior no terminó antes del tiempo de recuperación de la cola.", result);
@@ -533,6 +578,28 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
     await scheduleRetryOrFail(delivery, "La entrega programada no tiene un destinatario o contenido válido.", result);
     return;
   }
+
+  if (delivery.notification_type === "trial_midpoint" || delivery.notification_type === "trial_expired") {
+    try {
+      const stillValid = await isQueuedTrialNotificationStillRelevant(delivery, new Date());
+      if (!stillValid) {
+        const description = delivery.notification_type === "trial_midpoint"
+          ? "La prueba ya no está vigente; se canceló el recordatorio de mitad de prueba."
+          : "La suscripción ya no está en prueba gratuita; se canceló el aviso de prueba finalizada.";
+        await cancelObsoleteDelivery(delivery, description, result);
+        return;
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "No fue posible validar la vigencia de la prueba antes del envío.";
+      await scheduleRetryOrFail(delivery, errorMessage, result);
+      logServerError("whatsapp.scheduled_notification_trial_validity_check_failed", error, {
+        deliveryId: delivery.id,
+        attemptCount: delivery.attempt_count,
+      });
+      return;
+    }
+  }
+
   result.attempted += 1;
   let message: Awaited<ReturnType<typeof sendWhatsAppTemplate>>;
   try {
