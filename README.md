@@ -41,7 +41,8 @@ La bandeja interna usa las credenciales de Twilio que ya existen en el servidor;
 - `TWILIO_AUTH_TOKEN`
 - `NEXT_PUBLIC_APP_URL` (debe ser la URL pública y canónica, por ejemplo `https://quimly.co`)
 - `TWILIO_WHATSAPP_FROM` sigue siendo necesario para las notificaciones existentes. La bandeja responde usando el sender que recibió la conversación.
-- `TWILIO_WHATSAPP_TEMPLATE_SID` identifica la plantilla de WhatsApp aprobada que usa el endpoint interno de prueba `POST /api/test/whatsapp-template`.
+- `TWILIO_WHATSAPP_TEMPLATE_SID` identifica la plantilla de confirmación de contacto aprobada, que usa tanto el acuse automático como el endpoint interno de prueba `POST /api/test/whatsapp-template`.
+- Las seis plantillas programadas usan sus propios Content SID: `TWILIO_WHATSAPP_DOCUMENT_EXPIRY_TEMPLATE_SID`, `TWILIO_WHATSAPP_WEEKLY_SUMMARY_TEMPLATE_SID`, `TWILIO_WHATSAPP_TRIAL_WELCOME_TEMPLATE_SID`, `TWILIO_WHATSAPP_TRIAL_MIDPOINT_TEMPLATE_SID`, `TWILIO_WHATSAPP_TRIAL_EXPIRED_TEMPLATE_SID` y `TWILIO_WHATSAPP_FOUNDER_BENEFIT_TEMPLATE_SID`.
 - `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` son opcionales. Cuando ambos estén configurados, Quimly enviará una alerta por cada mensaje entrante, por los mensajes automáticos y acuses (aceptación, entrega o fallo), y por los fallos de respuestas manuales. Sin ambos valores no se realizan envíos a Telegram.
 
 La bandeja es una herramienta interna exclusiva del rol `owner`; no pertenece a las empresas clientes y sus tablas no usan `company_id`. Un webhook firmado registra automáticamente el sender de Quimly, el contacto por número telefónico y su conversación, incluso si el contacto nunca había escrito antes.
@@ -58,7 +59,7 @@ https://quimly.co/api/webhooks/twilio/whatsapp
 
 Usa exactamente el mismo dominio configurado en `NEXT_PUBLIC_APP_URL`; Twilio firma la URL completa y Quimly valida `X-Twilio-Signature` con el Auth Token antes de procesar cualquier evento. Las respuestas enviadas desde la bandeja incluyen automáticamente el callback de estado `/api/webhooks/twilio/whatsapp/status` para registrar envío, entrega, lectura o error.
 
-WhatsApp permite texto libre durante la ventana de atención de 24 horas desde el último mensaje del cliente. Para iniciar una conversación por fuera de esa ventana, Twilio/Meta exige una plantilla aprobada. El endpoint interno `POST /api/test/whatsapp-template` usa la plantilla configurada en `TWILIO_WHATSAPP_TEMPLATE_SID` y solo permite solicitudes autenticadas del rol `owner`.
+WhatsApp permite texto libre durante la ventana de atención de 24 horas desde el último mensaje del cliente. Para iniciar una conversación por fuera de esa ventana, Twilio/Meta exige una plantilla aprobada. El endpoint interno `POST /api/test/whatsapp-template` prueba la plantilla de confirmación de contacto configurada en `TWILIO_WHATSAPP_TEMPLATE_SID` y solo permite solicitudes autenticadas del rol `owner`.
 
 ## Auth y roles
 

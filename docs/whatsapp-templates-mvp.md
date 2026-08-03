@@ -1,165 +1,179 @@
-# Plantillas WhatsApp para el MVP
+# Plantillas WhatsApp aprobadas
 
-Registra estas seis plantillas en Twilio Content Template Builder, en español (`es`). Usa las categorías indicadas como solicitud inicial; Meta determina la categoría final.
+Estas siete plantillas aprobadas en Twilio reemplazan todas las plantillas anteriores. La aplicación mantiene los Content SID en variables de entorno para que no queden fijados en el código.
 
-No uses emojis en estas plantillas. Al registrarlas, incluye muestras realistas de cada variable y conserva el texto exactamente como está.
-
-## Configuración después de la aprobación
-
-Guarda los seis Content SID aprobados en las variables de entorno de la aplicación:
+## Configuración
 
 ```text
-TWILIO_WHATSAPP_DOCUMENT_EXPIRY_TEMPLATE_SID=
-TWILIO_WHATSAPP_WEEKLY_SUMMARY_TEMPLATE_SID=
-TWILIO_WHATSAPP_TRIAL_WELCOME_TEMPLATE_SID=
-TWILIO_WHATSAPP_TRIAL_MIDPOINT_TEMPLATE_SID=
-TWILIO_WHATSAPP_TRIAL_EXPIRED_TEMPLATE_SID=
-TWILIO_WHATSAPP_FOUNDER_BENEFIT_TEMPLATE_SID=
+TWILIO_WHATSAPP_DOCUMENT_EXPIRY_TEMPLATE_SID=HX78e55764a0703c071893dc7bfaca8143
+TWILIO_WHATSAPP_TEMPLATE_SID=HXc220b5474f3535d173d99765d23caaf8
+TWILIO_WHATSAPP_TRIAL_WELCOME_TEMPLATE_SID=HXa19809e3c6e723a5a45a4528d13266a4
+TWILIO_WHATSAPP_TRIAL_MIDPOINT_TEMPLATE_SID=HXe875da97562216f388976c4cd39c62ae
+TWILIO_WHATSAPP_TRIAL_EXPIRED_TEMPLATE_SID=HX7dcdea25f7003297e4f214bf907ba053
+TWILIO_WHATSAPP_WEEKLY_SUMMARY_TEMPLATE_SID=HX6ed51057f3fc4fe663e46dd999a977b8
+TWILIO_WHATSAPP_FOUNDER_BENEFIT_TEMPLATE_SID=HX9001b22347768d30ff562c874c4b04c8
 WHATSAPP_NOTIFICATIONS_CRON_SECRET=
 ```
 
 `WHATSAPP_NOTIFICATIONS_CRON_SECRET` debe coincidir exactamente con el secreto `quimly_notification_cron_secret` guardado en Supabase Vault al configurar el cron.
 
-## 1. `document_expiry_reminder`
+## 1. `quimly_document_expiry_alert`
 
-- Categoría solicitada: `Utility`
-- Variables: restaurante, sede, documento, días restantes, fecha exacta.
+- Content SID: `HX78e55764a0703c071893dc7bfaca8143`
+- Variables: restaurante `{{1}}`, sede `{{2}}`, documento `{{3}}`, tiempo restante `{{4}}`, fecha de vencimiento `{{5}}`.
 
 ```text
-Quimly
+⚠️ Documento próximo a vencer
 
-Restaurante: {{1}}
+El documento *{{3}}* de tu restaurante está próximo a vencer.
+
 Sede: {{2}}
-
-El documento {{3}} vence en {{4}}, el {{5}}.
-
-Revísalo y actualízalo en Quimly antes de esa fecha.
-```
-
-Muestra de variables:
-
-```json
-{
-  "1": "Restaurante La Casona",
-  "2": "Sede Centro",
-  "3": "Certificado Médico - Juan Pérez",
-  "4": "15 días",
-  "5": "15 de agosto de 2026"
-}
-```
-
-Para el recordatorio de un día, la aplicación envía `1 día`; para los demás, por ejemplo, `15 días`.
-
-## 2. `weekly_operational_summary`
-
-- Categoría solicitada: `Utility`
-- Variables: restaurante, sede, periodo, cuatro datos de formularios y documentos sin cargar.
-
-```text
-Quimly
-
 Restaurante: {{1}}
-Sede: {{2}}
-Periodo: {{3}}
 
-Temperaturas: {{4}}
-Limpieza y desinfección: {{5}}
-Agua potable: {{6}}
-Recepción de materias primas: {{7}}
-Documentos sin cargar: {{8}}
+Tiempo restante: {{4}}
+Fecha de vencimiento: *{{5}}*
 
-Consulta el detalle en Quimly.
+Actualízalo antes de la fecha indicada y mantén tu operación preparada ante revisiones sanitarias: https://quimly.co/login
+
+Equipo Quimly
 ```
 
-Muestra de variables:
+## 2. `quimly_contact_message_confirmation`
 
-```json
-{
-  "1": "Restaurante La Casona",
-  "2": "Sede Centro",
-  "3": "Del 20 de julio de 2026 al 26 de julio de 2026",
-  "4": "7 días con registros",
-  "5": "6 días con registros",
-  "6": "7 días con registros",
-  "7": "4 registros",
-  "8": "Documentos de productos químicos"
-}
-```
-
-## 3. `trial_welcome`
-
-- Categoría solicitada: `Marketing`
+- Content SID: `HXc220b5474f3535d173d99765d23caaf8`
+- Variable: nombre `{{1}}`.
+- Se envía como acuse automático al recibir un mensaje y desde la prueba interna.
 
 ```text
-Quimly
+Hola {{1}}, recibimos tu mensaje correctamente.
 
-Hola, {{1}}.
+Nuestro equipo Quimly ya tiene tu solicitud y la revisará para ayudarte lo antes posible.
 
-Te damos la bienvenida a Quimly.
+Mientras tanto, seguimos trabajando para que tu operación sea más organizada y fácil de gestionar.
 
-Restaurante: {{2}}
-Sede: {{3}}
-
-Tu prueba gratuita está activa hasta el {{4}}. Aprovecha la gestión documental y los formularios operativos para conocer Quimly.
-
-Si necesitas ayuda en cualquier momento, responde este mensaje.
+Equipo Quimly
 ```
 
-## 4. `trial_midpoint`
+## 3. `quimly_trial_welcome`
 
-- Categoría solicitada: `Marketing`
+- Content SID: `HXa19809e3c6e723a5a45a4528d13266a4`
+- Variables: nombre `{{1}}`, restaurante `{{2}}`, fecha final de prueba `{{4}}`.
 
 ```text
-Quimly
+👋 Bienvenido a Quimly
 
-Hola, {{1}}.
+Hola {{1}},
 
-Ya transcurrió la mitad de tu prueba gratuita.
+Tu restaurante *{{2}}* ahora hace parte de Quimly y tu prueba gratuita está activa hasta el *{{4}}*.
 
-Restaurante: {{2}}
-Sede: {{3}}
+Durante este periodo podrás organizar tu documentación, digitalizar tus registros operativos y empezar a tener mayor control sobre tu operación.
 
-Te recomendamos registrar formularios y cargar tus documentos para aprovechar Quimly antes del {{4}}.
+Comienza aquí:
+https://quimly.co/login
 
-Si necesitas ayuda en cualquier momento, responde este mensaje.
+¿Necesitas ayuda para empezar? Responde este mensaje y te acompañamos.
+
+Equipo Quimly
 ```
 
-## 5. `trial_expired`
+## 4. `quimly_trial_midpoint`
 
-- Categoría solicitada: `Marketing`
+- Content SID: `HXe875da97562216f388976c4cd39c62ae`
+- Variables: nombre `{{1}}`, restaurante `{{2}}`, fecha final de prueba `{{4}}`.
 
 ```text
-Quimly
+🚀 Ya estás a mitad de tu prueba
 
-Hola, {{1}}.
+Hola {{1}},
 
-Tu prueba gratuita finalizó el {{2}}.
+Tu restaurante *{{2}}* sigue disfrutando de Quimly hasta el *{{4}}*.
+
+Este es el mejor momento para completar tus registros y cargar tu documentación, así podrás aprovechar al máximo la plataforma antes de que finalice tu prueba.
+
+Ingresa aquí:
+https://quimly.co/login
+
+¿Necesitas ayuda? Responde este mensaje y te acompañamos.
+
+Equipo Quimly
+```
+
+## 5. `quimly_trial_expired`
+
+- Content SID: `HX7dcdea25f7003297e4f214bf907ba053`
+- Variables: nombre `{{1}}`, fecha de finalización `{{2}}`, restaurante `{{3}}`.
+
+```text
+⏳ Tu prueba gratuita finalizó
+
+Hola {{1}},
+
+Tu prueba gratuita finalizó el *{{2}}*.
 
 Restaurante: {{3}}
-Sede: {{4}}
 
-Esperamos que Quimly haya sido útil para tu operación. Puedes suscribirte para continuar usando la plataforma.
+Esperamos que durante estos días hayas descubierto cómo Quimly puede ayudarte a organizar tu documentación y simplificar el seguimiento de tu operación.
 
-Si necesitas ayuda o quieres conocer las opciones disponibles, responde este mensaje.
+Activa tu plan y continúa gestionando tu operación desde Quimly:
+https://quimly.co/login
+
+¿Tienes alguna pregunta? Responde este mensaje y con gusto te ayudaremos.
+
+Equipo Quimly
 ```
 
-## 6. `founder_benefit_assigned`
+## 6. `quimly_weekly_operations_status`
 
-- Categoría solicitada: `Marketing`
+- Content SID: `HX6ed51057f3fc4fe663e46dd999a977b8`
+- Variables: restaurante `{{1}}`, sede `{{2}}`, periodo `{{3}}`, registros de temperaturas `{{4}}`, limpieza `{{5}}`, agua potable `{{6}}`, recepción de materias primas `{{7}}`, documentos pendientes `{{8}}` y documentos vencidos `{{9}}`.
 
 ```text
-Quimly
+📊 Reporte semanal de tu operación
 
-Hola, {{1}}.
+Sede: {{2}}
+Restaurante: {{1}}
 
-Tu beneficio Founder fue activado.
+────────────
 
-Restaurante: {{2}}
-Sede: {{3}}
+Registros operativos durante el periodo *{{3}}*:
 
-Ahora cuentas con las condiciones especiales asociadas a Founder. Puedes revisar el detalle de tu plan en Quimly.
+🌡️ Temperaturas: {{4}}
+🧼 Limpieza y desinfección: {{5}}
+💧 Agua potable: {{6}}
+📦 Recepción de materias primas: {{7}}
 
-Si necesitas ayuda en cualquier momento, responde este mensaje.
+────────────
+
+Documentación:
+
+📄 Documentos pendientes:
+{{8}}
+
+⚠️ Documentos vencidos:
+{{9}}
+
+Revisa los detalles y mantén tu cumplimiento al día: https://quimly.co/login
+
+Equipo Quimly
 ```
 
-Para las cuatro últimas plantillas, usa muestras de nombre, restaurante, sede y fecha equivalentes a las anteriores. La aplicación muestra `Todas las sedes` cuando el mensaje corresponde a una cuenta con más de una sede.
+## 7. `quimly_founder_benefit_activation`
+
+- Content SID: `HX9001b22347768d30ff562c874c4b04c8`
+- Variables: nombre `{{1}}`, restaurante `{{2}}`.
+
+```text
+⭐ ¡Beneficio Founder activado!
+
+Hola {{1}},
+
+Tu restaurante *{{2}}* ahora hace parte de Founder, un beneficio exclusivo para los primeros restaurantes que confiaron en Quimly.
+
+Como restaurante Founder, conservarás un precio preferencial mientras continúes utilizando Quimly.
+
+Gracias por ser parte de esta etapa inicial.
+
+Si necesitas ayuda, responde este mensaje y estaremos atentos para ayudarte.
+
+Equipo Quimly
+```

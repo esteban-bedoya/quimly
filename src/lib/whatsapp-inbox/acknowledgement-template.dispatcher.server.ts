@@ -13,7 +13,7 @@ import {
 } from "@/lib/whatsapp-inbox/service.server";
 
 const ACKNOWLEDGEMENT_TEMPLATE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
-const ACKNOWLEDGEMENT_TEMPLATE_TRACE_FAILURE_BODY = "No se envió el acuse automático porque no fue posible recuperar el contenido de la plantilla configurada.";
+const ACKNOWLEDGEMENT_TEMPLATE_TRACE_FAILURE_BODY = "No se envió la confirmación automática porque no fue posible recuperar el contenido de la plantilla configurada.";
 
 let cachedAcknowledgementTemplateBody: string | null = null;
 

@@ -107,10 +107,6 @@ function notificationStartAt(today: string) {
   return new Date(`${today}T13:00:00.000Z`);
 }
 
-function getBranchScopeName(companyBranches: BranchRow[]) {
-  return companyBranches.length === 1 ? companyBranches[0].name : "Todas las sedes";
-}
-
 function getRecipientGreetingName(name: string | null) {
   return name?.trim() || "cliente";
 }
@@ -153,30 +149,28 @@ function makeTelegramContext(context: NotificationContext): TelegramAlertContext
   return { recipientName: context.recipient.name, recipientPhone: context.recipient.phone, restaurantName: context.company.name, branchName: context.branch.name };
 }
 
-function buildTrialWelcomeNotification(subscription: SubscriptionRow, context: NotificationContext, companyBranches: BranchRow[]): PreparedNotification {
+function buildTrialWelcomeNotification(subscription: SubscriptionRow, context: NotificationContext): PreparedNotification {
   const endDate = localDateKey(new Date(subscription.trial_ends_at));
   const greeting = getRecipientGreetingName(context.recipient.name);
-  const branchScope = getBranchScopeName(companyBranches);
   return {
     context,
     templateKey: "trial_welcome",
     deduplicationKey: `trial_welcome:${subscription.id}`,
-    variables: { "1": greeting, "2": context.company.name, "3": branchScope, "4": formatDateForMessage(endDate) },
-    fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Te damos la bienvenida a Quimly.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", `Tu prueba gratuita está activa hasta el ${formatDateForMessage(endDate)}. Aprovecha la gestión documental y los formularios operativos para conocer Quimly.`, "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"),
+    variables: { "1": greeting, "2": context.company.name, "4": formatDateForMessage(endDate) },
+    fallbackBody: ["👋 Bienvenido a Quimly", "", `Hola ${greeting},`, "", `Tu restaurante *${context.company.name}* ahora hace parte de Quimly y tu prueba gratuita está activa hasta el *${formatDateForMessage(endDate)}*.`, "", "Durante este periodo podrás organizar tu documentación, digitalizar tus registros operativos y empezar a tener mayor control sobre tu operación.", "", "Comienza aquí:", "https://quimly.co/login", "", "¿Necesitas ayuda para empezar? Responde este mensaje y te acompañamos.", "", "Equipo Quimly"].join("\n"),
     scopeBranchId: null,
     priority: 60,
   };
 }
 
-function buildFounderBenefitNotification(occurredAt: string, context: NotificationContext, companyBranches: BranchRow[]): PreparedNotification {
+function buildFounderBenefitNotification(occurredAt: string, context: NotificationContext): PreparedNotification {
   const greeting = getRecipientGreetingName(context.recipient.name);
-  const branchScope = getBranchScopeName(companyBranches);
   return {
     context,
     templateKey: "founder_benefit_assigned",
     deduplicationKey: `founder_benefit_assigned:${context.company.id}:${occurredAt}`,
-    variables: { "1": greeting, "2": context.company.name, "3": branchScope },
-    fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Tu beneficio Founder fue activado.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", "Ahora cuentas con las condiciones especiales asociadas a Founder. Puedes revisar el detalle de tu plan en Quimly.", "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"),
+    variables: { "1": greeting, "2": context.company.name },
+    fallbackBody: ["⭐ ¡Beneficio Founder activado!", "", `Hola ${greeting},`, "", `Tu restaurante *${context.company.name}* ahora hace parte de Founder, un beneficio exclusivo para los primeros restaurantes que confiaron en Quimly.`, "", "Como restaurante Founder, conservarás un precio preferencial mientras continúes utilizando Quimly.", "", "Gracias por ser parte de esta etapa inicial.", "", "Si necesitas ayuda, responde este mensaje y estaremos atentos para ayudarte.", "", "Equipo Quimly"].join("\n"),
     scopeBranchId: null,
     priority: 50,
   };
@@ -257,7 +251,7 @@ async function prepareDocumentExpiryNotifications(today: string, contextsByBranc
       templateKey: "document_expiry_reminder",
       deduplicationKey: `document_expiry_reminder:${document.id}:${daysRemaining}:${document.expiresAt}`,
       variables,
-      fallbackBody: ["Quimly", "", `Restaurante: ${context.company.name}`, `Sede: ${context.branch.name}`, "", `El documento ${document.title} vence en ${variables["4"]}, el ${deadline}.`, "", "Revísalo y actualízalo en Quimly antes de esa fecha."].join("\n"),
+    fallbackBody: ["⚠️ Documento próximo a vencer", "", `El documento *${document.title}* de tu restaurante está próximo a vencer.`, "", `Sede: ${context.branch.name}`, `Restaurante: ${context.company.name}`, "", `Tiempo restante: ${variables["4"]}`, `Fecha de vencimiento: *${deadline}*`, "", "Actualízalo antes de la fecha indicada y mantén tu operación preparada ante revisiones sanitarias: https://quimly.co/login", "", "Equipo Quimly"].join("\n"),
       scopeBranchId: context.branch.id,
       priority: daysRemaining,
     }];
@@ -273,7 +267,7 @@ async function prepareWeeklyOperationalSummaries(today: string, contextsByBranch
   const periodStart = addDays(periodEnd, -6);
   const [formSummaryResult, documentCategoriesResult] = await Promise.all([
     supabase.from("resumen_diario_formularios").select("sede_id, formulario_id, fecha, cantidad_registros").in("sede_id", branchIds).gte("fecha", periodStart).lte("fecha", periodEnd).returns<DailyFormSummaryRow[]>(),
-    supabase.from("sedes_categorias_documentos").select("sede_id, categoria, estado_calculado").in("sede_id", branchIds).in("estado_calculado", ["gris", "amarillo"]).returns<DocumentCategoryRow[]>(),
+    supabase.from("sedes_categorias_documentos").select("sede_id, categoria, estado_calculado").in("sede_id", branchIds).in("estado_calculado", ["gris", "amarillo", "rojo"]).returns<DocumentCategoryRow[]>(),
   ]);
   if (formSummaryResult.error || documentCategoriesResult.error) throw new Error(`No fue posible preparar el resumen semanal: ${(formSummaryResult.error ?? documentCategoriesResult.error)?.message}`);
 
@@ -285,7 +279,9 @@ async function prepareWeeklyOperationalSummaries(today: string, contextsByBranch
 
   return [...contextsByBranchId.values()].map((context) => {
     const rows = summariesByBranchId.get(context.branch.id) ?? [];
-    const missingDocuments = (missingByBranchId.get(context.branch.id) ?? []).map((row) => pendingDocumentCategoryLabel(row.categoria)).join(", ") || "Ninguno";
+    const documentStatuses = missingByBranchId.get(context.branch.id) ?? [];
+    const missingDocuments = documentStatuses.filter((row) => row.estado_calculado === "gris" || row.estado_calculado === "amarillo").map((row) => pendingDocumentCategoryLabel(row.categoria)).join(", ") || "Ninguno";
+    const expiredDocuments = documentStatuses.filter((row) => row.estado_calculado === "rojo").map((row) => pendingDocumentCategoryLabel(row.categoria)).join(", ") || "Ninguno";
     const receptionRecords = rows.filter((row) => row.formulario_id === "supply_reception").reduce((total, row) => total + row.cantidad_registros, 0);
     const variables = {
       "1": context.company.name,
@@ -296,13 +292,14 @@ async function prepareWeeklyOperationalSummaries(today: string, contextsByBranch
       "6": `${weeklyDaysWithRecords(rows, "water_quality")} días con registros`,
       "7": `${receptionRecords} ${receptionRecords === 1 ? "registro" : "registros"}`,
       "8": missingDocuments,
+      "9": expiredDocuments,
     };
     return {
       context,
       templateKey: "weekly_operational_summary" as const,
       deduplicationKey: `weekly_operational_summary:${context.branch.id}:${periodStart}:${periodEnd}`,
       variables,
-      fallbackBody: ["Quimly", "", `Restaurante: ${context.company.name}`, `Sede: ${context.branch.name}`, `Periodo: ${period}`, "", `Temperaturas: ${variables["4"]}`, `Limpieza y desinfección: ${variables["5"]}`, `Agua potable: ${variables["6"]}`, `Recepción de materias primas: ${variables["7"]}`, `Documentos sin cargar: ${missingDocuments}`, "", "Consulta el detalle en Quimly."].join("\n"),
+      fallbackBody: ["📊 Reporte semanal de tu operación", "", `Sede: ${context.branch.name}`, `Restaurante: ${context.company.name}`, "", "────────────", "", `Registros operativos durante el periodo *${period}*:`, "", `🌡️ Temperaturas: ${variables["4"]}`, `🧼 Limpieza y desinfección: ${variables["5"]}`, `💧 Agua potable: ${variables["6"]}`, `📦 Recepción de materias primas: ${variables["7"]}`, "", "────────────", "", "Documentación:", "", "📄 Documentos pendientes:", missingDocuments, "", "⚠️ Documentos vencidos:", expiredDocuments, "", "Revisa los detalles y mantén tu cumplimiento al día: https://quimly.co/login", "", "Equipo Quimly"].join("\n"),
       scopeBranchId: context.branch.id,
       priority: 100,
     };
@@ -316,15 +313,14 @@ function prepareTrialNotifications(now: Date, today: string, branchesByCompanyId
     const companyBranches = branchesByCompanyId.get(subscription.company_id) ?? [];
     const context = companyBranches.length ? contextsByBranchId.get(companyBranches[0].id) : null;
     if (!context) continue;
-    const branchScope = getBranchScopeName(companyBranches);
     const startDate = localDateKey(new Date(subscription.trial_started_at));
     const endDate = localDateKey(new Date(subscription.trial_ends_at));
     const midpointDate = addDays(startDate, 7);
     const expiryMessageDate = addDays(endDate, 1);
     const greeting = getRecipientGreetingName(context.recipient.name);
 
-    if (midpointDate <= today) notifications.push({ context, templateKey: "trial_midpoint", deduplicationKey: `trial_midpoint:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "3": branchScope, "4": formatDateForMessage(endDate) }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", "Ya transcurrió la mitad de tu prueba gratuita.", "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", `Te recomendamos registrar formularios y cargar tus documentos para aprovechar Quimly antes del ${formatDateForMessage(endDate)}.`, "", "Si necesitas ayuda en cualquier momento, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 70 });
-    if (expiryMessageDate <= today && new Date(subscription.trial_ends_at).getTime() < now.getTime()) notifications.push({ context, templateKey: "trial_expired", deduplicationKey: `trial_expired:${subscription.id}:${endDate}`, variables: { "1": greeting, "2": formatDateForMessage(endDate), "3": context.company.name, "4": branchScope }, fallbackBody: ["Quimly", "", `Hola, ${greeting}.`, "", `Tu prueba gratuita finalizó el ${formatDateForMessage(endDate)}.`, "", `Restaurante: ${context.company.name}`, `Sede: ${branchScope}`, "", "Esperamos que Quimly haya sido útil para tu operación. Puedes suscribirte para continuar usando la plataforma.", "", "Si necesitas ayuda o quieres conocer las opciones disponibles, responde este mensaje."].join("\n"), scopeBranchId: null, priority: 40 });
+    if (midpointDate <= today) notifications.push({ context, templateKey: "trial_midpoint", deduplicationKey: `trial_midpoint:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "4": formatDateForMessage(endDate) }, fallbackBody: ["🚀 Ya estás a mitad de tu prueba", "", `Hola ${greeting},`, "", `Tu restaurante *${context.company.name}* sigue disfrutando de Quimly hasta el *${formatDateForMessage(endDate)}*.`, "", "Este es el mejor momento para completar tus registros y cargar tu documentación, así podrás aprovechar al máximo la plataforma antes de que finalice tu prueba.", "", "Ingresa aquí:", "https://quimly.co/login", "", "¿Necesitas ayuda? Responde este mensaje y te acompañamos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 70 });
+    if (expiryMessageDate <= today && new Date(subscription.trial_ends_at).getTime() < now.getTime()) notifications.push({ context, templateKey: "trial_expired", deduplicationKey: `trial_expired:${subscription.id}:${endDate}`, variables: { "1": greeting, "2": formatDateForMessage(endDate), "3": context.company.name }, fallbackBody: ["⏳ Tu prueba gratuita finalizó", "", `Hola ${greeting},`, "", `Tu prueba gratuita finalizó el *${formatDateForMessage(endDate)}*.`, "", `Restaurante: ${context.company.name}`, "", "Esperamos que durante estos días hayas descubierto cómo Quimly puede ayudarte a organizar tu documentación y simplificar el seguimiento de tu operación.", "", "Activa tu plan y continúa gestionando tu operación desde Quimly:", "https://quimly.co/login", "", "¿Tienes alguna pregunta? Responde este mensaje y con gusto te ayudaremos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 40 });
   }
   return notifications;
 }
@@ -486,16 +482,16 @@ async function dispatchImmediateNotification(notification: PreparedNotification)
 }
 
 export async function sendTrialWelcomeWhatsAppImmediately({ companyId }: { companyId: string }) {
-  const { context, companyBranches, subscription } = await loadImmediateNotificationContext(companyId);
+  const { context, subscription } = await loadImmediateNotificationContext(companyId);
   if (subscription.status !== "trial") {
     return null;
   }
 
-  return dispatchImmediateNotification(buildTrialWelcomeNotification(subscription, context, companyBranches));
+  return dispatchImmediateNotification(buildTrialWelcomeNotification(subscription, context));
 }
 
 export async function sendFounderBenefitWhatsAppImmediately({ companyId }: { companyId: string }) {
-  const { context, companyBranches } = await loadImmediateNotificationContext(companyId);
+  const { context } = await loadImmediateNotificationContext(companyId);
   const { data: assignment, error } = await requiredAdminClient()
     .from("subscription_status_history")
     .select("company_id, occurred_at")
@@ -509,7 +505,7 @@ export async function sendFounderBenefitWhatsAppImmediately({ companyId }: { com
     throw new Error(error?.message ?? "No fue posible encontrar la asignación Founder recién creada.");
   }
 
-  return dispatchImmediateNotification(buildFounderBenefitNotification(assignment.occurred_at, context, companyBranches));
+  return dispatchImmediateNotification(buildFounderBenefitNotification(assignment.occurred_at, context));
 }
 
 async function scheduleRetryOrFail(delivery: ClaimedDelivery, errorMessage: string, result: ScheduledWhatsAppNotificationRunResult) {

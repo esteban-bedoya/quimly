@@ -13,6 +13,15 @@ import { logServerError, logServerInfo } from "@/lib/server/logging";
 const WHATSAPP_TEMPLATE_LOG_PREFIX = "[WHATSAPP TEMPLATE]";
 const SENSITIVE_LOG_KEY = /(?:authorization|auth|token|password|secret)/i;
 
+const scheduledTemplateVariableKeys: Record<ScheduledWhatsAppTemplateKey, readonly string[]> = {
+  document_expiry_reminder: ["1", "2", "3", "4", "5"],
+  weekly_operational_summary: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+  trial_welcome: ["1", "2", "4"],
+  trial_midpoint: ["1", "2", "4"],
+  trial_expired: ["1", "2", "3"],
+  founder_benefit_assigned: ["1", "2"],
+};
+
 export type WhatsAppTemplateVariables = Record<string, string>;
 
 type SendWhatsAppTemplateInput = {
@@ -105,6 +114,22 @@ export function getWhatsAppTemplateErrorDetails(error: unknown) {
   };
 }
 
+function getTemplateVariables(templateKey: ScheduledWhatsAppTemplateKey | undefined, variables: WhatsAppTemplateVariables) {
+  if (!templateKey) return variables;
+
+  const expectedKeys = scheduledTemplateVariableKeys[templateKey];
+  const selectedVariables = Object.fromEntries(expectedKeys.flatMap((key) => (variables[key] === undefined ? [] : [[key, variables[key]]])));
+
+  // Deliveries already queued before the template replacement did not include
+  // the new weekly "documentos vencidos" variable. Default it safely while
+  // omitting variables that no longer exist in the approved templates.
+  if (templateKey === "weekly_operational_summary" && !selectedVariables["9"]) {
+    selectedVariables["9"] = "Ninguno";
+  }
+
+  return selectedVariables;
+}
+
 export async function sendWhatsAppTemplate({ to, variables, templateKey, statusCallback }: SendWhatsAppTemplateInput) {
   const whatsappTo = formatPhoneForWhatsApp(to);
 
@@ -114,11 +139,12 @@ export async function sendWhatsAppTemplate({ to, variables, templateKey, statusC
 
   const from = getTwilioWhatsAppFrom();
   const contentSid = templateKey ? getTwilioScheduledWhatsAppTemplateSid(templateKey) : getTwilioWhatsAppTemplateSid();
+  const contentVariables = getTemplateVariables(templateKey, variables);
 
   logServerInfo(`${WHATSAPP_TEMPLATE_LOG_PREFIX} send.request`, {
     destination: maskPhoneNumber(to),
     contentSid,
-    variableKeys: Object.keys(variables),
+    variableKeys: Object.keys(contentVariables),
   });
 
   try {
@@ -126,7 +152,7 @@ export async function sendWhatsAppTemplate({ to, variables, templateKey, statusC
       from,
       to: whatsappTo,
       contentSid,
-      contentVariables: JSON.stringify(variables),
+      contentVariables: JSON.stringify(contentVariables),
       ...(statusCallback ? { statusCallback } : {}),
     });
 
