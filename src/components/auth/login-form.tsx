@@ -153,6 +153,7 @@ function SignupContent({
   const isVerifyStep = activeState?.step === "verify";
   const [draft, setDraft] = useState({
     establishmentName: "",
+    branchName: "",
     adminName: "",
     password: "",
   });
@@ -161,6 +162,7 @@ function SignupContent({
     return (
       <form action={verifyAction} className="space-y-5">
         <input type="hidden" name="establishmentName" value={activeState?.establishmentName ?? draft.establishmentName} />
+        <input type="hidden" name="branchName" value={activeState?.branchName ?? draft.branchName} />
         <input type="hidden" name="adminName" value={activeState?.adminName ?? draft.adminName} />
         <input type="hidden" name="phone" value={activeState?.phone ?? phone} />
         <input type="hidden" name="password" value={draft.password} />
@@ -208,6 +210,23 @@ function SignupContent({
           placeholder="Restaurante"
           value={draft.establishmentName}
           onChange={(event) => setDraft((current) => ({ ...current, establishmentName: event.target.value }))}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="branchName" className="block text-sm font-medium text-[#12110f]">
+          Nombre de la sede
+        </label>
+        <input
+          id="branchName"
+          name="branchName"
+          type="text"
+          autoComplete="organization"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          placeholder="Sede principal"
+          value={draft.branchName}
+          onChange={(event) => setDraft((current) => ({ ...current, branchName: event.target.value }))}
           required
         />
       </div>

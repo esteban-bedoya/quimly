@@ -34,6 +34,7 @@ export type SignupFormState = {
   success?: string;
   step?: "details" | "verify";
   establishmentName?: string;
+  branchName?: string;
   adminName?: string;
   phone?: E164PhoneNumber;
 };
@@ -172,15 +173,17 @@ export async function requestSignupOTP(
   formData: FormData,
 ): Promise<SignupFormState> {
   const establishmentName = readString(formData, "establishmentName");
+  const branchName = readString(formData, "branchName");
   const adminName = readString(formData, "adminName");
   const phone = readPhone(formData);
   const password = readString(formData, "password");
 
-  if (!establishmentName || !adminName || !phone || password.length < 8) {
+  if (!establishmentName || !branchName || !adminName || !phone || password.length < 8) {
     return {
-      error: "Completa establecimiento, administrador, celular internacional válido y una contraseña de mínimo 8 caracteres.",
+      error: "Completa establecimiento, sede, administrador, celular internacional válido y una contraseña de mínimo 8 caracteres.",
       step: "details",
       establishmentName,
+      branchName,
       adminName,
       phone: phone ?? undefined,
     };
@@ -194,6 +197,7 @@ export async function requestSignupOTP(
         error: "Ya existe una cuenta con ese celular. Inicia sesión o recupera tu contraseña.",
         step: "details",
         establishmentName,
+        branchName,
         adminName,
         phone,
       };
@@ -205,6 +209,7 @@ export async function requestSignupOTP(
       error: error instanceof Error ? error.message : "No fue posible enviar el código de verificación.",
       step: "details",
       establishmentName,
+      branchName,
       adminName,
       phone,
     };
@@ -214,6 +219,7 @@ export async function requestSignupOTP(
     success: "Te enviamos un código de verificación a tu celular.",
     step: "verify",
     establishmentName,
+    branchName,
     adminName,
     phone,
   };
@@ -224,16 +230,18 @@ export async function completeSignupWithOTP(
   formData: FormData,
 ): Promise<SignupFormState | undefined> {
   const establishmentName = readString(formData, "establishmentName");
+  const branchName = readString(formData, "branchName");
   const adminName = readString(formData, "adminName");
   const phone = readPhone(formData);
   const password = readString(formData, "password");
   const code = readString(formData, "otpCode");
 
-  if (!establishmentName || !adminName || !phone || password.length < 8 || !code) {
+  if (!establishmentName || !branchName || !adminName || !phone || password.length < 8 || !code) {
     return {
-      error: "Debes ingresar el código y mantener completos los datos de creación.",
+      error: "Debes ingresar el código y mantener completos los datos de creación, incluida la sede.",
       step: "verify",
       establishmentName,
+      branchName,
       adminName,
       phone: phone ?? undefined,
     };
@@ -250,6 +258,7 @@ export async function completeSignupWithOTP(
         error: "El código no es válido o expiró.",
         step: "verify",
         establishmentName,
+        branchName,
         adminName,
         phone,
       };
@@ -278,6 +287,7 @@ export async function completeSignupWithOTP(
       target_phone: phone,
       target_admin_name: adminName,
       target_company_name: establishmentName,
+      target_branch_name: branchName,
     });
 
     if (onboardingError) {
@@ -333,6 +343,7 @@ export async function completeSignupWithOTP(
       error: error instanceof Error ? error.message : "No fue posible crear la cuenta.",
       step: createdUserId ? "details" : "verify",
       establishmentName,
+      branchName,
       adminName,
       phone,
     };

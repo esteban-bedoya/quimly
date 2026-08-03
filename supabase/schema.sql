@@ -5810,6 +5810,7 @@ drop function if exists public.create_company_with_main_branch(text, uuid, text)
 drop function if exists public.set_main_branch(uuid);
 drop function if exists public.delete_branch_permanently(uuid, text);
 drop function if exists public.onboard_company_trial(uuid, text, text, text);
+drop function if exists public.onboard_company_trial(uuid, text, text, text, text);
 drop policy if exists "branches_insert_policy" on public.branches;
 drop policy if exists "branches_delete_policy" on public.branches;
 
@@ -5820,7 +5821,8 @@ create or replace function public.onboard_company_trial(
   target_user_id uuid,
   target_phone text,
   target_admin_name text,
-  target_company_name text
+  target_company_name text,
+  target_branch_name text
 )
 returns uuid
 language plpgsql
@@ -5837,6 +5839,7 @@ begin
     or nullif(normalized_phone, '') is null
     or nullif(trim(coalesce(target_admin_name, '')), '') is null
     or nullif(trim(coalesce(target_company_name, '')), '') is null
+    or nullif(trim(coalesce(target_branch_name, '')), '') is null
   then
     raise exception 'Datos de onboarding inválidos.';
   end if;
@@ -5927,7 +5930,7 @@ begin
   )
   values (
     new_company_id,
-    'Sede 1',
+    trim(target_branch_name),
     'active',
     true,
     now(),
@@ -7631,9 +7634,9 @@ grant execute on function public.mark_whatsapp_conversation_read(uuid, timestamp
 revoke all on function public.get_whatsapp_unread_conversation_count() from public, anon;
 grant execute on function public.get_whatsapp_unread_conversation_count() to authenticated;
 
-revoke all on function public.onboard_company_trial(uuid, text, text, text) from public;
-revoke all on function public.onboard_company_trial(uuid, text, text, text) from anon;
-grant execute on function public.onboard_company_trial(uuid, text, text, text) to service_role;
+revoke all on function public.onboard_company_trial(uuid, text, text, text, text) from public;
+revoke all on function public.onboard_company_trial(uuid, text, text, text, text) from anon;
+grant execute on function public.onboard_company_trial(uuid, text, text, text, text) to service_role;
 
 revoke all on function public.create_company_with_initial_branch(text, uuid, text) from public;
 revoke all on function public.create_company_with_initial_branch(text, uuid, text) from anon;
