@@ -3,6 +3,7 @@ import "server-only";
 import { isE164PhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppTemplate, type WhatsAppTemplateVariables } from "@/lib/notifications/whatsapp-template.service";
 import { shouldDispatchQueuedTrialExpired, shouldDispatchQueuedTrialMidpoint, shouldSendTrialExpired, shouldSendTrialMidpoint } from "@/lib/notifications/trial-notification-policy";
+import { shouldSendWeeklyOperationalSummaryToBranch } from "@/lib/notifications/weekly-operational-summary-policy";
 import {
   SCHEDULED_WHATSAPP_CLAIM_LIMIT,
   SCHEDULED_WHATSAPP_MAX_ATTEMPTS,
@@ -20,7 +21,7 @@ const documentReminderDays = [1, 7, 15, 30] as const;
 const notificationStartHour = 8;
 const MAX_SEND_CONCURRENCY = 3;
 
-type BranchRow = { id: string; company_id: string; name: string; status: "active" | "inactive" | "deleted"; is_active: boolean };
+type BranchRow = { id: string; company_id: string; name: string; status: "active" | "inactive" | "deleted"; is_active: boolean; created_at: string };
 type CompanyRow = { id: string; name: string; is_active: boolean; company_admin_user_id: string | null };
 type ProfileRow = { user_id: string; full_name: string | null; phone: string; phone_verified: boolean; is_active: boolean };
 type SubscriptionRow = {
@@ -183,7 +184,7 @@ async function loadNotificationData() {
   const supabase = requiredAdminClient();
   const { data: branches, error: branchesError } = await supabase
     .from("branches")
-    .select("id, company_id, name, status, is_active")
+    .select("id, company_id, name, status, is_active, created_at")
     .neq("status", "deleted")
     .order("company_id", { ascending: true })
     .order("name", { ascending: true })
@@ -263,10 +264,16 @@ async function prepareDocumentExpiryNotifications(today: string, contextsByBranc
 
 async function prepareWeeklyOperationalSummaries(today: string, contextsByBranchId: Map<string, NotificationContext>) {
   if (getTimeZoneParts(new Date(`${today}T12:00:00Z`)).weekday !== "Mon") return [] as PreparedNotification[];
-  const branchIds = [...contextsByBranchId.keys()];
+  const periodEnd = addDays(today, -1);
+  const eligibleContexts = [...contextsByBranchId.values()].filter((context) =>
+    shouldSendWeeklyOperationalSummaryToBranch({
+      branchCreatedAt: new Date(context.branch.created_at),
+      periodEnd,
+    }),
+  );
+  const branchIds = eligibleContexts.map((context) => context.branch.id);
   if (!branchIds.length) return [] as PreparedNotification[];
   const supabase = requiredAdminClient();
-  const periodEnd = addDays(today, -1);
   const periodStart = addDays(periodEnd, -6);
   const [formSummaryResult, documentCategoriesResult] = await Promise.all([
     supabase.from("resumen_diario_formularios").select("sede_id, formulario_id, fecha, cantidad_registros").in("sede_id", branchIds).gte("fecha", periodStart).lte("fecha", periodEnd).returns<DailyFormSummaryRow[]>(),
@@ -280,7 +287,7 @@ async function prepareWeeklyOperationalSummaries(today: string, contextsByBranch
   for (const row of documentCategoriesResult.data ?? []) missingByBranchId.set(row.sede_id, [...(missingByBranchId.get(row.sede_id) ?? []), row]);
   const period = buildWeeklyPeriodLabel(today);
 
-  return [...contextsByBranchId.values()].map((context) => {
+  return eligibleContexts.map((context) => {
     const rows = summariesByBranchId.get(context.branch.id) ?? [];
     const documentStatuses = missingByBranchId.get(context.branch.id) ?? [];
     const missingDocuments = documentStatuses.filter((row) => row.estado_calculado === "gris" || row.estado_calculado === "amarillo").map((row) => pendingDocumentCategoryLabel(row.categoria)).join(", ") || "Ninguno";
@@ -370,7 +377,7 @@ async function loadImmediateNotificationContext(companyId: string) {
   const supabase = requiredAdminClient();
   const [companyResult, branchesResult, subscriptionResult] = await Promise.all([
     supabase.from("companies").select("id, name, is_active, company_admin_user_id").eq("id", companyId).eq("is_active", true).maybeSingle<CompanyRow>(),
-    supabase.from("branches").select("id, company_id, name, status, is_active").eq("company_id", companyId).neq("status", "deleted").order("name", { ascending: true }).returns<BranchRow[]>(),
+    supabase.from("branches").select("id, company_id, name, status, is_active, created_at").eq("company_id", companyId).neq("status", "deleted").order("name", { ascending: true }).returns<BranchRow[]>(),
     supabase.from("company_subscriptions").select("id, company_id, status, plan_type, trial_started_at, trial_ends_at").eq("company_id", companyId).maybeSingle<SubscriptionRow>(),
   ]);
 

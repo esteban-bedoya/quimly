@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { shouldDispatchQueuedTrialExpired, shouldDispatchQueuedTrialMidpoint, shouldSendTrialExpired, shouldSendTrialMidpoint } from "../src/lib/notifications/trial-notification-policy.ts";
+import { shouldSendWeeklyOperationalSummaryToBranch } from "../src/lib/notifications/weekly-operational-summary-policy.ts";
 
 test("permite recuperar la mitad de prueba mientras la prueba sigue vigente", () => {
   const now = new Date("2026-08-03T14:00:00.000Z");
@@ -42,4 +43,23 @@ test("cancela un reintento de prueba finalizada si el restaurante ya activó un 
   assert.equal(shouldDispatchQueuedTrialExpired({ now, subscriptionStatus: "active", planType: "operational", trialEndsAt }), false);
   assert.equal(shouldDispatchQueuedTrialExpired({ now, subscriptionStatus: "trial", planType: "founder", trialEndsAt }), false);
   assert.equal(shouldDispatchQueuedTrialExpired({ now, subscriptionStatus: "trial", planType: "operational", trialEndsAt }), true);
+});
+
+test("no envía el reporte semanal a una sede creada el mismo lunes", () => {
+  const periodEnd = "2026-08-02";
+
+  assert.equal(
+    shouldSendWeeklyOperationalSummaryToBranch({
+      branchCreatedAt: new Date("2026-08-03T04:59:59.999Z"), // Domingo 11:59:59 p. m. en Colombia.
+      periodEnd,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldSendWeeklyOperationalSummaryToBranch({
+      branchCreatedAt: new Date("2026-08-03T05:00:00.000Z"), // Lunes 12:00:00 a. m. en Colombia.
+      periodEnd,
+    }),
+    false,
+  );
 });
