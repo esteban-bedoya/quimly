@@ -88,16 +88,20 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
     >
       <div>
         <div className="space-y-3">
+          {isInactive ? (
+            <div className="border-b border-[#e5e2d9] pb-3">
+              <ReadOnlyBranchStatus compact />
+            </div>
+          ) : null}
+
           <div className="flex items-start justify-between gap-4 lg:items-center">
             <div className="min-w-0">
               <div className="space-y-1">
-                {isInactive ? (
-                  <ReadOnlyBranchStatus />
-                ) : (
+                {!isInactive ? (
                   <span className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#1c6a71]">
                     {statusLabel}
                   </span>
-                )}
+                ) : null}
                 <h3 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-[#12110f]">{branch.name}</h3>
                 <p className="text-sm font-medium text-[#5e6770]">{branch.companyName}</p>
               </div>

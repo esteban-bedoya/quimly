@@ -19,11 +19,11 @@ export function ReadOnlyBranchLockIcon() {
   );
 }
 
-export function ReadOnlyBranchStatus() {
+export function ReadOnlyBranchStatus({ compact = false }: { compact?: boolean }) {
   return (
     <p className="flex items-center gap-2 text-sm font-semibold leading-6 text-[#5f5b52]">
       <ReadOnlyBranchLockIcon />
-      Sede inactiva · acceso solo de lectura
+      {compact ? "Sede inactiva · solo lectura" : "Sede inactiva · acceso solo de lectura"}
     </p>
   );
 }
