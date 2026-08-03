@@ -181,6 +181,18 @@ export async function POST(request: Request) {
           return;
         }
 
+        const { error: messageAttemptError } = await adminClient
+          .from("whatsapp_messages")
+          .update({ notification_next_attempt_at: terminal ? null : nextAttemptAt })
+          .eq("twilio_message_sid", messageSid);
+
+        if (messageAttemptError) {
+          logServerError("whatsapp.notification_message_attempt_update_failed", messageAttemptError, {
+            deliveryId: delivery.id,
+            twilioMessageSid: messageSid,
+          });
+        }
+
         const alert = getTelegramAlertPayload(delivery.payload);
         if (alert) {
           await dispatchAutomatedWhatsAppSupportAlert({

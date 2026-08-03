@@ -71,6 +71,25 @@ function messageText(message: WhatsAppMessageSummary) {
   return message.numMedia > 0 ? `Mensaje multimedia (${message.numMedia})` : "Mensaje sin texto";
 }
 
+function messageAttemptLabel(message: WhatsAppMessageSummary) {
+  if (!message.notificationAttempt || !message.notificationMaxAttempts) {
+    return null;
+  }
+
+  const label = `Intento ${message.notificationAttempt} de ${message.notificationMaxAttempts}`;
+  const failed = ["failed", "undelivered"].includes(message.twilioStatus.trim().toLowerCase());
+
+  if (!failed) {
+    return label;
+  }
+
+  if (message.notificationNextAttemptAt) {
+    return `${label} · Reintento programado: ${formatDate(message.notificationNextAttemptAt)}`;
+  }
+
+  return `${label} · Sin más reintentos`;
+}
+
 export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPageProps) {
   const params = await searchParams;
   const selectedConversationId = typeof params.conversation === "string" ? params.conversation : null;
@@ -190,6 +209,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                   {inbox.messages.length ? (
                     inbox.messages.map((message) => {
                       const isOutbound = message.direction === "outbound";
+                      const attemptLabel = messageAttemptLabel(message);
 
                       return (
                         <article key={message.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
@@ -207,6 +227,7 @@ export default async function WhatsAppDashboardPage({ searchParams }: WhatsAppPa
                               <span>{messageOriginLabel(message)}</span>
                               <span>·</span>
                               <span>{messageStatusLabel(message.twilioStatus)}</span>
+                              {attemptLabel ? <span>· {attemptLabel}</span> : null}
                               {message.errorCode ? <span>· Error {message.errorCode}</span> : null}
                             </div>
                             {message.errorMessage ? (

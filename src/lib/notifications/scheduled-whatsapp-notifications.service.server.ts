@@ -2,6 +2,7 @@ import "server-only";
 
 import { isE164PhoneNumber, type E164PhoneNumber } from "@/lib/phone";
 import { sendWhatsAppTemplate, type WhatsAppTemplateVariables } from "@/lib/notifications/whatsapp-template.service";
+import { shouldSendTrialExpired, shouldSendTrialMidpoint } from "@/lib/notifications/trial-notification-policy";
 import {
   SCHEDULED_WHATSAPP_CLAIM_LIMIT,
   SCHEDULED_WHATSAPP_MAX_ATTEMPTS,
@@ -315,12 +316,14 @@ function prepareTrialNotifications(now: Date, today: string, branchesByCompanyId
     if (!context) continue;
     const startDate = localDateKey(new Date(subscription.trial_started_at));
     const endDate = localDateKey(new Date(subscription.trial_ends_at));
+    const trialEndsAt = new Date(subscription.trial_ends_at);
     const midpointDate = addDays(startDate, 7);
-    const expiryMessageDate = addDays(endDate, 1);
     const greeting = getRecipientGreetingName(context.recipient.name);
 
-    if (midpointDate <= today) notifications.push({ context, templateKey: "trial_midpoint", deduplicationKey: `trial_midpoint:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "4": formatDateForMessage(endDate) }, fallbackBody: ["🚀 Ya estás a mitad de tu prueba", "", `Hola ${greeting},`, "", `Tu restaurante *${context.company.name}* sigue disfrutando de Quimly hasta el *${formatDateForMessage(endDate)}*.`, "", "Este es el mejor momento para completar tus registros y cargar tu documentación, así podrás aprovechar al máximo la plataforma antes de que finalice tu prueba.", "", "Ingresa aquí:", "https://quimly.co/login", "", "¿Necesitas ayuda? Responde este mensaje y te acompañamos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 70 });
-    if (expiryMessageDate <= today && new Date(subscription.trial_ends_at).getTime() < now.getTime()) notifications.push({ context, templateKey: "trial_expired", deduplicationKey: `trial_expired:${subscription.id}:${endDate}`, variables: { "1": greeting, "2": formatDateForMessage(endDate), "3": context.company.name }, fallbackBody: ["⏳ Tu prueba gratuita finalizó", "", `Hola ${greeting},`, "", `Tu prueba gratuita finalizó el *${formatDateForMessage(endDate)}*.`, "", `Restaurante: ${context.company.name}`, "", "Esperamos que durante estos días hayas descubierto cómo Quimly puede ayudarte a organizar tu documentación y simplificar el seguimiento de tu operación.", "", "Activa tu plan y continúa gestionando tu operación desde Quimly:", "https://quimly.co/login", "", "¿Tienes alguna pregunta? Responde este mensaje y con gusto te ayudaremos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 40 });
+    // A delayed cron run may still send the midpoint reminder, but never after
+    // the trial has ended. Once it ends, the only lifecycle message is expiry.
+    if (shouldSendTrialMidpoint({ midpointDate, now, today, trialEndsAt })) notifications.push({ context, templateKey: "trial_midpoint", deduplicationKey: `trial_midpoint:${subscription.id}`, variables: { "1": greeting, "2": context.company.name, "4": formatDateForMessage(endDate) }, fallbackBody: ["🚀 Ya estás a mitad de tu prueba", "", `Hola ${greeting},`, "", `Tu restaurante *${context.company.name}* sigue disfrutando de Quimly hasta el *${formatDateForMessage(endDate)}*.`, "", "Este es el mejor momento para completar tus registros y cargar tu documentación, así podrás aprovechar al máximo la plataforma antes de que finalice tu prueba.", "", "Ingresa aquí:", "https://quimly.co/login", "", "¿Necesitas ayuda? Responde este mensaje y te acompañamos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 70 });
+    if (shouldSendTrialExpired({ now, trialEndsAt })) notifications.push({ context, templateKey: "trial_expired", deduplicationKey: `trial_expired:${subscription.id}:${endDate}`, variables: { "1": greeting, "2": formatDateForMessage(endDate), "3": context.company.name }, fallbackBody: ["⏳ Tu prueba gratuita finalizó", "", `Hola ${greeting},`, "", `Tu prueba gratuita finalizó el *${formatDateForMessage(endDate)}*.`, "", `Restaurante: ${context.company.name}`, "", "Esperamos que durante estos días hayas descubierto cómo Quimly puede ayudarte a organizar tu documentación y simplificar el seguimiento de tu operación.", "", "Activa tu plan y continúa gestionando tu operación desde Quimly:", "https://quimly.co/login", "", "¿Tienes alguna pregunta? Responde este mensaje y con gusto te ayudaremos.", "", "Equipo Quimly"].join("\n"), scopeBranchId: null, priority: 40 });
   }
   return notifications;
 }
@@ -542,6 +545,8 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
         fallbackBody: payload.fallbackBody,
         origin: delivery.notification_type,
         error,
+        notificationAttempt: delivery.attempt_count,
+        notificationMaxAttempts: SCHEDULED_WHATSAPP_MAX_ATTEMPTS,
       });
     } catch (persistenceError) {
       logServerError("whatsapp.scheduled_notification_failure_inbox_persistence_failed", persistenceError, { deliveryId: delivery.id });
@@ -558,7 +563,7 @@ async function dispatchClaimedDelivery(delivery: ClaimedDelivery, result: Schedu
   }
 
   try {
-    const inboxMessage = await recordAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, message, fallbackBody: payload.fallbackBody, origin: delivery.notification_type });
+    const inboxMessage = await recordAutomatedWhatsAppTemplateMessage({ to: delivery.recipient_phone, message, fallbackBody: payload.fallbackBody, origin: delivery.notification_type, notificationAttempt: delivery.attempt_count, notificationMaxAttempts: SCHEDULED_WHATSAPP_MAX_ATTEMPTS });
     const { error: inboxReferenceError } = await requiredAdminClient().from("whatsapp_notification_deliveries").update({ whatsapp_message_id: inboxMessage.messageId }).eq("id", delivery.id);
     if (inboxReferenceError) logServerError("whatsapp.scheduled_notification_inbox_reference_failed", inboxReferenceError, { deliveryId: delivery.id });
   } catch (error) {

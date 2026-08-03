@@ -45,6 +45,9 @@ type MessageRow = {
   num_media: number;
   twilio_error_code: string | null;
   twilio_error_message: string | null;
+  notification_attempt: number | null;
+  notification_max_attempts: number | null;
+  notification_next_attempt_at: string | null;
   received_at: string | null;
   sent_at: string | null;
   created_at: string;
@@ -101,6 +104,9 @@ export type WhatsAppMessageSummary = {
   numMedia: number;
   errorCode: string | null;
   errorMessage: string | null;
+  notificationAttempt: number | null;
+  notificationMaxAttempts: number | null;
+  notificationNextAttemptAt: string | null;
   occurredAt: string;
 };
 
@@ -227,6 +233,9 @@ function mapMessage(row: MessageRow): WhatsAppMessageSummary {
     numMedia: row.num_media,
     errorCode: row.twilio_error_code,
     errorMessage: row.twilio_error_message,
+    notificationAttempt: row.notification_attempt,
+    notificationMaxAttempts: row.notification_max_attempts,
+    notificationNextAttemptAt: row.notification_next_attempt_at,
     occurredAt: row.received_at ?? row.sent_at ?? row.created_at,
   };
 }
@@ -285,7 +294,7 @@ export async function getOwnerWhatsAppInboxData(selectedConversationId: string |
   const messagesResult = selectedConversation
     ? await supabase
         .from("whatsapp_messages")
-        .select("id, direction, twilio_message_sid, twilio_status, body, message_origin, num_media, twilio_error_code, twilio_error_message, received_at, sent_at, created_at")
+        .select("id, direction, twilio_message_sid, twilio_status, body, message_origin, num_media, twilio_error_code, twilio_error_message, notification_attempt, notification_max_attempts, notification_next_attempt_at, received_at, sent_at, created_at")
         .eq("conversation_id", selectedConversation.id)
         .order("created_at", { ascending: true })
         .limit(250)
@@ -501,6 +510,8 @@ export async function recordFailedOutboundMessage({
   body,
   origin,
   error,
+  notificationAttempt,
+  notificationMaxAttempts,
 }: {
   conversationId: string;
   from: string;
@@ -508,6 +519,8 @@ export async function recordFailedOutboundMessage({
   body: string;
   origin: WhatsAppMessageOrigin;
   error: unknown;
+  notificationAttempt?: number;
+  notificationMaxAttempts?: number;
 }) {
   const adminClient = getRequiredAdminClient();
   const errorCode = error && typeof error === "object" && "code" in error ? String(error.code) : null;
@@ -527,6 +540,9 @@ export async function recordFailedOutboundMessage({
       num_media: 0,
       twilio_error_code: errorCode,
       twilio_error_message: errorMessage,
+      ...(notificationAttempt && notificationMaxAttempts
+        ? { notification_attempt: notificationAttempt, notification_max_attempts: notificationMaxAttempts }
+        : {}),
       twilio_status_updated_at: attemptedAt,
     })
     .select("id")
@@ -555,11 +571,15 @@ export async function recordOutboundWhatsAppMessage({
   message,
   fallbackBody,
   origin,
+  notificationAttempt,
+  notificationMaxAttempts,
 }: {
   conversationId: string;
   message: OutboundWhatsAppMessage;
   fallbackBody: string;
   origin: WhatsAppMessageOrigin;
+  notificationAttempt?: number;
+  notificationMaxAttempts?: number;
 }) {
   const sentAt = new Date().toISOString();
   const body = message.body?.trim() || fallbackBody;
@@ -575,6 +595,9 @@ export async function recordOutboundWhatsAppMessage({
       to_address: message.to,
       body,
       message_origin: origin,
+      ...(notificationAttempt && notificationMaxAttempts
+        ? { notification_attempt: notificationAttempt, notification_max_attempts: notificationMaxAttempts }
+        : {}),
       num_media: 0,
       sent_at: sentAt,
       twilio_status_updated_at: sentAt,
@@ -659,11 +682,15 @@ export async function recordAutomatedWhatsAppTemplateMessage({
   message,
   fallbackBody,
   origin = "scheduled",
+  notificationAttempt,
+  notificationMaxAttempts,
 }: {
   to: E164PhoneNumber;
   message: OutboundWhatsAppMessage;
   fallbackBody: string;
   origin?: ScheduledWhatsAppTemplateKey | "scheduled";
+  notificationAttempt?: number;
+  notificationMaxAttempts?: number;
 }) {
   const senderPhone = message.from ? normalizePhoneNumber(message.from) : null;
 
@@ -705,6 +732,8 @@ export async function recordAutomatedWhatsAppTemplateMessage({
     message,
     fallbackBody,
     origin,
+    notificationAttempt,
+    notificationMaxAttempts,
   });
 
   return { conversationId: conversation.id, messageId };
@@ -715,11 +744,15 @@ export async function recordFailedAutomatedWhatsAppTemplateMessage({
   fallbackBody,
   origin = "scheduled",
   error,
+  notificationAttempt,
+  notificationMaxAttempts,
 }: {
   to: E164PhoneNumber;
   fallbackBody: string;
   origin?: ScheduledWhatsAppTemplateKey | "scheduled";
   error: unknown;
+  notificationAttempt?: number;
+  notificationMaxAttempts?: number;
 }) {
   const senderPhone = normalizePhoneNumber(getTwilioWhatsAppFrom());
 
@@ -758,6 +791,8 @@ export async function recordFailedAutomatedWhatsAppTemplateMessage({
     body: fallbackBody,
     origin,
     error,
+    notificationAttempt,
+    notificationMaxAttempts,
   });
 }
 

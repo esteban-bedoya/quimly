@@ -17,6 +17,14 @@ WHATSAPP_NOTIFICATIONS_CRON_SECRET=
 
 `WHATSAPP_NOTIFICATIONS_CRON_SECRET` debe coincidir exactamente con el secreto `quimly_notification_cron_secret` guardado en Supabase Vault al configurar el cron.
 
+## Política de envíos de trial
+
+- La bienvenida se intenta enviar al iniciar la prueba.
+- El recordatorio de mitad puede enviarse tarde si el cron estuvo indisponible, pero únicamente mientras la prueba siga vigente.
+- Al finalizar la prueba, solo se envía el mensaje de finalización; nunca se recupera el mensaje de mitad después de esa fecha.
+- Las entregas rechazadas por Twilio conservan la política de tres intentos totales (el envío inicial y hasta dos reintentos).
+- El historial muestra el número de intento y el siguiente reintento de las entregas creadas después de aplicar `supabase/migrations/2026080301_whatsapp_message_attempt_history.sql`.
+
 ## 1. `quimly_document_expiry_alert`
 
 - Content SID: `HX78e55764a0703c071893dc7bfaca8143`
