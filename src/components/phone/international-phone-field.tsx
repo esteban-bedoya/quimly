@@ -33,7 +33,7 @@ type InternationalPhoneFieldProps = {
 };
 
 const defaultControlClassName =
-  "min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35";
+  "min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm";
 
 const maxE164Digits = 15;
 const maxFormattingCharacters = 8;
@@ -276,7 +276,7 @@ export function InternationalPhoneField({
       <input type="hidden" name={name} value={e164Phone} />
       <input type="hidden" name={countryName} value={selectedCountry} />
 
-      <div className="grid grid-cols-[minmax(7rem,8rem)_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(7.5rem,9rem)_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(5.75rem,6.75rem)_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(6.5rem,7.5rem)_minmax(0,1fr)]">
         <div className="relative" ref={menuRef}>
           <button
             ref={countryButtonRef}
@@ -310,7 +310,7 @@ export function InternationalPhoneField({
                   value={countrySearch}
                   onChange={(event) => setCountrySearch(event.target.value)}
                   placeholder="Buscar país"
-                  className="mb-2 min-h-10 w-full rounded-xl border border-[#12110f]/12 bg-[#fbfaf7] px-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+                  className="mb-2 min-h-10 w-full rounded-xl border border-[#12110f]/12 bg-[#fbfaf7] px-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
                 />
 
                 <div className="max-h-[calc(100vh-15rem)] overflow-y-auto sm:max-h-64">

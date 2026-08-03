@@ -116,7 +116,7 @@ function PasswordLoginContent({
           name="password"
           type="password"
           autoComplete="current-password"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
           placeholder="Tu contraseña"
           required
         />
@@ -177,7 +177,7 @@ function SignupContent({
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
-            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
             placeholder="123456"
             required
           />
@@ -206,7 +206,7 @@ function SignupContent({
           name="establishmentName"
           type="text"
           autoComplete="organization"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
           placeholder="Restaurante"
           value={draft.establishmentName}
           onChange={(event) => setDraft((current) => ({ ...current, establishmentName: event.target.value }))}
@@ -223,7 +223,7 @@ function SignupContent({
           name="branchName"
           type="text"
           autoComplete="organization"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
           placeholder="Sede principal"
           value={draft.branchName}
           onChange={(event) => setDraft((current) => ({ ...current, branchName: event.target.value }))}
@@ -240,7 +240,7 @@ function SignupContent({
           name="adminName"
           type="text"
           autoComplete="name"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
           placeholder="Nombre completo"
           value={draft.adminName}
           onChange={(event) => setDraft((current) => ({ ...current, adminName: event.target.value }))}
@@ -257,7 +257,7 @@ function SignupContent({
           name="password"
           type="password"
           autoComplete="new-password"
-          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+          className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
           placeholder="Mínimo 8 caracteres"
           value={draft.password}
           onChange={(event) => setDraft((current) => ({ ...current, password: event.target.value }))}
@@ -301,7 +301,7 @@ function PasswordResetContent({
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
-            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
             placeholder="123456"
             required
           />
@@ -316,7 +316,7 @@ function PasswordResetContent({
             name="password"
             type="password"
             autoComplete="new-password"
-            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-sm text-[#12110f] outline-none transition focus:border-[#12110f]/35"
+            className="min-h-12 w-full rounded-2xl border border-[#12110f]/12 bg-white px-4 py-3 text-base text-[#12110f] outline-none transition focus:border-[#12110f]/35 sm:text-sm"
             placeholder="Mínimo 8 caracteres"
             required
           />
