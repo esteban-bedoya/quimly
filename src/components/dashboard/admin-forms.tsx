@@ -27,6 +27,7 @@ import {
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
 import { TransientFeedbackToast } from "@/components/ui/transient-feedback-toast";
 import { BRANCH_NAME_MAX_LENGTH } from "@/lib/branch-name";
+import type { BranchCreationBlockedMessage, SubscriptionViewState } from "@/lib/billing";
 import type { CompanyBranchSummary, CompanySummary, AppRole } from "@/types/auth";
 
 const activeLocationLimitReachedMessage =
@@ -55,6 +56,69 @@ export function OpenPlanPaymentsButton({
     >
       {label}
     </button>
+  );
+}
+
+export function CompanyBranchCapacityAction({
+  company,
+  blockedMessage,
+  subscriptionViewState,
+  title,
+  triggerClassName,
+  submitClassName,
+}: {
+  company: CompanySummary;
+  blockedMessage: BranchCreationBlockedMessage | null;
+  subscriptionViewState: SubscriptionViewState;
+  title: string;
+  triggerClassName: string;
+  submitClassName: string;
+}) {
+  return (
+    <BranchCapacityModal
+      title={title}
+      triggerLabel={title}
+      triggerClassName={triggerClassName}
+    >
+      {({ close, showSuccessToast }) => blockedMessage ? (
+        <div className="grid gap-5">
+          <div>
+            <p className="text-sm font-semibold leading-6 text-[#12110f]">{blockedMessage.title}</p>
+            <p className="mt-1 text-sm leading-6 text-[#5e6770]">{blockedMessage.description}</p>
+          </div>
+          {blockedMessage.action === "resolve_capacity" ? (
+            <a href="#resolver-sedes-activas" className={submitClassName}>
+              {blockedMessage.actionLabel}
+            </a>
+          ) : blockedMessage.action === "manage_scheduled_downgrade" ? (
+            <a href="#reduccion-programada" className={submitClassName}>
+              {blockedMessage.actionLabel}
+            </a>
+          ) : (
+            <OpenPlanPaymentsButton
+              label={blockedMessage.actionLabel}
+              target={subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
+              className={submitClassName}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          <p className="text-sm leading-6 text-[#5e6770]">La sede quedará activa de inmediato.</p>
+          <CreateCompanyBranchForm
+            companies={[company]}
+            lockedCompanyId={company.id}
+            idleLabel="Crear sede activa"
+            pendingLabel="Creando sede..."
+            submitClassName={submitClassName}
+            onSuccess={(message) => {
+              showSuccessToast(message);
+              close();
+            }}
+          />
+        </div>
+      )}
+    </BranchCapacityModal>
   );
 }
 

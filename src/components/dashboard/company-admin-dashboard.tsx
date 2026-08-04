@@ -1,11 +1,9 @@
 import Link from "next/link";
 
 import {
-  BranchCapacityModal,
   CapacityResolutionForm,
+  CompanyBranchCapacityAction,
   CompanyBranchActionsMenu,
-  CreateCompanyBranchForm,
-  OpenPlanPaymentsButton,
   ScheduledDowngradeSelectionForm,
 } from "@/components/dashboard/admin-forms";
 import { DashboardHeaderMenu } from "@/components/dashboard/dashboard-header-menu";
@@ -180,54 +178,14 @@ export function CompanyAdminDashboard({
       }
     : null);
   const branchCapacityAction = companyForBranchCreation ? (
-    <BranchCapacityModal
+    <CompanyBranchCapacityAction
+      company={companyForBranchCreation}
+      blockedMessage={branchCreationBlockedMessage}
+      subscriptionViewState={planPayments.subscriptionViewState}
       title={branchCapacityModalTitle}
-      triggerLabel={branchCapacityModalTitle}
       triggerClassName="ui-muted-action ui-muted-action-large"
-    >
-      {({ close, showSuccessToast }) => branchCreationBlockedMessage ? (
-        <div className="grid gap-5">
-          <div>
-            <p className="text-sm font-semibold leading-6 text-[#12110f]">
-              {branchCreationBlockedMessage.title}
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[#5e6770]">
-              {branchCreationBlockedMessage.description}
-            </p>
-          </div>
-          {branchCreationBlockedMessage.action === "resolve_capacity" ? (
-            <a href="#resolver-sedes-activas" className={subtleBranchActionButtonClassName}>
-              {branchCreationBlockedMessage.actionLabel}
-            </a>
-          ) : branchCreationBlockedMessage.action === "manage_scheduled_downgrade" ? (
-            <a href="#reduccion-programada" className={subtleBranchActionButtonClassName}>
-              {branchCreationBlockedMessage.actionLabel}
-            </a>
-          ) : (
-            <OpenPlanPaymentsButton
-              label={branchCreationBlockedMessage.actionLabel}
-              target={planPayments.subscriptionViewState === "payment_issue" ? "payment_method" : "overview"}
-              className={subtleBranchActionButtonClassName}
-            />
-          )}
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          <p className="text-sm leading-6 text-[#5e6770]">La sede quedará activa de inmediato.</p>
-          <CreateCompanyBranchForm
-            companies={[companyForBranchCreation]}
-            lockedCompanyId={companyForBranchCreation.id}
-            idleLabel="Crear sede activa"
-            pendingLabel="Creando sede..."
-            submitClassName={subtleBranchActionButtonClassName}
-            onSuccess={(message) => {
-              showSuccessToast(message);
-              close();
-            }}
-          />
-        </div>
-      )}
-    </BranchCapacityModal>
+      submitClassName={subtleBranchActionButtonClassName}
+    />
   ) : null;
 
   return (
