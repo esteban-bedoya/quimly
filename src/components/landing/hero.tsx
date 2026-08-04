@@ -4,17 +4,17 @@ import { QUIMLY_WHATSAPP_URL } from "@/lib/whatsapp";
 export function Hero() {
   return (
     <section id="hero" className="relative isolate overflow-hidden bg-white">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-10 px-5 pb-14 pt-44 sm:gap-12 sm:px-8 sm:pb-16 sm:pt-32 lg:grid-cols-[1fr_1fr] lg:items-center lg:gap-14 lg:px-10 lg:pb-20 lg:pt-28">
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-10 px-5 pb-14 pt-44 sm:gap-12 sm:px-8 sm:pb-16 sm:pt-32 lg:grid-cols-[1fr_1fr] lg:items-center lg:gap-10 lg:px-8 lg:pb-16 lg:pt-24 xl:gap-14 xl:px-10 xl:pb-20 xl:pt-28">
         <div className="flex flex-col justify-center">
           <p className="mb-6 w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:mb-8 sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
             TECNOLOGÍA SANITARIA PARA <span className="font-black">RESTAURANTES.</span>
           </p>
 
-          <h1 className="max-w-4xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] text-black sm:text-4xl lg:text-5xl">
+          <h1 className="max-w-4xl text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.03em] text-black sm:text-4xl lg:text-[2.6rem] xl:text-5xl">
             Lleva tu operación sanitaria al siguiente nivel.
           </h1>
 
-          <p className="mt-6 max-w-xl text-base leading-7 text-black sm:mt-7 sm:text-lg sm:leading-8 lg:text-[1.2rem]">
+          <p className="mt-6 max-w-xl text-base leading-7 text-black sm:mt-7 sm:text-lg sm:leading-8 lg:text-lg xl:text-[1.2rem]">
             Simplifica el control sanitario de tu restaurante: digitaliza bitácoras, organiza documentos y mantén tu operación lista para cada inspección.
           </p>
 
@@ -45,7 +45,7 @@ export function Hero() {
         </div>
 
         <div className="flex items-center justify-center lg:justify-end">
-          <div className="w-full max-w-[420px] sm:max-w-[560px] lg:max-w-[760px]">
+          <div className="w-full max-w-[420px] sm:max-w-[560px] lg:max-w-[470px] xl:max-w-[760px]">
             <div>
               <Image
                 src="/images/celular5.png"

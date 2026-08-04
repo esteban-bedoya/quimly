@@ -79,15 +79,15 @@ export function ProductsSection() {
   return (
     <section
       id="productos"
-      className="relative isolate overflow-hidden bg-white px-5 py-20 sm:px-8 sm:py-24 lg:px-10 lg:py-28"
+      className="relative isolate overflow-hidden bg-white px-5 py-20 sm:px-8 sm:py-24 lg:px-8 lg:py-24 xl:px-10 xl:py-28"
     >
       <div className="relative mx-auto max-w-7xl">
-        <div className="grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-end lg:gap-10">
+        <div className="grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-end lg:gap-8 xl:gap-10">
           <div>
             <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
               SOLUCIONES
             </p>
-            <h2 className="mt-4 max-w-4xl text-[2.1rem] font-bold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-5xl">
+            <h2 className="mt-4 max-w-4xl text-[2.1rem] font-bold leading-[1.02] tracking-[-0.03em] text-[#12110f] sm:mt-5 sm:text-4xl lg:text-4xl xl:text-5xl">
               Todo bajo control,
               <br />
               <span className="tracking-[-0.015em]">desde la cocina hasta la auditoría.</span>
@@ -98,10 +98,10 @@ export function ProductsSection() {
           </p>
         </div>
 
-        <div className="mt-10 overflow-visible sm:mt-12 lg:mt-14">
-          <div className="-mx-5 sm:-mx-8 lg:-mx-10">
+        <div className="mt-10 overflow-visible sm:mt-12 lg:mt-12 xl:mt-14">
+          <div className="-mx-5 sm:-mx-8 lg:-mx-8 xl:-mx-10">
             <div
-              className="overflow-visible px-5 sm:px-8 lg:px-10"
+              className="overflow-visible px-5 sm:px-8 lg:px-8 xl:px-10"
               ref={emblaRef}
             >
               <div className="flex touch-pan-y items-stretch py-6 sm:py-8">
