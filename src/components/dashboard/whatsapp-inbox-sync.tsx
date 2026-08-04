@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { TransientFeedbackToast } from "@/components/ui/transient-feedback-toast";
 import type { WhatsAppInboxSyncEvent, WhatsAppInboxSyncState } from "@/types/whatsapp-inbox";
 
 type InboxToast = {
@@ -194,38 +195,15 @@ export function WhatsAppInboxSync({ initialEventId }: { initialEventId: number }
     };
   }, [poll, unlockAudio]);
 
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => setToast(null), 7_000);
-    return () => window.clearTimeout(timeoutId);
-  }, [toast]);
-
   if (!toast) {
     return null;
   }
 
   return (
-    <aside
-      aria-live="polite"
-      className="fixed right-4 bottom-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-[#2a7f86]/25 bg-[#12110f] p-4 text-white shadow-[0_18px_48px_rgba(18,17,15,0.28)]"
-    >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[#7ad9dd]">{toast.title}</p>
-          <p className="mt-1 line-clamp-3 text-sm leading-5 text-white/78">{toast.detail}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setToast(null)}
-          className="rounded-full px-2 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white"
-          aria-label="Cerrar notificación"
-        >
-          Cerrar
-        </button>
-      </div>
-    </aside>
+    <TransientFeedbackToast
+      title={toast.title}
+      message={toast.detail}
+      onDismiss={() => setToast(null)}
+    />
   );
 }

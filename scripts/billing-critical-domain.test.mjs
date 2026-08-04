@@ -80,6 +80,35 @@ test("el bloqueo al agregar sedes prioriza la causa y una acción resoluble", ()
   );
 });
 
+test("desactivar una sede libera un cupo y crear la última disponible vuelve a bloquear solo la siguiente creación", () => {
+  const withFullCapacity = getAccountCapabilities({
+    subscriptionViewState: "operational_active",
+    maxActiveLocations: 1,
+    activeBranches: 1,
+  });
+  const afterDeactivation = getAccountCapabilities({
+    subscriptionViewState: "operational_active",
+    maxActiveLocations: 1,
+    activeBranches: 0,
+  });
+  const afterCreatingBranch = getAccountCapabilities({
+    subscriptionViewState: "operational_active",
+    maxActiveLocations: 1,
+    activeBranches: 1,
+  });
+
+  assert.equal(withFullCapacity.canCreateBranch, false);
+  assert.equal(afterDeactivation.canCreateBranch, true);
+  assert.equal(afterCreatingBranch.canCreateBranch, false);
+  assert.equal(
+    getBranchCreationBlockedMessage({
+      subscriptionViewState: "operational_active",
+      accountCapabilities: afterCreatingBranch,
+    }).summaryLabel,
+    "Aumentar capacidad",
+  );
+});
+
 test("pago pendiente y reducción programada muestran la acción que realmente desbloquea otra sede", () => {
   const paymentIssueAtCapacity = getBranchCreationBlockedMessage({
     subscriptionViewState: "payment_issue",

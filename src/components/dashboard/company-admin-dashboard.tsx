@@ -185,7 +185,7 @@ export function CompanyAdminDashboard({
       triggerLabel={branchCapacityModalTitle}
       triggerClassName="ui-muted-action ui-muted-action-large"
     >
-      {branchCreationBlockedMessage ? (
+      {({ close, showSuccessToast }) => branchCreationBlockedMessage ? (
         <div className="grid gap-5">
           <div>
             <p className="text-sm font-semibold leading-6 text-[#12110f]">
@@ -220,6 +220,10 @@ export function CompanyAdminDashboard({
             idleLabel="Crear sede activa"
             pendingLabel="Creando sede..."
             submitClassName={subtleBranchActionButtonClassName}
+            onSuccess={(message) => {
+              showSuccessToast(message);
+              close();
+            }}
           />
         </div>
       )}

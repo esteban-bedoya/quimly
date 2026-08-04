@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
+import { useActionState, useCallback, useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -25,12 +25,18 @@ import {
   type AdminActionState,
 } from "@/app/dashboard/actions";
 import { InternationalPhoneField } from "@/components/phone/international-phone-field";
+import { TransientFeedbackToast } from "@/components/ui/transient-feedback-toast";
 import { BRANCH_NAME_MAX_LENGTH } from "@/lib/branch-name";
 import type { CompanyBranchSummary, CompanySummary, AppRole } from "@/types/auth";
 
 const activeLocationLimitReachedMessage =
   "Has alcanzado el límite de sedes activas de tu plan. Amplía tu plan para activar otra sede.";
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
+
+type BranchCapacityModalControls = {
+  close: () => void;
+  showSuccessToast: (message: string) => void;
+};
 
 export function OpenPlanPaymentsButton({
   label,
@@ -61,9 +67,12 @@ export function BranchCapacityModal({
   title: string;
   triggerLabel?: string;
   triggerClassName?: string;
-  children: ReactNode;
+  children: (controls: BranchCapacityModalControls) => ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openTitle, setOpenTitle] = useState(title);
+  const [openContent, setOpenContent] = useState<ReactNode>(null);
+  const [successToastMessage, setSuccessToastMessage] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
@@ -128,6 +137,16 @@ export function BranchCapacityModal({
     };
   }, [isOpen]);
 
+  const closeModal = useCallback(() => setIsOpen(false), []);
+  const dismissSuccessToast = useCallback(() => setSuccessToastMessage(null), []);
+  const showSuccessToast = useCallback((message: string) => setSuccessToastMessage(message), []);
+
+  const openModal = useCallback(() => {
+    setOpenTitle(title);
+    setOpenContent(children({ close: closeModal, showSuccessToast }));
+    setIsOpen(true);
+  }, [children, closeModal, showSuccessToast, title]);
+
   return (
     <>
       <button
@@ -135,7 +154,7 @@ export function BranchCapacityModal({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        onClick={() => setIsOpen(true)}
+        onClick={openModal}
         className={triggerClassName}
       >
         {triggerLabel}
@@ -147,7 +166,7 @@ export function BranchCapacityModal({
               <button
                 type="button"
                 tabIndex={-1}
-                aria-label={`Cerrar ${title}`}
+                aria-label={`Cerrar ${openTitle}`}
                 onClick={() => setIsOpen(false)}
                 className="ui-focus-backdrop absolute inset-0"
               />
@@ -161,13 +180,13 @@ export function BranchCapacityModal({
               >
                 <div className="flex items-start justify-between gap-4">
                   <h2 id={titleId} className="text-xl font-semibold tracking-[-0.04em] text-[#12110f] sm:text-2xl">
-                    {title}
+                    {openTitle}
                   </h2>
                   <button
                     type="button"
                     onClick={() => setIsOpen(false)}
                     className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#5e6770] transition hover:bg-[#f1f1f1] hover:text-[#12110f]"
-                    aria-label={`Cerrar ${title}`}
+                    aria-label={`Cerrar ${openTitle}`}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
@@ -181,13 +200,21 @@ export function BranchCapacityModal({
                     }
                   }}
                 >
-                  {children}
+                  {openContent}
                 </div>
               </section>
             </div>,
             document.body,
           )
         : null}
+      {successToastMessage ? (
+        <TransientFeedbackToast
+          title="Sede creada y activada"
+          message={successToastMessage}
+          tone="success"
+          onDismiss={dismissSuccessToast}
+        />
+      ) : null}
     </>
   );
 }
@@ -410,14 +437,22 @@ export function CreateCompanyBranchForm({
   idleLabel = "Crear sede pendiente",
   pendingLabel = "Creando sede...",
   submitClassName,
+  onSuccess,
 }: {
   companies: CompanySummary[];
   lockedCompanyId?: string;
   idleLabel?: string;
   pendingLabel?: string;
   submitClassName?: string;
+  onSuccess?: (message: string) => void;
 }) {
   const [state, formAction] = useActionState(createCompanyBranch, undefined);
+
+  useEffect(() => {
+    if (state?.success) {
+      onSuccess?.(state.success);
+    }
+  }, [onSuccess, state?.success]);
 
   return (
     <form action={formAction} className="space-y-4">
