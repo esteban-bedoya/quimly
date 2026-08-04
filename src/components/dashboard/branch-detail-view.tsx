@@ -151,7 +151,7 @@ function BranchLayout({
   const activeIndex = navigation.findIndex((item) => item.key === currentSection);
 
   return (
-    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-6 xl:px-8">
       {isMenuOpen ? (
         <button
           type="button"
@@ -161,7 +161,7 @@ function BranchLayout({
         />
       ) : null}
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
+        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-6 sm:py-6 xl:px-8">
           <div className="absolute right-5 top-5 z-40 sm:right-8 sm:top-6">
             <div className="relative">
               <button

@@ -189,9 +189,9 @@ export function CompanyAdminDashboard({
   ) : null;
 
   return (
-    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-white px-4 py-5 text-[#12110f] sm:px-6 lg:px-6 xl:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-8 sm:py-6">
+        <section className="relative rounded-[1.75rem] border border-[#2a2926] bg-[#12110f] px-5 py-5 text-white shadow-[0_20px_60px_rgba(18,17,15,0.16)] sm:px-6 sm:py-6 xl:px-8">
           <DashboardHeaderMenu
             profile={profile}
             company={companyForBranchCreation}
@@ -200,7 +200,7 @@ export function CompanyAdminDashboard({
           />
 
           <div className="flex flex-col gap-4 lg:items-start">
-            <div className="w-full space-y-3 pr-14 sm:pr-44">
+            <div className="w-full space-y-3 pr-14 sm:pr-28 lg:pr-36 xl:pr-44">
               <div>
                 <p className="text-sm uppercase tracking-[0.24em] text-[#8fe3d5]">ADMINISTRACIÓN</p>
                 <h1 className="mt-2 max-w-3xl text-2xl font-semibold tracking-[-0.05em] text-[#e5ecec] sm:text-4xl">
@@ -245,7 +245,7 @@ export function CompanyAdminDashboard({
             <div>
               <div className="operational-toolbar mt-3 mb-10 flex w-full flex-col items-center gap-3 sm:mt-4 sm:mb-12 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="order-2 self-center sm:order-1 sm:self-auto">{branchCapacityAction}</div>
-                <div className="order-1 grid grid-cols-2 auto-rows-fr self-center gap-3 sm:order-2 sm:self-end lg:min-w-[18rem]">
+                <div className="order-1 grid grid-cols-2 auto-rows-fr self-center gap-3 sm:order-2 sm:self-end lg:min-w-[16rem] xl:min-w-[18rem]">
                   <PremiumStat
                     label="Uso de sedes"
                     value={`${activeBranches.length} de ${planPayments.accountCapabilities.maxBranches}`}
