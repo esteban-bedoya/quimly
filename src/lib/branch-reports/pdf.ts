@@ -27,6 +27,12 @@ export type PdfFileAttachment = {
   bytes: Uint8Array;
 };
 
+type SeparatorPageDetail = {
+  text: string;
+  font?: "regular" | "bold";
+  after?: number;
+};
+
 export type PdfDocumentBundleWithFiles = Omit<BranchReportDocumentBundle, "entries" | "groups"> & {
   entries: PdfFileAttachment[];
   groups?: Array<{
@@ -611,12 +617,16 @@ function formatBundleFileSummary(
 }
 
 function getSanitaryDocumentCoverDetails(attachment: PdfFileAttachment) {
-  const issuedAt = attachment.entry.file.metadata.issuedAt;
+  const { file } = attachment.entry;
+  const issuedAt = file.metadata.issuedAt;
+  const collectedAt = file.metadata.collectedAt;
   const expirationDate = attachment.entry.file.expiresAt;
   const details: string[] = [];
 
   if (typeof issuedAt === "string" && issuedAt) {
     details.push(`Fecha de expedición: ${formatNumericDateForDisplay(issuedAt)}`);
+  } else if (file.documentKind === "acu_final_disposal_certificate" && typeof collectedAt === "string" && collectedAt) {
+    details.push(`Fecha de expedición: ${formatNumericDateForDisplay(collectedAt)}`);
   }
 
   if (expirationDate) {
@@ -624,6 +634,29 @@ function getSanitaryDocumentCoverDetails(attachment: PdfFileAttachment) {
   }
 
   return details;
+}
+
+function getGroupedSanitaryDocumentCoverDetails(attachments: PdfFileAttachment[]): SeparatorPageDetail[] {
+  return attachments.flatMap((attachment, attachmentIndex) => {
+    const documentDetails = getSanitaryDocumentCoverDetails(attachment);
+    const hasFollowingDocument = attachmentIndex < attachments.length - 1;
+    const details: SeparatorPageDetail[] = [
+      {
+        text: attachment.entry.label,
+        font: "bold",
+        after: documentDetails.length ? 4 : hasFollowingDocument ? 16 : 4,
+      },
+    ];
+
+    documentDetails.forEach((text, detailIndex) => {
+      details.push({
+        text,
+        after: hasFollowingDocument && detailIndex === documentDetails.length - 1 ? 16 : 4,
+      });
+    });
+
+    return details;
+  });
 }
 
 function getHistoricalAttachmentDateTime(attachment: PdfFileAttachment) {
@@ -689,7 +722,7 @@ function addSeparatorPage(
   builder: PdfTextBuilder,
   title: string,
   subtitle?: string,
-  details: string[] = [],
+  details: Array<string | SeparatorPageDetail> = [],
 ) {
   addPage(builder);
   builder.y = PAGE_HEIGHT - 180;
@@ -708,10 +741,13 @@ function addSeparatorPage(
   }
 
   details.forEach((detail) => {
-    drawText(builder, detail, {
+    const { text, font = "regular", after = 4 } = typeof detail === "string" ? { text: detail } : detail;
+
+    drawText(builder, text, {
       size: PDF_TYPE.detail.size,
+      font,
       lineHeight: PDF_TYPE.detail.lineHeight,
-      after: 4,
+      after,
     });
   });
 
@@ -771,10 +807,7 @@ export async function createSanitaryDossierPdf({
           builder,
           group.title,
           undefined,
-          group.entries.flatMap((attachment) => [
-            attachment.entry.label,
-            ...getSanitaryDocumentCoverDetails(attachment),
-          ]),
+          getGroupedSanitaryDocumentCoverDetails(group.entries),
         );
 
         for (const attachment of group.entries) {
