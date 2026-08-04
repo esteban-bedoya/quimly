@@ -89,33 +89,25 @@ function BranchCard({ branch }: { branch: AccessibleBranchSummary }) {
       <div>
         <div className="space-y-3">
           {isInactive ? (
-            <div className="border-b border-[#e5e2d9] pb-3 sm:hidden">
+            <div className="border-b border-[#e5e2d9] pb-3">
               <ReadOnlyBranchStatus compact />
             </div>
           ) : null}
 
-          <div
-            className={`flex items-start gap-4 ${
-              isInactive ? "flex-col sm:flex-row sm:justify-between lg:items-center" : "justify-between lg:items-center"
-            }`}
-          >
-            <div className={`min-w-0 ${isInactive ? "order-2 w-full sm:order-1 sm:w-auto" : ""}`}>
-              <div className={isInactive ? "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:block sm:space-y-1" : "space-y-1"}>
-                {isInactive ? (
-                  <div className="hidden sm:block">
-                    <ReadOnlyBranchStatus />
-                  </div>
-                ) : (
+          <div className="flex items-start justify-between gap-4 lg:items-center">
+            <div className="min-w-0">
+              <div className="space-y-1">
+                {!isInactive ? (
                   <span className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#1c6a71]">
                     {statusLabel}
                   </span>
-                )}
+                ) : null}
                 <h3 className="text-[1.35rem] font-semibold tracking-[-0.04em] text-[#12110f]">{branch.name}</h3>
                 <p className="text-sm font-medium text-[#5e6770]">{branch.companyName}</p>
               </div>
             </div>
 
-            <div className={`flex shrink-0 items-center gap-1 ${isInactive ? "order-1 self-end sm:order-2 sm:self-auto" : ""}`}>
+            <div className="flex shrink-0 items-center gap-1">
               <Link
                 href={`/dashboard/sedes/${branch.companySlug}/${branch.slug}`}
                 aria-label={`${accessLabel} de ${branch.name}`}

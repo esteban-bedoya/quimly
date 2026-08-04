@@ -143,7 +143,7 @@ export function BranchCapacityModal({
 
       {isOpen && typeof document !== "undefined"
         ? createPortal(
-            <div className="fixed inset-0 z-[100] flex min-h-screen w-screen items-end justify-center p-0 sm:items-center sm:px-4 sm:py-6">
+            <div className="fixed inset-0 z-[100] flex min-h-dvh w-screen items-center justify-center px-4 py-4 sm:py-6">
               <button
                 type="button"
                 tabIndex={-1}
@@ -157,7 +157,7 @@ export function BranchCapacityModal({
                 aria-labelledby={titleId}
                 aria-modal="true"
                 role="dialog"
-                className="relative grid max-h-[min(44rem,calc(100vh-1rem))] w-full max-w-[35rem] gap-5 overflow-y-auto rounded-t-[1.7rem] bg-white p-5 text-[#12110f] shadow-[0_24px_80px_rgba(18,17,15,0.22)] outline-none sm:max-h-[calc(100vh-3rem)] sm:rounded-[1.7rem] sm:p-6"
+                className="relative grid max-h-[min(44rem,calc(100dvh-2rem))] w-full max-w-[35rem] gap-5 overflow-y-auto rounded-[1.7rem] bg-white p-5 text-[#12110f] shadow-[0_24px_80px_rgba(18,17,15,0.22)] outline-none sm:max-h-[calc(100dvh-3rem)] sm:p-6"
               >
                 <div className="flex items-start justify-between gap-4">
                   <h2 id={titleId} className="text-xl font-semibold tracking-[-0.04em] text-[#12110f] sm:text-2xl">
