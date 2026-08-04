@@ -11,7 +11,7 @@ const planFeatures = [
 export function CertificatesSection() {
   return (
     <section id="certificados" className="relative isolate overflow-hidden bg-[#12110f] px-5 py-20 text-white sm:px-8 sm:py-24 lg:px-[clamp(2rem,2.5vw,2.5rem)] lg:py-[clamp(6rem,7vw,7rem)]">
-      <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.02fr)] lg:items-center lg:gap-[clamp(2rem,3vw,3rem)]">
+      <div className="relative mx-auto grid max-w-7xl gap-8 min-[900px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.02fr)] min-[900px]:items-center min-[900px]:gap-[clamp(2rem,3vw,3rem)]">
         <div className="max-w-4xl">
           <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-[#48c7d2] sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
             PLANES Y PRECIOS
@@ -39,7 +39,7 @@ export function CertificatesSection() {
           </div>
         </div>
 
-        <div className="max-w-3xl lg:w-full lg:max-w-[clamp(30rem,38vw,34rem)] lg:justify-self-end">
+        <div className="max-w-3xl min-[900px]:w-full min-[900px]:max-w-[clamp(22rem,44vw,34rem)] min-[900px]:justify-self-end">
           <article className="overflow-hidden rounded-[2rem] border border-white/12 bg-white/[0.06] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:p-7 lg:p-[clamp(1.75rem,2vw,2rem)]">
             <div className="border-b border-white/12 pb-6 sm:pb-7">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

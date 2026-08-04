@@ -82,7 +82,7 @@ export function ProductsSection() {
       className="relative isolate overflow-hidden bg-white px-5 py-20 sm:px-8 sm:py-24 lg:px-[clamp(2rem,2.5vw,2.5rem)] lg:py-[clamp(6rem,7vw,7rem)]"
     >
       <div className="relative mx-auto max-w-7xl">
-        <div className="grid gap-6 lg:grid-cols-[1fr_0.82fr] lg:items-end lg:gap-[clamp(2rem,2.5vw,2.5rem)]">
+        <div className="grid gap-6 min-[900px]:grid-cols-[1fr_0.82fr] min-[900px]:items-end min-[900px]:gap-[clamp(2rem,2.5vw,2.5rem)]">
           <div>
             <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
               SOLUCIONES

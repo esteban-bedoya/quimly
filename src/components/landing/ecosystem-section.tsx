@@ -4,7 +4,7 @@ export function EcosystemSection() {
   return (
     <section id="ecosistema" className="relative isolate overflow-hidden bg-[#12110f] px-5 py-20 text-white sm:px-8 sm:py-24 lg:px-[clamp(2rem,2.5vw,2.5rem)] lg:py-[clamp(6rem,7vw,7rem)]">
       <div className="relative mx-auto max-w-7xl">
-        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-[clamp(2rem,2.5vw,2.5rem)]">
+        <div className="grid gap-6 min-[900px]:grid-cols-[0.9fr_1.1fr] min-[900px]:items-end min-[900px]:gap-[clamp(2rem,2.5vw,2.5rem)]">
           <div>
             <p className="w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-[#48c7d2] sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
               ECOSISTEMA
@@ -19,7 +19,7 @@ export function EcosystemSection() {
           </p>
         </div>
 
-        <div className="mt-10 grid gap-4 sm:mt-12 lg:mx-auto lg:max-w-6xl lg:grid-cols-2 lg:gap-[clamp(1rem,1.25vw,1.25rem)]">
+        <div className="mt-10 grid gap-4 sm:mt-12 min-[900px]:mx-auto min-[900px]:max-w-6xl min-[900px]:grid-cols-2 min-[900px]:gap-[clamp(1rem,1.25vw,1.25rem)]">
           <ComparisonList title="Antes" items={legacyProblems} muted />
           <ComparisonList title="Con Quimly" items={quimlyAdvantages} />
         </div>
