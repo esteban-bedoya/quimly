@@ -4,8 +4,8 @@ import { QUIMLY_WHATSAPP_URL } from "@/lib/whatsapp";
 export function Hero() {
   return (
     <section id="hero" className="relative isolate overflow-hidden bg-white">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-10 px-5 pb-14 pt-44 sm:gap-12 sm:px-8 sm:pb-16 sm:pt-32 lg:grid-cols-[1fr_1fr] lg:items-center lg:gap-[clamp(2.5rem,3.5vw,3.5rem)] lg:px-[clamp(2rem,2.5vw,2.5rem)] lg:pb-[clamp(4rem,5vw,5rem)] lg:pt-[clamp(6rem,8vw,7rem)]">
-        <div className="flex flex-col justify-center">
+      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-10 px-5 pb-14 pt-44 sm:gap-12 sm:px-8 sm:pb-16 sm:pt-32 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-[clamp(2.5rem,3.5vw,3.5rem)] lg:px-[clamp(2rem,2.5vw,2.5rem)] lg:pb-[clamp(4rem,5vw,5rem)] lg:pt-[clamp(6rem,8vw,7rem)]">
+        <div className="min-w-0 flex flex-col justify-center">
           <p className="mb-6 w-fit px-3 py-1.5 text-[0.8rem] font-extrabold uppercase tracking-[0.2em] text-black sm:mb-8 sm:px-3.5 sm:py-2 sm:text-[0.9rem]">
             TECNOLOGÍA SANITARIA PARA <span className="font-black">RESTAURANTES.</span>
           </p>
@@ -44,7 +44,7 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="flex items-center justify-center lg:justify-end">
+        <div className="min-w-0 flex items-center justify-center lg:justify-end">
           <div className="w-full max-w-[420px] sm:max-w-[560px] lg:max-w-[clamp(29.375rem,36vw,47.5rem)]">
             <div>
               <Image
