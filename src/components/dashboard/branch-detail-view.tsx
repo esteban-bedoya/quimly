@@ -1233,8 +1233,7 @@ export function BranchOperationalView({
                 strokeWidth="1.4"
               />
             </svg>
-            <span className="operational-toolbar-action-label-short">QR</span>
-            <span className="operational-toolbar-action-label-full">Descargar formularios QR operativos</span>
+            <span>Descargar formularios QR operativos</span>
           </a>
         ) : (
           <span className="operational-toolbar-empty">

@@ -648,28 +648,10 @@ body:has([data-dashboard-shell]) {
   line-height: 1.25rem;
 }
 
-.operational-toolbar-action-label-full {
-  display: none;
-}
-
-.operational-toolbar-action-label-short {
-  display: inline;
-}
-
 @media (min-width: 640px) {
   .operational-toolbar-copy {
     font-size: 1.125rem;
     line-height: 2rem;
-  }
-}
-
-@media (min-width: 768px) {
-  .operational-toolbar-action-label-full {
-    display: inline;
-  }
-
-  .operational-toolbar-action-label-short {
-    display: none;
   }
 }
 
