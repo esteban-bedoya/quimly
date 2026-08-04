@@ -165,6 +165,16 @@ export function formatDateForDisplay(value: string) {
   }).format(new Date(`${value}T12:00:00.000-05:00`));
 }
 
+export function formatNumericDateForDisplay(value: string) {
+  const parsed = parseDateValue(value);
+
+  if (!parsed) {
+    return value || "Sin fecha";
+  }
+
+  return `${pad(parsed.day)}/${pad(parsed.month)}/${parsed.year}`;
+}
+
 export function formatDateTimeForDisplay(value: string) {
   const date = new Date(value);
 

@@ -1,6 +1,11 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-import { formatCompactDateTimeForDisplay, formatDateForDisplay, formatDateTimeForDisplay } from "@/lib/branch-reports/dates";
+import {
+  formatCompactDateTimeForDisplay,
+  formatDateForDisplay,
+  formatDateTimeForDisplay,
+  formatNumericDateForDisplay,
+} from "@/lib/branch-reports/dates";
 import type {
   BranchReportDocumentBundle,
   BranchReportDocumentEntry,
@@ -605,6 +610,22 @@ function formatBundleFileSummary(
   return formatCount(fileCount, "archivo", "archivos");
 }
 
+function getSanitaryDocumentCoverDetails(attachment: PdfFileAttachment) {
+  const issuedAt = attachment.entry.file.metadata.issuedAt;
+  const expirationDate = attachment.entry.file.expiresAt;
+  const details: string[] = [];
+
+  if (typeof issuedAt === "string" && issuedAt) {
+    details.push(`Fecha de expedición: ${formatNumericDateForDisplay(issuedAt)}`);
+  }
+
+  if (expirationDate) {
+    details.push(`Vigente hasta: ${formatNumericDateForDisplay(expirationDate)}`);
+  }
+
+  return details;
+}
+
 function getHistoricalAttachmentDateTime(attachment: PdfFileAttachment) {
   const time = Date.parse(attachment.entry.date);
 
@@ -737,7 +758,12 @@ export async function createSanitaryDossierPdf({
   });
 
   for (const bundle of bundles) {
-    addSeparatorPage(builder, bundle.title, formatBundleFileSummary(bundle, { includeIncluded: true }));
+    addSeparatorPage(
+      builder,
+      bundle.title,
+      formatBundleFileSummary(bundle, { includeIncluded: true }),
+      bundle.groups?.length ? [] : bundle.entries.flatMap(getSanitaryDocumentCoverDetails),
+    );
 
     if (bundle.groups?.length) {
       for (const group of bundle.groups) {
@@ -745,7 +771,10 @@ export async function createSanitaryDossierPdf({
           builder,
           group.title,
           undefined,
-          group.entries.map((entry) => entry.entry.label),
+          group.entries.flatMap((attachment) => [
+            attachment.entry.label,
+            ...getSanitaryDocumentCoverDetails(attachment),
+          ]),
         );
 
         for (const attachment of group.entries) {
