@@ -6,7 +6,7 @@ import { useFormStatus } from "react-dom";
 
 import type { AdminActionState } from "@/app/dashboard/actions";
 
-export const adminDrawerInputClassName = "ui-form-control";
+export const adminDrawerInputClassName = "ui-form-control text-base sm:text-sm";
 const subscribeToHydration = () => () => {};
 
 type AdminSideDrawerProps = {
