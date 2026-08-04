@@ -78,6 +78,14 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="color"]):not([type="hidden"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 html.public-form-document,
 body.public-form-document,
 html:has([data-public-form-shell]),
