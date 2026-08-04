@@ -88,9 +88,9 @@ export function Header() {
   }, []);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-30 px-4 pt-3 transition-all duration-300 sm:px-6 sm:pt-4 lg:px-6 xl:px-8">
+    <header className="fixed inset-x-0 top-0 z-30 px-4 pt-3 transition-all duration-300 sm:px-6 sm:pt-4 lg:px-[clamp(1.5rem,2vw,2rem)]">
       <nav
-        className={`mx-auto w-full max-w-7xl rounded-[1.75rem] px-4 py-4 shadow-[0_10px_30px_rgba(18,17,15,0.16)] backdrop-blur-xl transition duration-300 hover:scale-[1.02] sm:rounded-full sm:px-8 sm:py-0 lg:px-8 xl:px-10 ${
+        className={`mx-auto w-full max-w-7xl rounded-[1.75rem] px-4 py-4 shadow-[0_10px_30px_rgba(18,17,15,0.16)] backdrop-blur-xl transition duration-300 hover:scale-[1.02] sm:rounded-full sm:px-8 sm:py-0 lg:px-[clamp(2rem,2.5vw,2.5rem)] ${
           useSolidHeader
             ? "border border-[#12110f] bg-[#12110f]"
             : "border border-white/18 bg-[rgba(68,66,62,0.72)]"
@@ -108,7 +108,7 @@ export function Header() {
             />
           </Link>
 
-          <div className="hidden items-center gap-7 text-base font-medium text-white md:flex xl:gap-10 xl:text-[1.05rem]">
+          <div className="hidden items-center gap-[clamp(1.75rem,2.5vw,2.5rem)] text-[clamp(1rem,1.3vw,1.05rem)] font-medium text-white md:flex">
             {navItems.map((item) => (
               <a
                 key={item.href}
