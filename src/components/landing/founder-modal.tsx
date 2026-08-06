@@ -8,8 +8,7 @@ import { getQuimlyWhatsAppUrl } from "@/lib/whatsapp";
 const founderWhatsAppUrl = getQuimlyWhatsAppUrl(
   "¡Hola, Quimly! Quiero verificar si aún hay un cupo Founder disponible para mi restaurante.",
 );
-const founderModalDelayMs = 10_000;
-const pricingSectionProgressToShowModal = 0.7;
+const founderModalDelayMs = 12_000;
 
 export function FounderModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,63 +16,10 @@ export function FounderModal() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    let hasTriggered = false;
-    let frameId = 0;
-    const pricingSection = document.getElementById("certificados");
-
-    const clearTriggers = () => {
-      window.clearTimeout(timerId);
-
-      window.cancelAnimationFrame(frameId);
-      window.removeEventListener("scroll", queuePricingCheck);
-      window.removeEventListener("resize", queuePricingCheck);
-    };
-
-    const showModal = () => {
-      if (hasTriggered) {
-        return;
-      }
-
-      hasTriggered = true;
-      clearTriggers();
-      setIsOpen(true);
-    };
-
-    const checkPricingProgress = () => {
-      frameId = 0;
-
-      if (!pricingSection) {
-        return;
-      }
-
-      const sectionBounds = pricingSection.getBoundingClientRect();
-
-      if (sectionBounds.height <= 0) {
-        return;
-      }
-
-      const sectionProgress = Math.max(
-        0,
-        Math.min(-sectionBounds.top / sectionBounds.height, 1),
-      );
-
-      if (sectionProgress >= pricingSectionProgressToShowModal) {
-        showModal();
-      }
-    };
-
-    const queuePricingCheck = () => {
-      window.cancelAnimationFrame(frameId);
-      frameId = window.requestAnimationFrame(checkPricingProgress);
-    };
-
-    const timerId = window.setTimeout(showModal, founderModalDelayMs);
-    window.addEventListener("scroll", queuePricingCheck, { passive: true });
-    window.addEventListener("resize", queuePricingCheck);
-    queuePricingCheck();
+    const timerId = window.setTimeout(() => setIsOpen(true), founderModalDelayMs);
 
     return () => {
-      clearTriggers();
+      window.clearTimeout(timerId);
     };
   }, []);
 
