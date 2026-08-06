@@ -78,6 +78,18 @@ html {
   scroll-behavior: smooth;
 }
 
+@keyframes founder-modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 639px) {
   input:not([type="checkbox"]):not([type="color"]):not([type="hidden"]):not([type="radio"]):not([type="range"]),
   select,
