@@ -10,9 +10,45 @@ const founderWhatsAppUrl = getQuimlyWhatsAppUrl(
 );
 
 export function FounderModal() {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let hasTriggered = false;
+    let pricingObserver: IntersectionObserver | undefined;
+
+    const showModal = () => {
+      if (hasTriggered) {
+        return;
+      }
+
+      hasTriggered = true;
+      window.clearTimeout(timerId);
+      pricingObserver?.disconnect();
+      setIsOpen(true);
+    };
+
+    const timerId = window.setTimeout(showModal, 8_000);
+    const pricingSection = document.getElementById("certificados");
+
+    if (pricingSection) {
+      pricingObserver = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            showModal();
+          }
+        },
+        { rootMargin: "0px 0px -25% 0px" },
+      );
+      pricingObserver.observe(pricingSection);
+    }
+
+    return () => {
+      window.clearTimeout(timerId);
+      pricingObserver?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
