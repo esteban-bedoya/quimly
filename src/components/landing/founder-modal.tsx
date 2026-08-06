@@ -8,6 +8,7 @@ import { getQuimlyWhatsAppUrl } from "@/lib/whatsapp";
 const founderWhatsAppUrl = getQuimlyWhatsAppUrl(
   "¡Hola, Quimly! Quiero verificar si aún hay un cupo Founder disponible para mi restaurante.",
 );
+const founderModalDelayMs = 10_000;
 
 export function FounderModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -29,7 +30,7 @@ export function FounderModal() {
       setIsOpen(true);
     };
 
-    const timerId = window.setTimeout(showModal, 8_000);
+    const timerId = window.setTimeout(showModal, founderModalDelayMs);
     const pricingSection = document.getElementById("certificados");
 
     if (pricingSection) {
