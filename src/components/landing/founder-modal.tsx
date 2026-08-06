@@ -9,7 +9,7 @@ const founderWhatsAppUrl = getQuimlyWhatsAppUrl(
   "¡Hola, Quimly! Quiero verificar si aún hay un cupo Founder disponible para mi restaurante.",
 );
 const founderModalDelayMs = 10_000;
-const pricingSectionCompletionPoint = 0.25;
+const pricingSectionProgressToShowModal = 0.7;
 
 export function FounderModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -48,7 +48,16 @@ export function FounderModal() {
 
       const sectionBounds = pricingSection.getBoundingClientRect();
 
-      if (sectionBounds.bottom <= window.innerHeight * pricingSectionCompletionPoint) {
+      if (sectionBounds.height <= 0) {
+        return;
+      }
+
+      const sectionProgress = Math.max(
+        0,
+        Math.min(-sectionBounds.top / sectionBounds.height, 1),
+      );
+
+      if (sectionProgress >= pricingSectionProgressToShowModal) {
         showModal();
       }
     };
