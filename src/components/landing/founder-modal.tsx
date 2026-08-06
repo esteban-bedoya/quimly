@@ -9,6 +9,7 @@ const founderWhatsAppUrl = getQuimlyWhatsAppUrl(
   "¡Hola, Quimly! Quiero verificar si aún hay un cupo Founder disponible para mi restaurante.",
 );
 const founderModalDelayMs = 10_000;
+const pricingSectionCompletionPoint = 0.25;
 
 export function FounderModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,7 +18,16 @@ export function FounderModal() {
 
   useEffect(() => {
     let hasTriggered = false;
-    let pricingObserver: IntersectionObserver | undefined;
+    let frameId = 0;
+    const pricingSection = document.getElementById("certificados");
+
+    const clearTriggers = () => {
+      window.clearTimeout(timerId);
+
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("scroll", queuePricingCheck);
+      window.removeEventListener("resize", queuePricingCheck);
+    };
 
     const showModal = () => {
       if (hasTriggered) {
@@ -25,29 +35,36 @@ export function FounderModal() {
       }
 
       hasTriggered = true;
-      window.clearTimeout(timerId);
-      pricingObserver?.disconnect();
+      clearTriggers();
       setIsOpen(true);
     };
 
-    const timerId = window.setTimeout(showModal, founderModalDelayMs);
-    const pricingSection = document.getElementById("certificados");
+    const checkPricingProgress = () => {
+      frameId = 0;
 
-    if (pricingSection) {
-      pricingObserver = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            showModal();
-          }
-        },
-        { rootMargin: "0px 0px -25% 0px" },
-      );
-      pricingObserver.observe(pricingSection);
-    }
+      if (!pricingSection) {
+        return;
+      }
+
+      const sectionBounds = pricingSection.getBoundingClientRect();
+
+      if (sectionBounds.bottom <= window.innerHeight * pricingSectionCompletionPoint) {
+        showModal();
+      }
+    };
+
+    const queuePricingCheck = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(checkPricingProgress);
+    };
+
+    const timerId = window.setTimeout(showModal, founderModalDelayMs);
+    window.addEventListener("scroll", queuePricingCheck, { passive: true });
+    window.addEventListener("resize", queuePricingCheck);
+    queuePricingCheck();
 
     return () => {
-      window.clearTimeout(timerId);
-      pricingObserver?.disconnect();
+      clearTriggers();
     };
   }, []);
 
