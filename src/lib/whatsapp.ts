@@ -1,4 +1,4 @@
-const WHATSAPP_NUMBER = "573016143804";
+const WHATSAPP_NUMBER = "573045456754";
 const WHATSAPP_MESSAGE =
   "¡Hola, Quimly! Me interesa su sistema para gestionar el cumplimiento INVIMA en mi restaurante. ¿Me podrían contar cómo sería el proceso de implementación?";
 

@@ -56,7 +56,7 @@ type PlanPaymentsOpenTarget = "overview" | "payment_method";
 const openPlanPaymentsEventName = "quimly:open-plan-payments";
 const subscribeToHydration = () => () => {};
 const billingHelpWhatsAppUrl =
-  "https://wa.me/573016143804?text=%C2%A1Hola%2C%20Quimly!%20Necesito%20ayuda%20con%20mis%20pagos.";
+  "https://wa.me/573045456754?text=%C2%A1Hola%2C%20Quimly!%20Necesito%20ayuda%20con%20mis%20pagos.";
 const totalPayableTodayLabel = (
   <span className="block">
     <span className="block">Total a pagar hoy</span>

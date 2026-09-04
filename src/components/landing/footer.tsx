@@ -33,8 +33,8 @@ export function Footer() {
               <Link href="mailto:equipo@quimly.co" className="block transition duration-300 hover:text-[#12110f]">
                 equipo@quimly.co
               </Link>
-              <a href="tel:+573016143804" className="block transition duration-300 hover:text-[#12110f]">
-                +57 3016143804
+              <a href="tel:+573045456754" className="block transition duration-300 hover:text-[#12110f]">
+                +57 3045456754
               </a>
             </div>
           </div>
