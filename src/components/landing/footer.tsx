@@ -42,7 +42,7 @@ export function Footer() {
           <div>
             <p className="text-[1rem] font-bold uppercase tracking-[0.08em] text-[#12110f] sm:text-[1.1rem]">Ubicación</p>
             <div className="mt-3 space-y-2.5 text-[0.95rem] font-medium text-[#12110f] sm:mt-4 sm:text-[0.98rem]">
-              <p>Girardota, Antioquia, Colombia</p>
+              <p>Medellín, Antioquia, Colombia</p>
             </div>
           </div>
         </div>
