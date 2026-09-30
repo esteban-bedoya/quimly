@@ -1,11 +1,5 @@
-export const founderPlanBasePriceCop = 19900;
-export const operationalPlanBasePriceCop = 24900;
-export const additionalSitePriceCop = 9900;
-export const includedSitesInBasePlan = 1;
-export const paymentProviderLabel = "Mercado Pago";
-
-export type SubscriptionStatus = "trial" | "active" | "payment_issue" | "suspended" | "cancelled";
 export type PlanType = "founder" | "operational";
+export type SubscriptionStatus = "trial" | "active" | "payment_issue" | "suspended" | "cancelled";
 export type SiteStatus = "active" | "inactive" | "deleted";
 export type PaymentMethodStatus = "pending" | "configured";
 export type CapacityState = "normal" | "exceeded" | "requires_resolution";
@@ -19,6 +13,28 @@ export type SubscriptionViewState =
   | "payment_issue"
   | "suspended"
   | "cancelled";
+
+export const planMonthlyPricingCop = {
+  founder: {
+    baseMonthlyPriceCop: 19900,
+    additionalSiteMonthlyPriceCop: 9900,
+  },
+  operational: {
+    baseMonthlyPriceCop: 45900,
+    additionalSiteMonthlyPriceCop: 35900,
+  },
+} as const satisfies Record<PlanType, {
+  baseMonthlyPriceCop: number;
+  additionalSiteMonthlyPriceCop: number;
+}>;
+
+export const founderPlanBasePriceCop = planMonthlyPricingCop.founder.baseMonthlyPriceCop;
+export const founderAdditionalSitePriceCop = planMonthlyPricingCop.founder.additionalSiteMonthlyPriceCop;
+export const operationalPlanBasePriceCop = planMonthlyPricingCop.operational.baseMonthlyPriceCop;
+export const operationalAdditionalSitePriceCop = planMonthlyPricingCop.operational.additionalSiteMonthlyPriceCop;
+export const operationalPricingVersion = "2026-09-30";
+export const includedSitesInBasePlan = 1;
+export const paymentProviderLabel = "Mercado Pago";
 
 export type AccountCapabilities = {
   maxBranches: number;
@@ -127,14 +143,18 @@ export function formatCopAmount(amount: number) {
 }
 
 export function getDefaultBaseMonthlyPriceCop(planType: PlanType) {
-  return planType === "founder" ? founderPlanBasePriceCop : operationalPlanBasePriceCop;
+  return planMonthlyPricingCop[planType].baseMonthlyPriceCop;
+}
+
+export function getDefaultAdditionalSiteMonthlyPriceCop(planType: PlanType) {
+  return planMonthlyPricingCop[planType].additionalSiteMonthlyPriceCop;
 }
 
 export function calculatePlanMonthlyTotalCop({
   planType,
   siteCount,
   baseMonthlyPriceCop = getDefaultBaseMonthlyPriceCop(planType),
-  additionalSiteMonthlyPriceCop = additionalSitePriceCop,
+  additionalSiteMonthlyPriceCop = getDefaultAdditionalSiteMonthlyPriceCop(planType),
   includedActiveSites = includedSitesInBasePlan,
 }: {
   planType: PlanType;

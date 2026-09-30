@@ -407,8 +407,8 @@ create table if not exists public.company_subscriptions (
   current_period_started_at timestamptz,
   current_period_ends_at timestamptz,
   billing_cycle_anchor_at timestamptz,
-  base_monthly_price_cop integer not null default 24900,
-  additional_site_monthly_price_cop integer not null default 9900,
+  base_monthly_price_cop integer not null default 45900,
+  additional_site_monthly_price_cop integer not null default 35900,
   included_active_sites integer not null default 1,
   max_active_locations integer not null default 1,
   currency char(3) not null default 'COP',
@@ -540,21 +540,47 @@ alter table if exists public.company_subscriptions
 add column if not exists plan_type public.company_plan_type not null default 'operational';
 
 alter table if exists public.company_subscriptions
-add column if not exists base_monthly_price_cop integer not null default 24900;
+add column if not exists base_monthly_price_cop integer not null default 45900;
 
 alter table if exists public.company_subscriptions
-add column if not exists additional_site_monthly_price_cop integer not null default 9900;
+add column if not exists additional_site_monthly_price_cop integer not null default 35900;
 
 alter table if exists public.company_subscriptions
-alter column base_monthly_price_cop set default 24900;
+alter column base_monthly_price_cop set default 45900;
 
 alter table if exists public.company_subscriptions
-alter column additional_site_monthly_price_cop set default 9900;
+alter column additional_site_monthly_price_cop set default 35900;
+
+create or replace function public.apply_subscription_price_on_plan_change()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.plan_type is distinct from old.plan_type then
+    if new.plan_type = 'founder' then
+      new.base_monthly_price_cop := 19900;
+      new.additional_site_monthly_price_cop := 9900;
+    else
+      new.base_monthly_price_cop := 45900;
+      new.additional_site_monthly_price_cop := 35900;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists company_subscriptions_price_on_plan_change on public.company_subscriptions;
+create trigger company_subscriptions_price_on_plan_change
+before update of plan_type on public.company_subscriptions
+for each row
+execute function public.apply_subscription_price_on_plan_change();
 
 update public.company_subscriptions
-set base_monthly_price_cop = 24900
+set base_monthly_price_cop = 45900
 where plan_type = 'operational'
-  and base_monthly_price_cop = 25000;
+  and base_monthly_price_cop in (24900, 25000);
 
 update public.company_subscriptions
 set base_monthly_price_cop = 19900
@@ -564,12 +590,16 @@ where plan_type = 'founder'
 update public.company_subscriptions
 set
   plan_type = 'operational',
-  base_monthly_price_cop = 24900
+  base_monthly_price_cop = 45900,
+  additional_site_monthly_price_cop = 35900
 where status = 'cancelled'
   and plan_type = 'founder';
 
 update public.company_subscriptions
-set additional_site_monthly_price_cop = 9900
+set additional_site_monthly_price_cop = case
+  when plan_type = 'founder' then 9900
+  else 35900
+end
 where additional_site_monthly_price_cop in (15000, 19900);
 
 alter table if exists public.company_subscriptions
@@ -1135,10 +1165,17 @@ add constraint subscription_status_history_transition_check check (
   from_status is distinct from to_status
   or (
     source = 'manual'
-    and reason = 'founder_assigned'
-    and from_status is not distinct from to_status
-    and metadata ->> 'fromPlanType' = 'operational'
-    and metadata ->> 'toPlanType' = 'founder'
+    and (
+      (
+        reason = 'founder_assigned'
+        and metadata ->> 'fromPlanType' = 'operational'
+        and metadata ->> 'toPlanType' = 'founder'
+      )
+      or (
+        reason = 'operational_pricing_updated'
+        and metadata ->> 'planType' = 'operational'
+      )
+    )
   )
 );
 
@@ -3752,8 +3789,12 @@ begin
       else plan_type
     end,
     base_monthly_price_cop = case
-      when (is_immediate_cancellation or resolved_effective_at <= now()) and plan_type = 'founder' then 24900
+      when (is_immediate_cancellation or resolved_effective_at <= now()) and plan_type = 'founder' then 45900
       else base_monthly_price_cop
+    end,
+    additional_site_monthly_price_cop = case
+      when (is_immediate_cancellation or resolved_effective_at <= now()) and plan_type = 'founder' then 35900
+      else additional_site_monthly_price_cop
     end,
     cancellation_requested_at = coalesce(cancellation_requested_at, target_requested_at),
     cancellation_effective_at = resolved_effective_at,
@@ -4255,7 +4296,8 @@ begin
     set
       status = 'cancelled',
       plan_type = case when cs.plan_type = 'founder' then 'operational' else cs.plan_type end,
-      base_monthly_price_cop = case when cs.plan_type = 'founder' then 24900 else cs.base_monthly_price_cop end,
+      base_monthly_price_cop = case when cs.plan_type = 'founder' then 45900 else cs.base_monthly_price_cop end,
+      additional_site_monthly_price_cop = case when cs.plan_type = 'founder' then 35900 else cs.additional_site_monthly_price_cop end,
       payment_attention_required = false,
       payment_grace_ends_at = null
     from due_cancellations
@@ -6442,7 +6484,8 @@ begin
   update public.company_subscriptions
   set
     plan_type = 'founder',
-    base_monthly_price_cop = 19900
+    base_monthly_price_cop = 19900,
+    additional_site_monthly_price_cop = 9900
   where id = subscription_row.id;
 
   insert into public.subscription_status_history (

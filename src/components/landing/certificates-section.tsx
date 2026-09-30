@@ -1,5 +1,11 @@
 import Link from "next/link";
 
+import {
+  formatCopAmount,
+  getDefaultAdditionalSiteMonthlyPriceCop,
+  getDefaultBaseMonthlyPriceCop,
+} from "@/lib/billing";
+
 const planFeatures = [
   "Acceso total durante los 14 días gratis: bitácoras, documentos y alertas.",
   "Bitácoras digitales ilimitadas para registros de temperaturas, limpiezas, materias primas y agua potable.",
@@ -7,6 +13,11 @@ const planFeatures = [
   "Notificaciones automáticas vía WhatsApp.",
   "Historiales y reportes listos para auditorías del INVIMA.",
 ];
+
+const operationalBaseMonthlyPrice = formatCopAmount(getDefaultBaseMonthlyPriceCop("operational"));
+const operationalAdditionalSiteMonthlyPrice = formatCopAmount(
+  getDefaultAdditionalSiteMonthlyPriceCop("operational"),
+);
 
 export function CertificatesSection() {
   return (
@@ -48,10 +59,10 @@ export function CertificatesSection() {
               </div>
               <p className="mt-4 text-sm leading-6 text-white/68 sm:text-base">Luego,</p>
               <p className="mt-2 text-sm leading-6 text-white/68 sm:text-base">
-                <span className="font-semibold text-white">$24.900 COP / mes</span> por la primera sede.
+                <span className="font-semibold text-white">{operationalBaseMonthlyPrice} COP / mes</span> por la primera sede.
               </p>
               <p className="mt-2 text-sm leading-6 text-white/68 sm:text-base">
-                <span className="font-semibold text-white">+$9.900 COP / mes</span> por cada sede adicional.
+                <span className="font-semibold text-white">+{operationalAdditionalSiteMonthlyPrice} COP / mes</span> por cada sede adicional.
               </p>
             </div>
 

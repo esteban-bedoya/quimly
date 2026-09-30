@@ -12,7 +12,8 @@
     "test:operational-forms": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test scripts/operational-forms.test.mjs",
     "test:public-qr-schema": "node --test scripts/public-qr-schema.test.mjs",
     "test:whatsapp-trial-policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test scripts/whatsapp-trial-notification-policy.test.mjs",
-    "test:billing:sandbox": "node --env-file-if-exists=.env.local scripts/mercado-pago-sandbox-check.mjs"
+    "test:billing:sandbox": "node --env-file-if-exists=.env.local scripts/mercado-pago-sandbox-check.mjs",
+    "billing:operational-price-change": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env.local --experimental-strip-types scripts/apply-operational-pricing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

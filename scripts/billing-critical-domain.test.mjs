@@ -16,24 +16,27 @@ import {
   shouldApplyRecurringPaymentAfterCancellation,
 } from "../src/lib/billing/financial-policy.ts";
 import {
-  additionalSitePriceCop,
   canCancelSubscription,
   calculatePlanMonthlyTotalCop,
+  founderAdditionalSitePriceCop,
   founderPlanBasePriceCop,
+  getDefaultAdditionalSiteMonthlyPriceCop,
   getAccountCapabilities,
   getBranchCreationBlockedMessage,
   getSubscriptionViewState,
   operationalPlanBasePriceCop,
 } from "../src/lib/billing.ts";
 
-test("pricing mantiene base por plan y cobra 9.900 por sede adicional", () => {
+test("pricing centraliza las tarifas Operational y conserva las de Founder", () => {
   assert.equal(founderPlanBasePriceCop, 19900);
-  assert.equal(operationalPlanBasePriceCop, 24900);
-  assert.equal(additionalSitePriceCop, 9900);
+  assert.equal(founderAdditionalSitePriceCop, 9900);
+  assert.equal(operationalPlanBasePriceCop, 45900);
+  assert.equal(getDefaultAdditionalSiteMonthlyPriceCop("operational"), 35900);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 1 }), 19900);
-  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 1 }), 24900);
-  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 2 }), 34800);
   assert.equal(calculatePlanMonthlyTotalCop({ planType: "founder", siteCount: 3 }), 39700);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 1 }), 45900);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 2 }), 81800);
+  assert.equal(calculatePlanMonthlyTotalCop({ planType: "operational", siteCount: 3 }), 117700);
 });
 
 test("pago pendiente conserva el acceso operativo hasta que venza la ventana de reintentos", () => {

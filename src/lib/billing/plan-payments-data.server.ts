@@ -1,9 +1,9 @@
 import "server-only";
 
 import {
-  additionalSitePriceCop,
   calculatePlanMonthlyTotalCop,
   getAccountCapabilities,
+  getDefaultAdditionalSiteMonthlyPriceCop,
   getDefaultBaseMonthlyPriceCop,
   getSubscriptionViewState,
   includedSitesInBasePlan,
@@ -66,7 +66,8 @@ function buildPlanPaymentsData({
   const subscriptionStatus = normalizeSubscriptionStatus(subscription?.status);
   const planType = normalizePlanType(subscription?.plan_type);
   const baseMonthlyPriceCop = subscription?.base_monthly_price_cop ?? getDefaultBaseMonthlyPriceCop(planType);
-  const additionalSiteMonthlyPriceCop = subscription?.additional_site_monthly_price_cop ?? additionalSitePriceCop;
+  const additionalSiteMonthlyPriceCop =
+    subscription?.additional_site_monthly_price_cop ?? getDefaultAdditionalSiteMonthlyPriceCop(planType);
   const includedActiveSites = subscription?.included_active_sites ?? includedSitesInBasePlan;
   const activeSites = branches.filter((branch) => branch.status === "active").length;
   const inactiveSites = branches.filter((branch) => branch.status === "inactive").length;

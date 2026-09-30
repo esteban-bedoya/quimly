@@ -1,6 +1,6 @@
 import {
-  additionalSitePriceCop,
   calculatePlanMonthlyTotalCop,
+  getDefaultAdditionalSiteMonthlyPriceCop,
   getDefaultBaseMonthlyPriceCop,
   includedSitesInBasePlan,
   type PlanType,
@@ -56,8 +56,8 @@ export function createBillingPriceSnapshot({
       getDefaultBaseMonthlyPriceCop(planType),
     ),
     additionalSiteMonthlyPriceCop: normalizeCurrencyAmount(
-      additionalSiteMonthlyPriceCop ?? additionalSitePriceCop,
-      additionalSitePriceCop,
+      additionalSiteMonthlyPriceCop ?? getDefaultAdditionalSiteMonthlyPriceCop(planType),
+      getDefaultAdditionalSiteMonthlyPriceCop(planType),
     ),
     includedActiveSites: normalizedIncludedActiveSites,
   };

@@ -51,6 +51,24 @@ Para una instalación nueva, aplica `supabase/schema.sql`. Si la versión multie
 
 Para activar las notificaciones de bandeja, los contadores de no leídos y el cursor de lectura en una base existente, aplica después `supabase/migrations/2026071401_whatsapp_inbox_notifications.sql` antes de desplegar esta versión.
 
+## Cambio de tarifa Operational (2026-09-30)
+
+La tarifa mensual Operational es de $45.900 COP por la sede inicial y $35.900 COP por cada sede adicional. Founder conserva $19.900 COP por la sede inicial y $9.900 COP por cada sede adicional.
+
+En una base de datos ya desplegada, aplica primero `supabase/migrations/2026093001_operational_pricing.sql` desde el SQL Editor. Después del despliegue, revisa las empresas que se actualizarán sin modificar datos:
+
+```bash
+npm run billing:operational-price-change
+```
+
+El reporte excluye automáticamente empresas con checkouts, cambios de capacidad o preapprovals ambiguos. Cuando el reporte esté resuelto, actualiza los preapprovals de Mercado Pago y la instantánea de precio en Supabase de forma verificable:
+
+```bash
+QUIMLY_OPERATIONAL_PRICING_CONFIRM=2026-09-30 npm run billing:operational-price-change -- --apply
+```
+
+No ejecutes el modo `--apply` sin haber revisado primero el reporte. El proceso no incluye ni modifica suscripciones Founder.
+
 En Twilio, configura el webhook de mensajes entrantes del WhatsApp Sender o del Messaging Service con método `POST`:
 
 ```txt
