@@ -1,10 +1,11 @@
 import "./globals.css";
 
 import type { Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
   title: "Quimly",
-  description: "Plataforma moderna para operaciones quimicas.",
+  description: "Plataforma sanitaria para operaciones gastronómicas.",
 };
 
 export const viewport: Viewport = {
@@ -20,7 +21,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
